@@ -15,6 +15,7 @@ class StockResponse(BaseModel):
     ticker: str
     price: float
     market_cap: float  # In billion VND
+    company_name: str
 
 
 class VN100Response(BaseModel):
@@ -38,7 +39,8 @@ async def get_vn100_stocks():
             StockResponse(
                 ticker=stock.ticker,
                 price=stock.price,
-                market_cap=stock.market_cap
+                market_cap=stock.market_cap,
+                company_name=stock.company_name
             )
             for stock in stocks
         ],

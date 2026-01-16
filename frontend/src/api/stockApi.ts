@@ -15,6 +15,7 @@ export interface Stock {
     ticker: string;
     price: number;
     market_cap: number;
+    company_name: string;
 }
 
 export interface VN100Response {

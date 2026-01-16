@@ -5,6 +5,9 @@ from typing import List
 from dataclasses import dataclass
 import asyncio
 import pandas as pd
+from sqlalchemy import select
+from app.db.database import async_session
+from app.db.models import StockCompany
 
 
 @dataclass
@@ -13,6 +16,7 @@ class StockInfo:
     ticker: str
     price: float
     market_cap: float  # In billion VND (tỷ đồng)
+    company_name: str = ""
 
 
 class VnstockService:
@@ -26,11 +30,61 @@ class VnstockService:
         Fetch VN-100 stocks (top 100 by market cap) with price and market cap data.
         
         Returns:
-            List of StockInfo objects with ticker, price, and market_cap
+            List of StockInfo objects include company_name
         """
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self._fetch_vn100_data)
-        return result
+        stocks = await loop.run_in_executor(None, self._fetch_vn100_data)
+        
+        # Add company names from cache or fetch if missing
+        return await self._enrich_stocks_with_company_names(stocks)
+
+    async def _enrich_stocks_with_company_names(self, stocks: List[StockInfo]) -> List[StockInfo]:
+        """Add company names to stock info objects, using DB cache."""
+        if not stocks:
+            return []
+
+        tickers = [s.ticker for s in stocks]
+        
+        async with async_session() as session:
+            # Try to get from DB
+            stmt = select(StockCompany).where(StockCompany.symbol.in_(tickers))
+            result = await session.execute(stmt)
+            cached_companies = {c.symbol: c.company_name for c in result.scalars().all()}
+            
+            missing_tickers = [t for t in tickers if t not in cached_companies]
+            
+            if missing_tickers:
+                # Fetch missing from vnstock
+                loop = asyncio.get_event_loop()
+                all_symbols_df = await loop.run_in_executor(None, self._fetch_all_symbols)
+                
+                new_companies = []
+                for _, row in all_symbols_df.iterrows():
+                    symbol = row['symbol']
+                    name = row['organ_name']
+                    if symbol in missing_tickers:
+                        cached_companies[symbol] = name
+                    
+                    # Also proactively cache everything if not in DB
+                    # (Simplified: just cache the missing ones for now to avoid DB bloat if needed, 
+                    # but usually it's better to cache everything we fetched anyway)
+                    if symbol in missing_tickers:
+                        new_companies.append(StockCompany(symbol=symbol, company_name=name))
+                
+                if new_companies:
+                    session.add_all(new_companies)
+                    await session.commit()
+            
+            for stock in stocks:
+                stock.company_name = cached_companies.get(stock.ticker, "")
+                
+        return stocks
+
+    def _fetch_all_symbols(self) -> pd.DataFrame:
+        """Fetch all symbols from vnstock."""
+        from vnstock import Listing
+        listing = Listing()
+        return listing.all_symbols()
     
     def _flatten_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Flatten multi-level column names."""

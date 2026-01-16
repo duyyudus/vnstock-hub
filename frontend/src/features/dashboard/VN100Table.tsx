@@ -110,9 +110,11 @@ export const VN100Table: React.FC = () => {
                             <tr key={stock.ticker} className="hover">
                                 <td className="text-base-content/60">{index + 1}</td>
                                 <td>
-                                    <span className="font-bold text-base-content uppercase">
-                                        {stock.ticker.slice(0, 3)}
-                                    </span>
+                                    <div className="tooltip tooltip-right" data-tip={stock.company_name}>
+                                        <span className="font-bold text-base-content uppercase cursor-help">
+                                            {stock.ticker.slice(0, 3)}
+                                        </span>
+                                    </div>
                                 </td>
                                 <td className="text-right font-mono text-base-content">
                                     {formatPrice(stock.price)}
