@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import VN100Table from './VN100Table';
+import VN100Table from './VN100Table.tsx';
 
 // Tab definitions
 const DASHBOARD_TABS = [
-    { id: 'vn100', label: 'VN-100', icon: '📈' },
+    { id: 'vn100', label: 'VN-100' },
     // Future tabs can be added here
     // { id: 'watchlist', label: 'Watchlist', icon: '⭐' },
     // { id: 'portfolio', label: 'Portfolio', icon: '💼' },
