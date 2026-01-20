@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = '["http://localhost:5173","http://localhost:3000"]'
     
+    # Stock Fetching
+    vn100_limit: int = 100
+    
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from JSON string."""

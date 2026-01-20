@@ -3,7 +3,7 @@ Stock-related API endpoints.
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 from app.services.vnstock_service import vnstock_service
 
@@ -16,6 +16,12 @@ class StockResponse(BaseModel):
     price: float
     market_cap: float  # In billion VND
     company_name: str
+    charter_capital: float = 0.0  # In billion VND
+    pe_ratio: Optional[float] = None
+    price_change_24h: Optional[float] = None  # Percentage
+    price_change_1w: Optional[float] = None  # Percentage
+    price_change_1m: Optional[float] = None  # Percentage
+    price_change_1y: Optional[float] = None  # Percentage
 
 
 class VN100Response(BaseModel):
@@ -40,9 +46,16 @@ async def get_vn100_stocks():
                 ticker=stock.ticker,
                 price=stock.price,
                 market_cap=stock.market_cap,
-                company_name=stock.company_name
+                company_name=stock.company_name,
+                charter_capital=stock.charter_capital,
+                pe_ratio=stock.pe_ratio,
+                price_change_24h=stock.price_change_24h,
+                price_change_1w=stock.price_change_1w,
+                price_change_1m=stock.price_change_1m,
+                price_change_1y=stock.price_change_1y
             )
             for stock in stocks
         ],
         count=len(stocks)
     )
+

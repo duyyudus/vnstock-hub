@@ -16,6 +16,12 @@ export interface Stock {
     price: number;
     market_cap: number;
     company_name: string;
+    charter_capital: number;
+    pe_ratio: number | null;
+    price_change_24h: number | null;
+    price_change_1w: number | null;
+    price_change_1m: number | null;
+    price_change_1y: number | null;
 }
 
 export interface VN100Response {

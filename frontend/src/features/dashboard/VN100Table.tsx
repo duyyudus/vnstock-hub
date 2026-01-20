@@ -4,7 +4,7 @@ import type { Stock } from '../../api/stockApi';
 
 /**
  * VN-100 stocks table component.
- * Displays top 100 stocks by market cap with price and market cap columns.
+ * Displays top 100 stocks by market cap with price, market cap, and additional metrics.
  */
 export const VN100Table: React.FC = () => {
     const [stocks, setStocks] = useState<Stock[]>([]);
@@ -31,15 +31,45 @@ export const VN100Table: React.FC = () => {
 
     // Format price to VND
     const formatPrice = (price: number): string => {
-        return new Intl.NumberFormat('vi-VN').format(price);
+        return new Intl.NumberFormat('en-US').format(price);
     };
 
     // Format market cap (in billion VND)
     const formatMarketCap = (marketCap: number): string => {
-        return new Intl.NumberFormat('vi-VN', {
+        return new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(marketCap);
+    };
+
+    // Format charter capital (in billion VND)
+    const formatCharterCapital = (charterCapital: number): string => {
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(charterCapital);
+    };
+
+    // Format P/E ratio
+    const formatPE = (pe: number | null): string => {
+        if (pe === null) return '-';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(pe);
+    };
+
+    // Format price change percentage with color
+    const formatPriceChange = (change: number | null): { text: string; className: string } => {
+        if (change === null) return { text: '-', className: 'text-base-content/50' };
+        const prefix = change > 0 ? '+' : '';
+        const formattedValue = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(change);
+        const text = `${prefix}${formattedValue}%`;
+        const className = change > 0 ? 'text-success' : change < 0 ? 'text-error' : 'text-base-content';
+        return { text, className };
     };
 
     if (loading) {
@@ -92,7 +122,7 @@ export const VN100Table: React.FC = () => {
 
             {/* Table */}
             <div className="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
-                <table className="table table-zebra">
+                <table className="table table-zebra table-sm">
                     <thead className="bg-base-200">
                         <tr>
                             <th className="text-base-content font-bold">#</th>
@@ -101,29 +131,72 @@ export const VN100Table: React.FC = () => {
                                 Price (VND)
                             </th>
                             <th className="text-base-content font-bold text-right">
-                                Market Cap (Billion VND)
+                                Market Cap (B VND)
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                Charter Cap (B VND)
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                P/E
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                24h
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                1W
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                1M
+                            </th>
+                            <th className="text-base-content font-bold text-right">
+                                1Y
                             </th>
                         </tr>
                     </thead>
                     <tbody>
-                        {stocks.map((stock, index) => (
-                            <tr key={stock.ticker} className="hover">
-                                <td className="text-base-content/60">{index + 1}</td>
-                                <td>
-                                    <div className="tooltip tooltip-right" data-tip={stock.company_name}>
-                                        <span className="font-bold text-base-content uppercase cursor-help">
-                                            {stock.ticker.slice(0, 3)}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="text-right font-mono text-base-content">
-                                    {formatPrice(stock.price)}
-                                </td>
-                                <td className="text-right font-mono text-base-content">
-                                    {formatMarketCap(stock.market_cap)}
-                                </td>
-                            </tr>
-                        ))}
+                        {stocks.map((stock, index) => {
+                            const change24h = formatPriceChange(stock.price_change_24h);
+                            const change1w = formatPriceChange(stock.price_change_1w);
+                            const change1m = formatPriceChange(stock.price_change_1m);
+                            const change1y = formatPriceChange(stock.price_change_1y);
+
+                            return (
+                                <tr key={stock.ticker} className="hover">
+                                    <td className="text-base-content/60">{index + 1}</td>
+                                    <td>
+                                        <div className="tooltip tooltip-right" data-tip={stock.company_name}>
+                                            <span className="font-bold text-base-content uppercase cursor-help">
+                                                {stock.ticker.slice(0, 3)}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="text-right font-mono text-base-content">
+                                        {formatPrice(stock.price)}
+                                    </td>
+                                    <td className="text-right font-mono text-base-content">
+                                        {formatMarketCap(stock.market_cap)}
+                                    </td>
+                                    <td className="text-right font-mono text-base-content">
+                                        {formatCharterCapital(stock.charter_capital)}
+                                    </td>
+                                    <td className="text-right font-mono text-base-content">
+                                        {formatPE(stock.pe_ratio)}
+                                    </td>
+                                    <td className={`text-right font-mono ${change24h.className}`}>
+                                        {change24h.text}
+                                    </td>
+                                    <td className={`text-right font-mono ${change1w.className}`}>
+                                        {change1w.text}
+                                    </td>
+                                    <td className={`text-right font-mono ${change1m.className}`}>
+                                        {change1m.text}
+                                    </td>
+                                    <td className={`text-right font-mono ${change1y.className}`}>
+                                        {change1y.text}
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -132,3 +205,4 @@ export const VN100Table: React.FC = () => {
 };
 
 export default VN100Table;
+
