@@ -41,6 +41,23 @@ export interface IndexListResponse {
     count: number;
 }
 
+export interface IndustryInfo {
+    name: string;
+    en_name: string;
+    code: string;
+}
+
+export interface IndustryListResponse {
+    industries: IndustryInfo[];
+    count: number;
+}
+
+export interface IndustryStocksResponse {
+    stocks: Stock[];
+    count: number;
+    industry_name: string;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -71,6 +88,22 @@ export const stockApi = {
         }
         // Otherwise use the generic endpoint
         const response = await apiClient.get<VN100Response>(`/stocks/index/${indexSymbol}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch all available industries
+     */
+    async getIndustries(): Promise<IndustryListResponse> {
+        const response = await apiClient.get<IndustryListResponse>('/stocks/industries');
+        return response.data;
+    },
+
+    /**
+     * Fetch stocks for a given industry
+     */
+    async getIndustryStocks(industryName: string): Promise<IndustryStocksResponse> {
+        const response = await apiClient.get<IndustryStocksResponse>(`/stocks/industry/${encodeURIComponent(industryName)}`);
         return response.data;
     },
 };

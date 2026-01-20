@@ -57,6 +57,26 @@ class IndexListResponse(BaseModel):
     count: int
 
 
+class IndustryInfo(BaseModel):
+    """Information about an ICB industry."""
+    name: str
+    en_name: str
+    code: str
+
+
+class IndustryListResponse(BaseModel):
+    """Response model for industries list."""
+    industries: List[IndustryInfo]
+    count: int
+
+
+class IndustryStocksResponse(BaseModel):
+    """Response model for stocks list of a specific industry."""
+    stocks: List[StockResponse]
+    count: int
+    industry_name: str
+
+
 @router.get("/indices", response_model=IndexListResponse)
 async def get_indices():
     """
@@ -102,6 +122,53 @@ async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
         ],
         count=len(stocks),
         index_symbol=index_symbol
+    )
+
+
+@router.get("/industries", response_model=IndustryListResponse)
+async def get_industries():
+    """
+    Get all available ICB level 2 industries.
+    """
+    industries = await vnstock_service.get_industry_list()
+    return IndustryListResponse(
+        industries=[
+            IndustryInfo(
+                name=ind['icb_name'],
+                en_name=ind['en_icb_name'],
+                code=ind['icb_code']
+            )
+            for ind in industries
+        ],
+        count=len(industries)
+    )
+
+
+@router.get("/industry/{industry_name}", response_model=IndustryStocksResponse)
+async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
+    """
+    Get stocks for a specific industry.
+    """
+    stocks = await vnstock_service.get_industry_stocks(industry_name, limit)
+    
+    return IndustryStocksResponse(
+        stocks=[
+            StockResponse(
+                ticker=stock.ticker,
+                price=stock.price,
+                market_cap=stock.market_cap,
+                company_name=stock.company_name,
+                charter_capital=stock.charter_capital,
+                pe_ratio=stock.pe_ratio,
+                price_change_24h=stock.price_change_24h,
+                price_change_1w=stock.price_change_1w,
+                price_change_1m=stock.price_change_1m,
+                price_change_1y=stock.price_change_1y
+            )
+            for stock in stocks
+        ],
+        count=len(stocks),
+        industry_name=industry_name
     )
 
 

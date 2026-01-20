@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { stockApi } from '../../api/stockApi';
 import type { Stock } from '../../api/stockApi';
+import type { IndustryInfo } from '../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
+import { IndustrySelector } from './IndustrySelector';
 import type { IndexConfig } from './indexConfig';
 
 interface IndexTableProps {
@@ -22,6 +24,8 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         return indices.find(idx => idx.id === 'VN30') || indices[0];
     });
     const [stocks, setStocks] = useState<Stock[]>([]);
+    const [industries, setIndustries] = useState<IndustryInfo[]>([]);
+    const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -33,38 +37,56 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         }
     }, [indices, selectedIndex]);
 
+    // Fetch industries on mount
     useEffect(() => {
-        if (!selectedIndex) return;
+        const fetchIndustries = async () => {
+            try {
+                const response = await stockApi.getIndustries();
+                setIndustries(response.industries);
+            } catch (err) {
+                console.error('Failed to fetch industries:', err);
+            }
+        };
+        fetchIndustries();
+    }, []);
 
+    useEffect(() => {
         const fetchData = async () => {
             try {
                 setLoading(true);
                 setError(null);
-                // Use the generic endpoint if apiEndpoint is generic-style, or specific one
-                // stockApi.getIndexStocks handles both now (if updated correctly)
-                // We'll pass selectedIndex.id (symbol) to getIndexStocks if apiEndpoint is not set?
-                // Actually IndexConfig still has apiEndpoint.
-                // Dynamic indices will use /stocks/index/{id}.
-                
-                // If the index config has a specific endpoint, use it? 
-                // Our mapped dynamic indices will likely set apiEndpoint to /stocks/index/{id}
-                // or we can just pass the ID if we standardize.
-                // Let's rely on apiEndpoint property.
-                const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
-                setStocks(response.stocks);
+
+                if (selectedIndustryName) {
+                    const response = await stockApi.getIndustryStocks(selectedIndustryName);
+                    setStocks(response.stocks);
+                } else if (selectedIndex) {
+                    const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
+                    setStocks(response.stocks);
+                }
             } catch (err) {
-                setError(`Failed to fetch ${selectedIndex.label} stocks data. Please try again.`);
-                console.error(`Error fetching ${selectedIndex.label} data:`, err);
+                const label = selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks');
+                setError(`Failed to fetch ${label} stocks data. Please try again.`);
+                console.error(`Error fetching ${label} data:`, err);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-    }, [selectedIndex]);
+    }, [selectedIndex, selectedIndustryName]);
 
     const handleIndexChange = (newIndex: IndexConfig) => {
         setSelectedIndex(newIndex);
+        // Clear industry filter when changing index explicitly? 
+        // Or keep them separate. User asked for "Place this drop-down next to existing index selector".
+        // Let's clear industry when explicit index is chosen, and vice versa?
+        // Actually, if I select an industry, it should filter the current view.
+        // If I then select another index, I probably want to see that index.
+        setSelectedIndustryName(null);
+    };
+
+    const handleIndustryChange = (industryName: string | null) => {
+        setSelectedIndustryName(industryName);
     };
 
     // Format price to VND
@@ -120,19 +142,30 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                 {/* Header with selector */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
-                        <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
+                        <h2 className="text-2xl font-bold text-base-content">
+                            {selectedIndustryName || selectedIndex.title}
+                        </h2>
+                        <p className="text-base-content/60 text-sm">
+                            {selectedIndustryName ? `Top stocks in ${selectedIndustryName}` : selectedIndex.description}
+                        </p>
                     </div>
-                    <IndexSelector
-                        indices={indices}
-                        selectedIndex={selectedIndex}
-                        onIndexChange={handleIndexChange}
-                    />
+                    <div className="flex gap-2">
+                        <IndustrySelector
+                            industries={industries}
+                            selectedIndustryName={selectedIndustryName}
+                            onIndustryChange={handleIndustryChange}
+                        />
+                        <IndexSelector
+                            indices={indices}
+                            selectedIndex={selectedIndex}
+                            onIndexChange={handleIndexChange}
+                        />
+                    </div>
                 </div>
                 {/* Loading spinner */}
                 <div className="flex flex-col items-center justify-center h-64 gap-4">
                     <span className="loading loading-spinner loading-lg text-primary"></span>
-                    <p className="text-base-content/70">Loading {selectedIndex.label} stocks...</p>
+                    <p className="text-base-content/70">Loading {selectedIndustryName || selectedIndex.label} stocks...</p>
                 </div>
             </div>
         );
@@ -144,14 +177,25 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                 {/* Header with selector */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
-                        <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
+                        <h2 className="text-2xl font-bold text-base-content">
+                            {selectedIndustryName || selectedIndex.title}
+                        </h2>
+                        <p className="text-base-content/60 text-sm">
+                            {selectedIndustryName ? `Top stocks in ${selectedIndustryName}` : selectedIndex.description}
+                        </p>
                     </div>
-                    <IndexSelector
-                        indices={indices}
-                        selectedIndex={selectedIndex}
-                        onIndexChange={handleIndexChange}
-                    />
+                    <div className="flex gap-2">
+                        <IndustrySelector
+                            industries={industries}
+                            selectedIndustryName={selectedIndustryName}
+                            onIndustryChange={handleIndustryChange}
+                        />
+                        <IndexSelector
+                            indices={indices}
+                            selectedIndex={selectedIndex}
+                            onIndexChange={handleIndexChange}
+                        />
+                    </div>
                 </div>
                 {/* Error alert */}
                 <div className="alert alert-error">
@@ -185,14 +229,25 @@ export const IndexTable: React.FC<IndexTableProps> = ({
             {/* Header with selector */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
-                    <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
+                    <h2 className="text-2xl font-bold text-base-content">
+                        {selectedIndustryName || selectedIndex.title}
+                    </h2>
+                    <p className="text-base-content/60 text-sm">
+                        {selectedIndustryName ? `Top stocks in ${selectedIndustryName}` : selectedIndex.description}
+                    </p>
                 </div>
-                <IndexSelector
-                    indices={indices}
-                    selectedIndex={selectedIndex}
-                    onIndexChange={handleIndexChange}
-                />
+                <div className="flex gap-2">
+                    <IndustrySelector
+                        industries={industries}
+                        selectedIndustryName={selectedIndustryName}
+                        onIndustryChange={handleIndustryChange}
+                    />
+                    <IndexSelector
+                        indices={indices}
+                        selectedIndex={selectedIndex}
+                        onIndexChange={handleIndexChange}
+                    />
+                </div>
             </div>
 
             {/* Table */}

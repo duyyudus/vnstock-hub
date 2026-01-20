@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime, date, timedelta
 import time
 import pandas as pd
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from app.db.database import async_session
 from app.db.models import StockCompany, StockDailyPrice, StockIndex
 from app.core.config import settings
@@ -216,6 +216,36 @@ class VnstockService:
         """
         loop = asyncio.get_event_loop()
         stocks = await loop.run_in_executor(None, self._fetch_index_data, index_symbol, limit)
+        
+        # Launch background task for enrichment
+        asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
+        
+        # Apply current cache to the response immediately
+        return await self._apply_cache_to_stocks(stocks)
+
+    async def get_industry_list(self) -> List[Dict[str, str]]:
+        """
+        Fetch all ICB level 2 industries.
+        """
+        loop = asyncio.get_event_loop()
+        df = await loop.run_in_executor(None, self._fetch_industries_sync)
+        if df is not None and not df.empty:
+            # Filter for level 2 industries
+            l2_df = df[df['level'] == 2]
+            return l2_df[['icb_name', 'en_icb_name', 'icb_code']].to_dict('records')
+        return []
+
+    def _fetch_industries_sync(self) -> pd.DataFrame:
+        """Fetch industries synchronously."""
+        from vnstock import Listing
+        return Listing().industries_icb()
+
+    async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
+        """
+        Fetch stocks for a specific ICB industry.
+        """
+        loop = asyncio.get_event_loop()
+        stocks = await loop.run_in_executor(None, self._fetch_industry_data, industry_name, limit)
         
         # Launch background task for enrichment
         asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
@@ -439,7 +469,7 @@ class VnstockService:
         Synchronous method to fetch index data (VN100, VN30, etc.) using vnstock.
         Called in thread pool executor to avoid blocking.
         """
-        from vnstock import Listing, Trading
+        from vnstock import Listing
         
         try:
             # Map index name to group code
@@ -463,6 +493,45 @@ class VnstockService:
                 # The series returned by symbols_by_group contains the symbols
                 symbols = symbols_df.tolist()
             
+            return self._fetch_symbols_data(symbols, limit)
+            
+        except Exception as e:
+            print(f"Error fetching {index_name} data: {e}")
+            return []
+
+    def _fetch_industry_data(self, industry_name: str, limit: int) -> List[StockInfo]:
+        """
+        Synchronous method to fetch industry data using vnstock.
+        """
+        from vnstock import Listing
+        try:
+            listing = Listing()
+            # Get all symbols with industry info
+            df = listing.symbols_by_industries()
+            if df is not None and not df.empty:
+                # Filter by icb_name2 (Level 2) or icb_name3/4 if needed
+                # We'll match against any of them for flexibility
+                cols_to_check = ['icb_name2', 'icb_name3', 'icb_name4']
+                mask = pd.Series([False] * len(df))
+                for col in cols_to_check:
+                    if col in df.columns:
+                        mask |= (df[col] == industry_name)
+                
+                filtered_df = df[mask]
+                symbols = filtered_df['symbol'].tolist()
+                
+                return self._fetch_symbols_data(symbols, limit)
+            return []
+        except Exception as e:
+            print(f"Error fetching industry {industry_name} data: {e}")
+            return []
+
+    def _fetch_symbols_data(self, symbols: List[str], limit: int) -> List[StockInfo]:
+        """
+        Generic method to fetch price and market cap data for a list of symbols.
+        """
+        from vnstock import Trading
+        try:
             # Get price board for stocks in batches
             trading = Trading(source='VCI')
             stocks_data = []
@@ -475,7 +544,6 @@ class VnstockService:
                     price_board = trading.price_board(batch)
                     
                     # Add delay between batches
-                    import time
                     time.sleep(1.0) # Slightly longer delay for safety
                     
                     if price_board is not None and not price_board.empty:
@@ -574,7 +642,7 @@ class VnstockService:
             return top_stocks
             
         except Exception as e:
-            print(f"Error fetching VN100 data: {e}")
+            print(f"Error fetching symbols data: {e}")
             import traceback
             traceback.print_exc()
             return []
@@ -582,21 +650,8 @@ class VnstockService:
     def _enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
         Enrich stock data with historical price changes (1w, 1m, 1y).
-        Uses synchronous wrapper for async cache-aware implementation.
         """
-        import asyncio
-        
-        # Run async enrichment in event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're already in an async context, need to run synchronously
-                return self._enrich_with_price_changes_sync(stocks)
-            else:
-                return loop.run_until_complete(self._enrich_with_price_changes_async(stocks))
-        except RuntimeError:
-            # No event loop, create one
-            return asyncio.run(self._enrich_with_price_changes_async(stocks))
+        return self._enrich_with_price_changes_sync(stocks)
     
     def _enrich_with_price_changes_sync(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
@@ -765,13 +820,7 @@ class VnstockService:
                 print(f"Error fetching history for {symbol}: {e}")
                 continue
     
-    async def _enrich_with_price_changes_async(self, stocks: List[StockInfo]) -> List[StockInfo]:
-        """
-        Async version of price change enrichment (for future use).
-        Currently delegates to sync version.
-        """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._enrich_with_price_changes_sync, stocks)
+
 
 
 # Singleton instance
