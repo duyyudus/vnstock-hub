@@ -41,7 +41,6 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none gap-2">
-                        <div className="badge badge-outline badge-success">Live</div>
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle">
                                 <svg
