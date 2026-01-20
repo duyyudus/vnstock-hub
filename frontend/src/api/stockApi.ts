@@ -29,8 +29,28 @@ export interface VN100Response {
     count: number;
 }
 
+export interface IndexInfo {
+    symbol: string;
+    name: string;
+    group: string | null;
+    description: string | null;
+}
+
+export interface IndexListResponse {
+    indices: IndexInfo[];
+    count: number;
+}
+
 // Stock API functions
 export const stockApi = {
+    /**
+     * Fetch all available indices
+     */
+    async getIndices(): Promise<IndexListResponse> {
+        const response = await apiClient.get<IndexListResponse>('/stocks/indices');
+        return response.data;
+    },
+
     /**
      * Fetch VN-100 stocks data
      */
@@ -40,11 +60,17 @@ export const stockApi = {
     },
 
     /**
-     * Fetch stocks for a given index by endpoint
-     * @param endpoint - API endpoint path (e.g., '/stocks/vn100')
+     * Fetch stocks for a given index by endpoint or generic endpoint
+     * @param indexSymbol - Index symbol (e.g. 'VN30') to use with generic endpoint, OR full endpoint path
      */
-    async getIndexStocks(endpoint: string): Promise<VN100Response> {
-        const response = await apiClient.get<VN100Response>(endpoint);
+    async getIndexStocks(indexSymbol: string): Promise<VN100Response> {
+        // If it starts with /, treat as direct endpoint (backward compatibility)
+        if (indexSymbol.startsWith('/')) {
+            const response = await apiClient.get<VN100Response>(indexSymbol);
+            return response.data;
+        }
+        // Otherwise use the generic endpoint
+        const response = await apiClient.get<VN100Response>(`/stocks/index/${indexSymbol}`);
         return response.data;
     },
 };

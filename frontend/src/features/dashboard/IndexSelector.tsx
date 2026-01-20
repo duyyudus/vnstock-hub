@@ -1,7 +1,9 @@
 import React from 'react';
-import { AVAILABLE_INDICES, type IndexConfig } from './indexConfig';
+import type { IndexConfig } from './indexConfig';
 
 interface IndexSelectorProps {
+    /** List of available indices */
+    indices: IndexConfig[];
     /** Currently selected index */
     selectedIndex: IndexConfig;
     /** Callback when user selects a different index */
@@ -13,11 +15,12 @@ interface IndexSelectorProps {
  * Positioned in the top-right corner of the index table header.
  */
 export const IndexSelector: React.FC<IndexSelectorProps> = ({
+    indices,
     selectedIndex,
     onIndexChange,
 }) => {
     const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const newIndex = AVAILABLE_INDICES.find((idx) => idx.id === event.target.value);
+        const newIndex = indices.find((idx) => idx.id === event.target.value);
         if (newIndex) {
             onIndexChange(newIndex);
         }
@@ -30,7 +33,7 @@ export const IndexSelector: React.FC<IndexSelectorProps> = ({
             onChange={handleChange}
             aria-label="Select stock index"
         >
-            {AVAILABLE_INDICES.map((index) => (
+            {indices.map((index) => (
                 <option key={index.id} value={index.id}>
                     {index.label}
                 </option>

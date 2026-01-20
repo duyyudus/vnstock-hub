@@ -9,7 +9,7 @@ import time
 import pandas as pd
 from sqlalchemy import select, and_, or_
 from app.db.database import async_session
-from app.db.models import StockCompany, StockDailyPrice
+from app.db.models import StockCompany, StockDailyPrice, StockIndex
 from app.core.config import settings
 
 T = TypeVar('T')
@@ -83,9 +83,146 @@ class StockInfo:
 class VnstockService:
     """Service class for vnstock operations."""
     
+    # Valid groups supported by symbols_by_group
+    VALID_GROUPS = {
+        'HOSE', 'VN30', 'VNMidCap', 'VNSmallCap', 'VNAllShare', 'VN100', 
+        'ETF', 'HNX', 'HNX30', 'HNXCon', 'HNXFin', 'HNXLCap', 'HNXMSCap', 
+        'HNXMan', 'UPCOM', 'FU_INDEX', 'FU_BOND', 'BOND', 'CW'
+    }
+
     def __init__(self):
         self._enriching_tickers = set()
     
+    async def sync_indices(self) -> None:
+        """
+        Fetch all indices from vnstock and update the database.
+        """
+        loop = asyncio.get_event_loop()
+        indices_df = await loop.run_in_executor(None, self._fetch_all_indices_from_lib)
+        
+        # Define manual indices (Exchanges/Groups that are not in all_indices but are supported)
+        manual_indices = [
+            {'symbol': 'HOSE', 'name': 'HOSE Exchange', 'group': 'Exchange'},
+            {'symbol': 'HNX', 'name': 'HNX Exchange', 'group': 'Exchange'},
+            {'symbol': 'UPCOM', 'name': 'UPCOM Exchange', 'group': 'Exchange'},
+        ]
+
+        async with async_session() as session:
+            count = 0
+            
+            # Process manual indices
+            for item in manual_indices:
+                try:
+                    symbol = item['symbol']
+                    # Ensure supported (it should be, since we manually added it)
+                    if symbol not in self.VALID_GROUPS:
+                        continue
+                        
+                    # Upsert
+                    stmt = select(StockIndex).where(StockIndex.symbol == symbol)
+                    result = await session.execute(stmt)
+                    existing = result.scalar_one_or_none()
+                    
+                    if existing:
+                        existing.name = item['name']
+                        existing.group = item['group']
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        new_index = StockIndex(
+                            symbol=symbol,
+                            name=item['name'],
+                            group=item['group']
+                        )
+                        session.add(new_index)
+                    count += 1
+                except Exception as e:
+                    print(f"Error processing manual index {item['symbol']}: {e}")
+
+            # Process fetched indices
+            if indices_df is not None and not indices_df.empty:
+                for _, row in indices_df.iterrows():
+                    try:
+                        symbol = row.get('symbol')
+                        if not symbol:
+                            continue
+
+                        # Check if supported
+                        group_code = self._get_group_code_for_index(symbol)
+                        if group_code not in self.VALID_GROUPS:
+                            continue
+                            
+                        # Prepare data
+                        name = row.get('name', '')
+                        if 'full_name' in row:
+                            name = row['full_name']
+                        elif not name and 'index_name' in row:
+                            name = row['index_name']
+                        
+                        if not name:
+                            name = symbol
+
+                        group = row.get('group', None)
+                        description = row.get('description', None)
+                        
+                        # Upsert logic
+                        stmt = select(StockIndex).where(StockIndex.symbol == symbol)
+                        result = await session.execute(stmt)
+                        existing = result.scalar_one_or_none()
+                        
+                        if existing:
+                            existing.name = name
+                            existing.group = group
+                            existing.description = description
+                            existing.updated_at = datetime.utcnow()
+                        else:
+                            new_index = StockIndex(
+                                symbol=symbol,
+                                name=name,
+                                group=group,
+                                description=description
+                            )
+                            session.add(new_index)
+                        count += 1
+                    except Exception as e:
+                        print(f"Error processing index {row.get('symbol')}: {e}")
+                    
+            await session.commit()
+            print(f"Synced {count} supported indices to database.")
+
+    def _fetch_all_indices_from_lib(self) -> pd.DataFrame:
+        """Fetch all indices from vnstock library synchronously."""
+        from vnstock import Listing
+        return Listing().all_indices()
+
+    async def get_indices(self) -> List[StockIndex]:
+        """
+        Get all available indices from the database.
+        """
+        async with async_session() as session:
+            stmt = select(StockIndex).order_by(StockIndex.symbol)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_index_stocks(self, index_symbol: str, limit: int = 100) -> List[StockInfo]:
+        """
+        Fetch stocks for a specific index with price and market cap data.
+        
+        Args:
+            index_symbol: The symbol of the index (e.g., "VN100", "VN30", "VNDIAMOND")
+            limit: Maximum number of stocks to return
+            
+        Returns:
+            List of StockInfo objects
+        """
+        loop = asyncio.get_event_loop()
+        stocks = await loop.run_in_executor(None, self._fetch_index_data, index_symbol, limit)
+        
+        # Launch background task for enrichment
+        asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
+        
+        # Apply current cache to the response immediately
+        return await self._apply_cache_to_stocks(stocks)
+
     async def get_vn100_stocks(self) -> List[StockInfo]:
         """
         Fetch VN-100 stocks (top 100 by market cap) with price and market cap data.
@@ -93,15 +230,7 @@ class VnstockService:
         Returns:
             List of StockInfo objects include company_name
         """
-        loop = asyncio.get_event_loop()
-        stocks = await loop.run_in_executor(None, self._fetch_index_data, "VN100", settings.vn100_limit)
-        
-        # Launch background task for enrichment to avoid blocking the response
-        # This allows the API to return immediately with cached data
-        asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
-        
-        # Apply current cache to the response immediately
-        return await self._apply_cache_to_stocks(stocks)
+        return await self.get_index_stocks("VN100", settings.vn100_limit)
 
     async def get_vn30_stocks(self) -> List[StockInfo]:
         """
@@ -110,14 +239,7 @@ class VnstockService:
         Returns:
             List of StockInfo objects include company_name
         """
-        loop = asyncio.get_event_loop()
-        stocks = await loop.run_in_executor(None, self._fetch_index_data, "VN30", settings.vn30_limit)
-        
-        # Launch background task for enrichment
-        asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
-        
-        # Apply current cache to the response immediately
-        return await self._apply_cache_to_stocks(stocks)
+        return await self.get_index_stocks("VN30", settings.vn30_limit)
 
     async def _apply_cache_to_stocks(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """Apply currently cached data to stocks without fetching new data."""
@@ -294,6 +416,24 @@ class VnstockService:
             df.columns = new_cols
         return df
     
+    def _get_group_code_for_index(self, index_symbol: str) -> str:
+        """
+        Map index symbol from all_indices() to group code expected by symbols_by_group().
+        """
+        mapping = {
+            'VN30': 'VN30',
+            'VN100': 'VN100',
+            'VNMID': 'VNMidCap',
+            'VNSML': 'VNSmallCap',
+            'VNALL': 'VNAllShare',
+            'HNX30': 'HNX30',
+            # Add more mappings as needed based on valid groups:
+            # ['HOSE', 'VN30', 'VNMidCap', 'VNSmallCap', 'VNAllShare', 'VN100', 
+            #  'ETF', 'HNX', 'HNX30', 'HNXCon', 'HNXFin', 'HNXLCap', 'HNXMSCap', 
+            #  'HNXMan', 'UPCOM', 'FU_INDEX', 'FU_BOND', 'BOND', 'CW']
+        }
+        return mapping.get(index_symbol, index_symbol)
+
     def _fetch_index_data(self, index_name: str, limit: int) -> List[StockInfo]:
         """
         Synchronous method to fetch index data (VN100, VN30, etc.) using vnstock.
@@ -302,13 +442,23 @@ class VnstockService:
         from vnstock import Listing, Trading
         
         try:
+            # Map index name to group code
+            group_code = self._get_group_code_for_index(index_name)
+            
             # Get stock symbols for the specified group
             listing = Listing()
-            symbols_df = listing.symbols_by_group(index_name)
+            try:
+                symbols_df = listing.symbols_by_group(group_code)
+            except ValueError as e:
+                print(f"Warning: Group '{group_code}' (mapped from '{index_name}') not supported by symbols_by_group: {e}")
+                return []
+            except Exception as e:
+                print(f"Error fetching symbols for group '{group_code}': {e}")
+                return []
+
             if symbols_df is None or symbols_df.empty:
-                print(f"Warning: Could not fetch symbols for {index_name} group. Falling back to all symbols.")
-                all_symbols_df = listing.all_symbols()
-                symbols = all_symbols_df['symbol'].tolist()[:limit]
+                print(f"Warning: Could not fetch symbols for {group_code} group.")
+                return []
             else:
                 # The series returned by symbols_by_group contains the symbols
                 symbols = symbols_df.tolist()
@@ -331,10 +481,6 @@ class VnstockService:
                     if price_board is not None and not price_board.empty:
                         # Flatten multi-level column names
                         price_board = self._flatten_columns(price_board)
-                        
-                        # Filter for HSX exchange only (VN-100/VN-30 are HOSE/HSX-based)
-                        if 'listing_exchange' in price_board.columns:
-                            price_board = price_board[price_board['listing_exchange'] == 'HSX']
                         
                         for _, row in price_board.iterrows():
                             ticker = row.get('listing_symbol', '')

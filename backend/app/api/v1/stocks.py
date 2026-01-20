@@ -36,6 +36,75 @@ class VN30Response(BaseModel):
     count: int
 
 
+class IndexStocksResponse(BaseModel):
+    """Response model for stocks list of a specific index."""
+    stocks: List[StockResponse]
+    count: int
+    index_symbol: str
+
+
+class IndexInfo(BaseModel):
+    """Information about a stock index."""
+    symbol: str
+    name: str
+    group: Optional[str] = None
+    description: Optional[str] = None
+
+
+class IndexListResponse(BaseModel):
+    """Response model for indices list."""
+    indices: List[IndexInfo]
+    count: int
+
+
+@router.get("/indices", response_model=IndexListResponse)
+async def get_indices():
+    """
+    Get all available stock indices.
+    """
+    indices = await vnstock_service.get_indices()
+    return IndexListResponse(
+        indices=[
+            IndexInfo(
+                symbol=idx.symbol,
+                name=idx.name,
+                group=idx.group,
+                description=idx.description
+            )
+            for idx in indices
+        ],
+        count=len(indices)
+    )
+
+
+@router.get("/index/{index_symbol}", response_model=IndexStocksResponse)
+async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
+    """
+    Get stocks for a specific index.
+    """
+    stocks = await vnstock_service.get_index_stocks(index_symbol, limit)
+    
+    return IndexStocksResponse(
+        stocks=[
+            StockResponse(
+                ticker=stock.ticker,
+                price=stock.price,
+                market_cap=stock.market_cap,
+                company_name=stock.company_name,
+                charter_capital=stock.charter_capital,
+                pe_ratio=stock.pe_ratio,
+                price_change_24h=stock.price_change_24h,
+                price_change_1w=stock.price_change_1w,
+                price_change_1m=stock.price_change_1m,
+                price_change_1y=stock.price_change_1y
+            )
+            for stock in stocks
+        ],
+        count=len(stocks),
+        index_symbol=index_symbol
+    )
+
+
 @router.get("/vn100", response_model=VN100Response)
 async def get_vn100_stocks():
     """

@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { stockApi } from '../../api/stockApi';
 import type { Stock } from '../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
-import { type IndexConfig, getIndexById, DEFAULT_INDEX_ID } from './indexConfig';
+import type { IndexConfig } from './indexConfig';
 
 interface IndexTableProps {
-    /** Optional: Initial index to display (defaults to VN-100) */
-    initialIndexId?: string;
+    /** List of available indices */
+    indices: IndexConfig[];
 }
 
 /**
@@ -14,20 +14,42 @@ interface IndexTableProps {
  * Displays stocks for the selected index with price, market cap, and additional metrics.
  */
 export const IndexTable: React.FC<IndexTableProps> = ({
-    initialIndexId = DEFAULT_INDEX_ID
+    indices
 }) => {
-    const [selectedIndex, setSelectedIndex] = useState<IndexConfig>(
-        getIndexById(initialIndexId)
-    );
+    // Default to VN30 if available, otherwise first index
+    const [selectedIndex, setSelectedIndex] = useState<IndexConfig | null>(() => {
+        if (indices.length === 0) return null;
+        return indices.find(idx => idx.id === 'VN30') || indices[0];
+    });
     const [stocks, setStocks] = useState<Stock[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Update selected index if indices prop changes and we don't have a selection yet
     useEffect(() => {
+        if (indices.length > 0 && !selectedIndex) {
+            const defaultIndex = indices.find(idx => idx.id === 'VN30') || indices[0];
+            setSelectedIndex(defaultIndex);
+        }
+    }, [indices, selectedIndex]);
+
+    useEffect(() => {
+        if (!selectedIndex) return;
+
         const fetchData = async () => {
             try {
                 setLoading(true);
                 setError(null);
+                // Use the generic endpoint if apiEndpoint is generic-style, or specific one
+                // stockApi.getIndexStocks handles both now (if updated correctly)
+                // We'll pass selectedIndex.id (symbol) to getIndexStocks if apiEndpoint is not set?
+                // Actually IndexConfig still has apiEndpoint.
+                // Dynamic indices will use /stocks/index/{id}.
+                
+                // If the index config has a specific endpoint, use it? 
+                // Our mapped dynamic indices will likely set apiEndpoint to /stocks/index/{id}
+                // or we can just pass the ID if we standardize.
+                // Let's rely on apiEndpoint property.
                 const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                 setStocks(response.stocks);
             } catch (err) {
@@ -88,6 +110,10 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         return { text, className };
     };
 
+    if (!selectedIndex) {
+        return <div>No indices available.</div>;
+    }
+
     if (loading) {
         return (
             <div className="flex flex-col gap-4">
@@ -98,6 +124,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                         <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
                     </div>
                     <IndexSelector
+                        indices={indices}
                         selectedIndex={selectedIndex}
                         onIndexChange={handleIndexChange}
                     />
@@ -121,6 +148,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                         <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
                     </div>
                     <IndexSelector
+                        indices={indices}
                         selectedIndex={selectedIndex}
                         onIndexChange={handleIndexChange}
                     />
@@ -161,6 +189,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
                 </div>
                 <IndexSelector
+                    indices={indices}
                     selectedIndex={selectedIndex}
                     onIndexChange={handleIndexChange}
                 />

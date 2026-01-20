@@ -14,6 +14,18 @@ class StockCompany(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class StockIndex(Base):
+    """Model to store stock market indices."""
+    __tablename__ = "stock_indices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String(20), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(String(500), nullable=True)
+    group = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class StockDailyPrice(Base):
     """Historical daily prices for stocks (OHLCV data)."""
     __tablename__ = "stock_daily_prices"

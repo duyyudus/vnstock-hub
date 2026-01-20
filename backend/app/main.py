@@ -9,12 +9,20 @@ from app.core.config import settings
 from app.api.v1.stocks import router as stocks_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
+from app.services.vnstock_service import vnstock_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # Sync indices from vnstock
+    try:
+        await vnstock_service.sync_indices()
+    except Exception as e:
+        print(f"Error syncing indices on startup: {e}")
+        
     yield
 
 # Create FastAPI app

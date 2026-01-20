@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
 import IndexTable from './IndexTable';
+import { stockApi } from '../../api/stockApi';
+import type { IndexConfig } from './indexConfig';
 
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
-    // Future tabs can be added here
-    // { id: 'watchlist', label: 'Watchlist', icon: '⭐' },
-    // { id: 'portfolio', label: 'Portfolio', icon: '💼' },
 ];
 
 /**
@@ -15,12 +14,45 @@ const DASHBOARD_TABS = [
  */
 export const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState('indices');
+    const [indices, setIndices] = useState<IndexConfig[]>([]);
+    const [loadingIndices, setLoadingIndices] = useState(true);
+
+    useEffect(() => {
+        const fetchIndices = async () => {
+            try {
+                const response = await stockApi.getIndices();
+                const mappedIndices: IndexConfig[] = response.indices.map((idx) => ({
+                    id: idx.symbol,
+                    label: idx.symbol,
+                    title: idx.name,
+                    description: idx.description || `Stocks in ${idx.name}`,
+                    apiEndpoint: idx.symbol, // Use symbol as ID for generic endpoint
+                }));
+                setIndices(mappedIndices);
+            } catch (error) {
+                console.error('Failed to fetch indices:', error);
+                // Fallback to empty list or static default if needed
+            } finally {
+                setLoadingIndices(false);
+            }
+        };
+
+        fetchIndices();
+    }, []);
 
     // Render content based on active tab
     const renderContent = () => {
         switch (activeTab) {
             case 'indices':
-                return <IndexTable />;
+                if (loadingIndices) {
+                    return (
+                        <div className="flex flex-col items-center justify-center h-64">
+                            <span className="loading loading-spinner loading-lg text-primary"></span>
+                            <p className="mt-4 text-base-content/70">Loading available indices...</p>
+                        </div>
+                    );
+                }
+                return <IndexTable indices={indices} />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">
