@@ -28,14 +28,14 @@ export const AVAILABLE_INDICES: IndexConfig[] = [
         description: 'Top 100 stocks by market capitalization on HOSE',
         apiEndpoint: '/stocks/vn100',
     },
+    {
+        id: 'vn30',
+        label: 'VN-30',
+        title: 'VN-30 Stocks',
+        description: 'Top 30 stocks by market capitalization and liquidity on HOSE',
+        apiEndpoint: '/stocks/vn30',
+    },
     // Future indices can be added here:
-    // {
-    //   id: 'vn30',
-    //   label: 'VN-30',
-    //   title: 'VN-30 Stocks',
-    //   description: 'Top 30 stocks by market capitalization and liquidity on HOSE',
-    //   apiEndpoint: '/stocks/vn30',
-    // },
     // {
     //   id: 'hnx30',
     //   label: 'HNX-30',
@@ -46,7 +46,7 @@ export const AVAILABLE_INDICES: IndexConfig[] = [
 ];
 
 /** Default index to show when the page loads */
-export const DEFAULT_INDEX_ID = 'vn100';
+export const DEFAULT_INDEX_ID = 'vn30';
 
 /**
  * Get an index configuration by its ID.

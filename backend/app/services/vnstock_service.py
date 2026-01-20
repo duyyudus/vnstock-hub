@@ -94,10 +94,26 @@ class VnstockService:
             List of StockInfo objects include company_name
         """
         loop = asyncio.get_event_loop()
-        stocks = await loop.run_in_executor(None, self._fetch_vn100_data)
+        stocks = await loop.run_in_executor(None, self._fetch_index_data, "VN100", settings.vn100_limit)
         
         # Launch background task for enrichment to avoid blocking the response
         # This allows the API to return immediately with cached data
+        asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
+        
+        # Apply current cache to the response immediately
+        return await self._apply_cache_to_stocks(stocks)
+
+    async def get_vn30_stocks(self) -> List[StockInfo]:
+        """
+        Fetch VN-30 stocks (top 30 by market cap and liquidity) with price and market cap data.
+        
+        Returns:
+            List of StockInfo objects include company_name
+        """
+        loop = asyncio.get_event_loop()
+        stocks = await loop.run_in_executor(None, self._fetch_index_data, "VN30", settings.vn30_limit)
+        
+        # Launch background task for enrichment
         asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
         
         # Apply current cache to the response immediately
@@ -278,33 +294,33 @@ class VnstockService:
             df.columns = new_cols
         return df
     
-    def _fetch_vn100_data(self) -> List[StockInfo]:
+    def _fetch_index_data(self, index_name: str, limit: int) -> List[StockInfo]:
         """
-        Synchronous method to fetch VN-100 data using vnstock.
+        Synchronous method to fetch index data (VN100, VN30, etc.) using vnstock.
         Called in thread pool executor to avoid blocking.
         """
         from vnstock import Listing, Trading
         
         try:
-            # Get VN100 stock symbols directly
+            # Get stock symbols for the specified group
             listing = Listing()
-            vn100_symbols_df = listing.symbols_by_group('VN100')
-            if vn100_symbols_df is None or vn100_symbols_df.empty:
-                print("Warning: Could not fetch symbols for VN100 group. Falling back to all symbols.")
+            symbols_df = listing.symbols_by_group(index_name)
+            if symbols_df is None or symbols_df.empty:
+                print(f"Warning: Could not fetch symbols for {index_name} group. Falling back to all symbols.")
                 all_symbols_df = listing.all_symbols()
-                vn100_symbols = all_symbols_df['symbol'].tolist()[:100]
+                symbols = all_symbols_df['symbol'].tolist()[:limit]
             else:
-                # The series returned by symbols_by_group('VN100') contains the symbols
-                vn100_symbols = vn100_symbols_df.tolist()
+                # The series returned by symbols_by_group contains the symbols
+                symbols = symbols_df.tolist()
             
             # Get price board for stocks in batches
             trading = Trading(source='VCI')
             stocks_data = []
             batch_size = 50 # Smaller batch for more reliable fetching
             
-            # Process VN100 symbols
-            for i in range(0, len(vn100_symbols), batch_size):
-                batch = vn100_symbols[i:i + batch_size]
+            # Process symbols
+            for i in range(0, len(symbols), batch_size):
+                batch = symbols[i:i + batch_size]
                 try:
                     price_board = trading.price_board(batch)
                     
@@ -316,7 +332,7 @@ class VnstockService:
                         # Flatten multi-level column names
                         price_board = self._flatten_columns(price_board)
                         
-                        # Filter for HSX exchange only (VN-100 is HOSE/HSX-based)
+                        # Filter for HSX exchange only (VN-100/VN-30 are HOSE/HSX-based)
                         if 'listing_exchange' in price_board.columns:
                             price_board = price_board[price_board['listing_exchange'] == 'HSX']
                         
@@ -404,7 +420,7 @@ class VnstockService:
             
             # Sort by market cap descending and take the requested limit
             stocks_data.sort(key=lambda x: x.market_cap, reverse=True)
-            top_stocks = stocks_data[:settings.vn100_limit]
+            top_stocks = stocks_data[:limit]
             
             # Fetch historical price changes for top stocks
             top_stocks = self._enrich_with_price_changes(top_stocks)

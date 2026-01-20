@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     
     # Stock Fetching
     vn100_limit: int = 100
+    vn30_limit: int = 30
     
     @property
     def cors_origins_list(self) -> List[str]:
