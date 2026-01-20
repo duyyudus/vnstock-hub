@@ -1,12 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { stockApi } from '../../api/stockApi';
 import type { Stock } from '../../api/stockApi';
+import { IndexSelector } from './IndexSelector';
+import { type IndexConfig, getIndexById, DEFAULT_INDEX_ID } from './indexConfig';
+
+interface IndexTableProps {
+    /** Optional: Initial index to display (defaults to VN-100) */
+    initialIndexId?: string;
+}
 
 /**
- * VN-100 stocks table component.
- * Displays top 100 stocks by market cap with price, market cap, and additional metrics.
+ * Generic index stocks table component.
+ * Displays stocks for the selected index with price, market cap, and additional metrics.
  */
-export const VN100Table: React.FC = () => {
+export const IndexTable: React.FC<IndexTableProps> = ({
+    initialIndexId = DEFAULT_INDEX_ID
+}) => {
+    const [selectedIndex, setSelectedIndex] = useState<IndexConfig>(
+        getIndexById(initialIndexId)
+    );
     const [stocks, setStocks] = useState<Stock[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -16,18 +28,22 @@ export const VN100Table: React.FC = () => {
             try {
                 setLoading(true);
                 setError(null);
-                const response = await stockApi.getVN100Stocks();
+                const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                 setStocks(response.stocks);
             } catch (err) {
-                setError('Failed to fetch VN-100 stocks data. Please try again.');
-                console.error('Error fetching VN-100 data:', err);
+                setError(`Failed to fetch ${selectedIndex.label} stocks data. Please try again.`);
+                console.error(`Error fetching ${selectedIndex.label} data:`, err);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-    }, []);
+    }, [selectedIndex]);
+
+    const handleIndexChange = (newIndex: IndexConfig) => {
+        setSelectedIndex(newIndex);
+    };
 
     // Format price to VND
     const formatPrice = (price: number): string => {
@@ -74,50 +90,80 @@ export const VN100Table: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center h-64 gap-4">
-                <span className="loading loading-spinner loading-lg text-primary"></span>
-                <p className="text-base-content/70">Loading VN-100 stocks...</p>
+            <div className="flex flex-col gap-4">
+                {/* Header with selector */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
+                        <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
+                    </div>
+                    <IndexSelector
+                        selectedIndex={selectedIndex}
+                        onIndexChange={handleIndexChange}
+                    />
+                </div>
+                {/* Loading spinner */}
+                <div className="flex flex-col items-center justify-center h-64 gap-4">
+                    <span className="loading loading-spinner loading-lg text-primary"></span>
+                    <p className="text-base-content/70">Loading {selectedIndex.label} stocks...</p>
+                </div>
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="alert alert-error">
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="stroke-current shrink-0 h-6 w-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                >
-                    <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="1"
-                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+            <div className="flex flex-col gap-4">
+                {/* Header with selector */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
+                        <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
+                    </div>
+                    <IndexSelector
+                        selectedIndex={selectedIndex}
+                        onIndexChange={handleIndexChange}
                     />
-                </svg>
-                <span>{error}</span>
-                <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => window.location.reload()}
-                >
-                    Retry
-                </button>
+                </div>
+                {/* Error alert */}
+                <div className="alert alert-error">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="stroke-current shrink-0 h-6 w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1"
+                            d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                    </svg>
+                    <span>{error}</span>
+                    <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => window.location.reload()}
+                    >
+                        Retry
+                    </button>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="flex flex-col gap-4">
-            {/* Header */}
+            {/* Header with selector */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-base-content">VN-100 Stocks</h2>
-                    <p className="text-base-content/60 text-sm">
-                        Top 100 stocks by market capitalization
-                    </p>
+                    <h2 className="text-2xl font-bold text-base-content">{selectedIndex.title}</h2>
+                    <p className="text-base-content/60 text-sm">{selectedIndex.description}</p>
                 </div>
+                <IndexSelector
+                    selectedIndex={selectedIndex}
+                    onIndexChange={handleIndexChange}
+                />
             </div>
 
             {/* Table */}
@@ -204,5 +250,4 @@ export const VN100Table: React.FC = () => {
     );
 };
 
-export default VN100Table;
-
+export default IndexTable;

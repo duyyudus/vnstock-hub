@@ -38,6 +38,15 @@ export const stockApi = {
         const response = await apiClient.get<VN100Response>('/stocks/vn100');
         return response.data;
     },
+
+    /**
+     * Fetch stocks for a given index by endpoint
+     * @param endpoint - API endpoint path (e.g., '/stocks/vn100')
+     */
+    async getIndexStocks(endpoint: string): Promise<VN100Response> {
+        const response = await apiClient.get<VN100Response>(endpoint);
+        return response.data;
+    },
 };
 
 export default apiClient;

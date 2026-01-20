@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import VN100Table from './VN100Table.tsx';
+import IndexTable from './IndexTable';
 
 // Tab definitions
 const DASHBOARD_TABS = [
-    { id: 'vn100', label: 'VN-100' },
+    { id: 'indices', label: 'Indices' },
     // Future tabs can be added here
     // { id: 'watchlist', label: 'Watchlist', icon: '⭐' },
     // { id: 'portfolio', label: 'Portfolio', icon: '💼' },
@@ -14,13 +14,13 @@ const DASHBOARD_TABS = [
  * Main dashboard component with tab navigation.
  */
 export const Dashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState('vn100');
+    const [activeTab, setActiveTab] = useState('indices');
 
     // Render content based on active tab
     const renderContent = () => {
         switch (activeTab) {
-            case 'vn100':
-                return <VN100Table />;
+            case 'indices':
+                return <IndexTable />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">
