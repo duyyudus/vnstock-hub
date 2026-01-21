@@ -41,6 +41,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         key: 'market_cap',
         direction: 'desc'
     });
+    const [searchQuery, setSearchQuery] = useState('');
 
 
     // Update selected index if indices prop changes and we don't have a selection yet
@@ -161,8 +162,16 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         setSortConfig({ key, direction });
     };
 
+    const filteredStocks = useMemo(() => {
+        if (!searchQuery.trim()) return stocks;
+        const query = searchQuery.toLowerCase().trim();
+        return stocks.filter(stock =>
+            stock.ticker.toLowerCase().includes(query)
+        );
+    }, [stocks, searchQuery]);
+
     const sortedStocks = useMemo(() => {
-        const sortableStocks = [...stocks];
+        const sortableStocks = [...filteredStocks];
         if (sortConfig.key) {
             sortableStocks.sort((a, b) => {
                 const aValue = a[sortConfig.key];
@@ -181,7 +190,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
             });
         }
         return sortableStocks;
-    }, [stocks, sortConfig]);
+    }, [filteredStocks, sortConfig]);
 
     const renderSortIcon = (key: SortKey) => {
         if (sortConfig.key !== key) {
@@ -221,6 +230,23 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Search tickers..."
+                                className="input input-sm input-bordered w-32 md:w-64 pl-8"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            <svg
+                                className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
                         <IndustrySelector
                             industries={industries}
                             selectedIndustryName={selectedIndustryName}
@@ -256,6 +282,23 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Search tickers..."
+                                className="input input-sm input-bordered w-32 md:w-64 pl-8"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            <svg
+                                className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
                         <IndustrySelector
                             industries={industries}
                             selectedIndustryName={selectedIndustryName}
@@ -308,6 +351,23 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search tickers..."
+                            className="input input-sm input-bordered w-32 md:w-64 pl-8"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        <svg
+                            className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
                     <IndustrySelector
                         industries={industries}
                         selectedIndustryName={selectedIndustryName}
@@ -412,49 +472,57 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     </thead>
 
                     <tbody>
-                        {sortedStocks.map((stock, index) => {
-                            const change24h = formatPriceChange(stock.price_change_24h);
-                            const change1w = formatPriceChange(stock.price_change_1w);
-                            const change1m = formatPriceChange(stock.price_change_1m);
-                            const change1y = formatPriceChange(stock.price_change_1y);
+                        {sortedStocks.length === 0 ? (
+                            <tr>
+                                <td colSpan={10} className="text-center py-8 text-base-content/60 italic">
+                                    No stocks found matching "{searchQuery}"
+                                </td>
+                            </tr>
+                        ) : (
+                            sortedStocks.map((stock, index) => {
+                                const change24h = formatPriceChange(stock.price_change_24h);
+                                const change1w = formatPriceChange(stock.price_change_1w);
+                                const change1m = formatPriceChange(stock.price_change_1m);
+                                const change1y = formatPriceChange(stock.price_change_1y);
 
-                            return (
-                                <tr key={stock.ticker} className="hover">
-                                    <td className="text-base-content/60">{index + 1}</td>
-                                    <td>
-                                        <div className="tooltip tooltip-right" data-tip={stock.company_name}>
-                                            <span className="font-bold text-base-content uppercase cursor-help">
-                                                {stock.ticker.slice(0, 3)}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatPrice(stock.price)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatMarketCap(stock.market_cap)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatCharterCapital(stock.charter_capital)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatPE(stock.pe_ratio)}
-                                    </td>
-                                    <td className={`text-right font-mono ${change24h.className}`}>
-                                        {change24h.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change1w.className}`}>
-                                        {change1w.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change1m.className}`}>
-                                        {change1m.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change1y.className}`}>
-                                        {change1y.text}
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                return (
+                                    <tr key={stock.ticker} className="hover">
+                                        <td className="text-base-content/60">{index + 1}</td>
+                                        <td>
+                                            <div className="tooltip tooltip-right" data-tip={stock.company_name}>
+                                                <span className="font-bold text-base-content uppercase cursor-help">
+                                                    {stock.ticker.slice(0, 3)}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="text-right font-mono text-base-content">
+                                            {formatPrice(stock.price)}
+                                        </td>
+                                        <td className="text-right font-mono text-base-content">
+                                            {formatMarketCap(stock.market_cap)}
+                                        </td>
+                                        <td className="text-right font-mono text-base-content">
+                                            {formatCharterCapital(stock.charter_capital)}
+                                        </td>
+                                        <td className="text-right font-mono text-base-content">
+                                            {formatPE(stock.pe_ratio)}
+                                        </td>
+                                        <td className={`text-right font-mono ${change24h.className}`}>
+                                            {change24h.text}
+                                        </td>
+                                        <td className={`text-right font-mono ${change1w.className}`}>
+                                            {change1w.text}
+                                        </td>
+                                        <td className={`text-right font-mono ${change1m.className}`}>
+                                            {change1m.text}
+                                        </td>
+                                        <td className={`text-right font-mono ${change1y.className}`}>
+                                            {change1y.text}
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
                     </tbody>
                 </table>
             </div>
