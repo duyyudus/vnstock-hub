@@ -52,6 +52,19 @@ export interface IndustryListResponse {
     count: number;
 }
 
+export interface IndexValueInfo {
+    symbol: string;
+    name: string;
+    value: number;
+    change: number;
+    change_value: number;
+}
+
+export interface IndexValuesResponse {
+    indices: IndexValueInfo[];
+    count: number;
+}
+
 export interface IndustryStocksResponse {
     stocks: Stock[];
     count: number;
@@ -60,6 +73,14 @@ export interface IndustryStocksResponse {
 
 // Stock API functions
 export const stockApi = {
+    /**
+     * Fetch latest values for major market indices
+     */
+    async getIndexValues(): Promise<IndexValuesResponse> {
+        const response = await apiClient.get<IndexValuesResponse>('/stocks/index-values');
+        return response.data;
+    },
+
     /**
      * Fetch all available indices
      */

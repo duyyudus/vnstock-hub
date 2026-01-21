@@ -66,6 +66,16 @@ def retry_with_backoff(
 
 
 @dataclass
+class IndexValue:
+    """Index value data class."""
+    symbol: str
+    name: str
+    value: float  # Current/latest close price
+    change: float  # Price change from open (percentage)
+    change_value: float  # Absolute change from open
+
+
+@dataclass
 class StockInfo:
     """Stock information data class."""
     ticker: str
@@ -202,6 +212,75 @@ class VnstockService:
             stmt = select(StockIndex).order_by(StockIndex.symbol)
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    # Index name mapping for display
+    INDEX_NAMES = {
+        'VNINDEX': 'VN-Index',
+        'HNXINDEX': 'HNX-Index',
+        'UPCOMINDEX': 'UPCOM-Index',
+        'VN30': 'VN30',
+        'HNX30': 'HNX30',
+    }
+
+    async def get_index_values(self, symbols: List[str] = None) -> List[IndexValue]:
+        """
+        Fetch latest values for major market indices.
+        
+        Args:
+            symbols: List of index symbols. Defaults to main indices if not specified.
+            
+        Returns:
+            List of IndexValue objects with current price and change data.
+        """
+        if symbols is None:
+            symbols = ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX', 'VN30', 'HNX30']
+        
+        loop = asyncio.get_event_loop()
+        results = []
+        
+        for symbol in symbols:
+            try:
+                index_data = await loop.run_in_executor(None, self._fetch_index_value_sync, symbol)
+                if index_data:
+                    results.append(index_data)
+            except Exception as e:
+                print(f"Error fetching index value for {symbol}: {e}")
+        
+        return results
+
+    def _fetch_index_value_sync(self, symbol: str) -> IndexValue | None:
+        """
+        Fetch latest value for a single index synchronously.
+        """
+        from vnstock import Vnstock
+        
+        try:
+            today = datetime.now().strftime('%Y-%m-%d')
+            week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+            
+            vs = Vnstock(symbol=symbol, source='VCI')
+            stock = vs.stock()
+            df = stock.quote.history(start=week_ago, end=today)
+            
+            if df is not None and not df.empty:
+                last_row = df.iloc[-1]
+                open_price = float(last_row['open'])
+                close_price = float(last_row['close'])
+                change_value = close_price - open_price
+                change_pct = (change_value / open_price) * 100 if open_price > 0 else 0
+                
+                return IndexValue(
+                    symbol=symbol,
+                    name=self.INDEX_NAMES.get(symbol, symbol),
+                    value=round(close_price, 2),
+                    change=round(change_pct, 2),
+                    change_value=round(change_value, 2)
+                )
+        except Exception as e:
+            print(f"Error fetching index value for {symbol}: {e}")
+        
+        return None
+
 
     async def get_index_stocks(self, index_symbol: str, limit: int = 100) -> List[StockInfo]:
         """

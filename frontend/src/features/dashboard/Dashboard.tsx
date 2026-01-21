@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
 import IndexTable from './IndexTable';
+import IndexBanners from './IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indexConfig';
 
@@ -97,6 +98,9 @@ export const Dashboard: React.FC = () => {
 
             {/* Main content with sidebar centered */}
             <div className="max-w-7xl mx-auto w-full p-6">
+                {/* Index Banners Row */}
+                <IndexBanners />
+
                 <div className="flex gap-6">
                     {/* Left sidebar - Tab navigation */}
                     <aside className="shrink-0">
@@ -118,3 +122,4 @@ export const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+

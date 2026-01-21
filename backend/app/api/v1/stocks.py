@@ -77,6 +77,42 @@ class IndustryStocksResponse(BaseModel):
     industry_name: str
 
 
+class IndexValueInfo(BaseModel):
+    """Information about an index value."""
+    symbol: str
+    name: str
+    value: float
+    change: float
+    change_value: float
+
+
+class IndexValuesResponse(BaseModel):
+    """Response model for index values."""
+    indices: List[IndexValueInfo]
+    count: int
+
+
+@router.get("/index-values", response_model=IndexValuesResponse)
+async def get_index_values():
+    """
+    Get latest values for major market indices (VNINDEX, HNXINDEX, UPCOMINDEX, VN30, HNX30).
+    """
+    indices = await vnstock_service.get_index_values()
+    return IndexValuesResponse(
+        indices=[
+            IndexValueInfo(
+                symbol=idx.symbol,
+                name=idx.name,
+                value=idx.value,
+                change=idx.change,
+                change_value=idx.change_value
+            )
+            for idx in indices
+        ],
+        count=len(indices)
+    )
+
+
 @router.get("/indices", response_model=IndexListResponse)
 async def get_indices():
     """
