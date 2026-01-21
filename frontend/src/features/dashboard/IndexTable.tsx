@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { stockApi } from '../../api/stockApi';
 import type { Stock } from '../../api/stockApi';
 import type { IndustryInfo } from '../../api/stockApi';
@@ -15,6 +15,15 @@ interface IndexTableProps {
  * Generic index stocks table component.
  * Displays stocks for the selected index with price, market cap, and additional metrics.
  */
+
+type SortKey = keyof Stock;
+type SortDirection = 'asc' | 'desc';
+
+interface SortConfig {
+    key: SortKey;
+    direction: SortDirection;
+}
+
 export const IndexTable: React.FC<IndexTableProps> = ({
     indices
 }) => {
@@ -28,6 +37,11 @@ export const IndexTable: React.FC<IndexTableProps> = ({
     const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [sortConfig, setSortConfig] = useState<SortConfig>({
+        key: 'market_cap',
+        direction: 'desc'
+    });
+
 
     // Update selected index if indices prop changes and we don't have a selection yet
     useEffect(() => {
@@ -131,6 +145,63 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         const className = change > 0 ? 'text-success' : change < 0 ? 'text-error' : 'text-base-content';
         return { text, className };
     };
+
+    const handleSort = (key: SortKey) => {
+        let direction: SortDirection = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+            // Toggle back to asc or keep desc? Usually it's asc -> desc -> asc
+            direction = 'asc';
+        } else {
+            // New key, default to desc for numeric, asc for strings? 
+            // Most financial tables default to 'desc' for value-based columns.
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedStocks = useMemo(() => {
+        const sortableStocks = [...stocks];
+        if (sortConfig.key) {
+            sortableStocks.sort((a, b) => {
+                const aValue = a[sortConfig.key];
+                const bValue = b[sortConfig.key];
+
+                if (aValue === null) return 1;
+                if (bValue === null) return -1;
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableStocks;
+    }, [stocks, sortConfig]);
+
+    const renderSortIcon = (key: SortKey) => {
+        if (sortConfig.key !== key) {
+            return (
+                <svg className="w-3 h-3 ml-1 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+            );
+        }
+        return sortConfig.direction === 'asc' ? (
+            <svg className="w-3 h-3 ml-1 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" />
+            </svg>
+        ) : (
+            <svg className="w-3 h-3 ml-1 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+        );
+    };
+
 
     if (!selectedIndex) {
         return <div>No indices available.</div>;
@@ -256,35 +327,92 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     <thead className="bg-base-200">
                         <tr>
                             <th className="text-base-content font-bold">#</th>
-                            <th className="text-base-content font-bold">Ticker</th>
-                            <th className="text-base-content font-bold text-right">
-                                Price (VND)
+                            <th
+                                className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('ticker')}
+                            >
+                                <div className="flex items-center">
+                                    Ticker
+                                    {renderSortIcon('ticker')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                Market Cap (B VND)
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('price')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    Price (VND)
+                                    {renderSortIcon('price')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                Charter Cap (B VND)
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('market_cap')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    Market Cap (B VND)
+                                    {renderSortIcon('market_cap')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                P/E
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('charter_capital')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    Charter Cap (B VND)
+                                    {renderSortIcon('charter_capital')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                24h
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('pe_ratio')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    P/E
+                                    {renderSortIcon('pe_ratio')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                1W
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('price_change_24h')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    24h
+                                    {renderSortIcon('price_change_24h')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                1M
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('price_change_1w')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    1W
+                                    {renderSortIcon('price_change_1w')}
+                                </div>
                             </th>
-                            <th className="text-base-content font-bold text-right">
-                                1Y
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('price_change_1m')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    1M
+                                    {renderSortIcon('price_change_1m')}
+                                </div>
+                            </th>
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('price_change_1y')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    1Y
+                                    {renderSortIcon('price_change_1y')}
+                                </div>
                             </th>
                         </tr>
                     </thead>
+
                     <tbody>
-                        {stocks.map((stock, index) => {
+                        {sortedStocks.map((stock, index) => {
                             const change24h = formatPriceChange(stock.price_change_24h);
                             const change1w = formatPriceChange(stock.price_change_1w);
                             const change1m = formatPriceChange(stock.price_change_1m);
