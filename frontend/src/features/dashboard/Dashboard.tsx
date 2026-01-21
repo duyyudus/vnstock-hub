@@ -10,6 +10,15 @@ const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
 ];
 
+import { CompanyFinancialPopup } from './CompanyFinancialPopup';
+
+interface OpenPopup {
+    ticker: string;
+    companyName: string;
+    position: { x: number; y: number };
+    zIndex: number;
+}
+
 /**
  * Main dashboard component with tab navigation.
  */
@@ -17,6 +26,52 @@ export const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState('indices');
     const [indices, setIndices] = useState<IndexConfig[]>([]);
     const [loadingIndices, setLoadingIndices] = useState(true);
+    const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
+    const [maxZIndex, setMaxZIndex] = useState(100);
+
+    useEffect(() => {
+        // Expose handleTickerClick to global window for IndexTable to use
+        // This is a workaround to avoid passing props deep or using Context for now
+        (window as any).onTickerClick = (ticker: string, companyName: string) => {
+            handleTickerClick(ticker, companyName);
+        };
+        return () => {
+            delete (window as any).onTickerClick;
+        };
+    }, [openPopups, maxZIndex]);
+
+    const handleTickerClick = (ticker: string, companyName: string) => {
+        // Check if already open
+        if (openPopups.find(p => p.ticker === ticker)) {
+            // Focus it instead
+            focusPopup(ticker);
+            return;
+        }
+
+        const newZIndex = maxZIndex + 1;
+        const offset = openPopups.length * 30;
+        const newPopup: OpenPopup = {
+            ticker,
+            companyName,
+            position: { x: 100 + offset, y: 100 + offset },
+            zIndex: newZIndex,
+        };
+
+        setOpenPopups([...openPopups, newPopup]);
+        setMaxZIndex(newZIndex);
+    };
+
+    const closePopup = (ticker: string) => {
+        setOpenPopups(openPopups.filter(p => p.ticker !== ticker));
+    };
+
+    const focusPopup = (ticker: string) => {
+        const newZIndex = maxZIndex + 1;
+        setOpenPopups(openPopups.map(p =>
+            p.ticker === ticker ? { ...p, zIndex: newZIndex } : p
+        ));
+        setMaxZIndex(newZIndex);
+    };
 
     useEffect(() => {
         const fetchIndices = async () => {
@@ -117,6 +172,19 @@ export const Dashboard: React.FC = () => {
                     </main>
                 </div>
             </div>
+
+            {/* Financial Details Popups */}
+            {openPopups.map((popup) => (
+                <CompanyFinancialPopup
+                    key={popup.ticker}
+                    ticker={popup.ticker}
+                    companyName={popup.companyName}
+                    initialPosition={popup.position}
+                    zIndex={popup.zIndex}
+                    onClose={() => closePopup(popup.ticker)}
+                    onFocus={() => focusPopup(popup.ticker)}
+                />
+            ))}
         </div>
     );
 };

@@ -490,9 +490,13 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                         <td className="text-base-content/60">{index + 1}</td>
                                         <td>
                                             <div className="tooltip tooltip-right" data-tip={stock.company_name}>
-                                                <span className="font-bold text-base-content uppercase cursor-help">
+                                                <button
+                                                    className="font-bold text-primary uppercase cursor-pointer hover:underline focus:outline-none"
+                                                    onClick={() => (window as any).onTickerClick?.(stock.ticker, stock.company_name)}
+                                                    title={`View financial details for ${stock.ticker}`}
+                                                >
                                                     {stock.ticker.slice(0, 3)}
-                                                </span>
+                                                </button>
                                             </div>
                                         </td>
                                         <td className="text-right font-mono text-base-content">

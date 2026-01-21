@@ -71,6 +71,12 @@ export interface IndustryStocksResponse {
     industry_name: string;
 }
 
+export interface FinancialDataResponse {
+    symbol: string;
+    data: any[];
+    count: number;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -125,6 +131,38 @@ export const stockApi = {
      */
     async getIndustryStocks(industryName: string): Promise<IndustryStocksResponse> {
         const response = await apiClient.get<IndustryStocksResponse>(`/stocks/industry/${encodeURIComponent(industryName)}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch income statement for a specific stock
+     */
+    async getIncomeStatement(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/income-statement?period=${period}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch balance sheet for a specific stock
+     */
+    async getBalanceSheet(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/balance-sheet?period=${period}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch cash flow for a specific stock
+     */
+    async getCashFlow(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/cash-flow?period=${period}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch financial ratios for a specific stock
+     */
+    async getFinancialRatios(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/ratios?period=${period}`);
         return response.data;
     },
 };
