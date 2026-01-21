@@ -21,7 +21,7 @@ interface CompanyFinancialPopupProps {
     onFocus: () => void;
 }
 
-type TabType = 'income' | 'balance' | 'cashflow' | 'ratios';
+type TabType = 'income' | 'balance' | 'cashflow' | 'ratios' | 'shareholders' | 'officers' | 'subsidiaries';
 
 export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     ticker,
@@ -36,7 +36,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<any[]>([]);
     const [position, setPosition] = useState<Position>(initialPosition);
-    const [size, setSize] = useState<Size>({ width: 600, height: 550 });
+    const [size, setSize] = useState<Size>({ width: 900, height: 550 });
     const [attributeWidth, setAttributeWidth] = useState(200);
     const isDragging = useRef(false);
     const isResizing = useRef(false);
@@ -65,6 +65,15 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                     case 'ratios':
                         response = await stockApi.getFinancialRatios(ticker);
                         break;
+                    case 'shareholders':
+                        response = await stockApi.getShareholders(ticker);
+                        break;
+                    case 'officers':
+                        response = await stockApi.getOfficers(ticker);
+                        break;
+                    case 'subsidiaries':
+                        response = await stockApi.getSubsidiaries(ticker);
+                        break;
                     default:
                         response = { symbol: ticker, data: [], count: 0 };
                 }
@@ -79,6 +88,31 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
 
         fetchData();
     }, [ticker, activeTab]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                // Find all open popups
+                const popups = Array.from(document.querySelectorAll('.company-financial-popup')) as HTMLElement[];
+                if (popups.length === 0) return;
+
+                // Find the one with highest z-index
+                let highestZ = -1;
+                popups.forEach(p => {
+                    const z = parseInt(p.style.zIndex || '0', 10);
+                    if (z > highestZ) highestZ = z;
+                });
+
+                // Only close if this instance has the highest z-index
+                if (zIndex === highestZ) {
+                    onClose();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose, zIndex]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         onFocus();
@@ -144,18 +178,77 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     };
 
     // Format utility for numbers
-    const formatValue = (val: any) => {
+    const formatValue = (val: any, key?: string) => {
         if (val === null || val === undefined) return '-';
         if (typeof val === 'number') {
+            const lowerKey = (key || '').toLowerCase();
+
+            // Handle percentages (0.15 -> 15%)
+            if (lowerKey.includes('percent')) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'percent',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(val);
+            }
+
+            // Handle quantities (large integers)
+            if (lowerKey.includes('quantity') || lowerKey.includes('volume')) {
+                if (val >= 1e9) {
+                    return (val / 1e9).toFixed(2) + ' B';
+                }
+                if (val >= 1e6) {
+                    return (val / 1e6).toFixed(2) + ' M';
+                }
+                return new Intl.NumberFormat('en-US').format(val);
+            }
+
+            // Standard financial values (Income, Balance, etc.)
             // Check if it's potentially VND (very large) or ratio (small)
             if (Math.abs(val) > 1e6) { // Most financial values are in Bn VND or large VND
                 return new Intl.NumberFormat('en-US').format(Math.round(val / 1e6) / 1000);
             }
+
             return new Intl.NumberFormat('en-US', {
                 maximumFractionDigits: 2,
             }).format(val);
         }
         return String(val);
+    };
+
+    // Render as a simple list for non-financial statement data
+    const renderListTable = () => {
+        if (data.length === 0) return <div className="p-8 text-center text-base-content/50">No data available</div>;
+
+        const allKeys = Array.from(new Set(data.flatMap(item => Object.keys(item))))
+            .filter(key => !['ticker', 'Meta_ticker', 'id'].includes(key));
+
+        return (
+            <div className="overflow-auto h-full">
+                <table className="table table-xs table-pin-rows">
+                    <thead>
+                        <tr>
+                            {allKeys.map(key => (
+                                <th key={key} className="bg-base-200 capitalize">
+                                    {key.replace(/_/g, ' ')}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {data.map((item, i) => (
+                            <tr key={i} className="hover">
+                                {allKeys.map(key => (
+                                    <td key={key} className="whitespace-nowrap font-mono text-xs">
+                                        {formatValue(item[key], key)}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
     };
 
     // Transpose data for table: rows are attributes, columns are periods
@@ -212,7 +305,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                                 </th>
                                 {data.map((item, i) => (
                                     <td key={i} className="text-right font-mono text-xs">
-                                        {formatValue(item[key])}
+                                        {formatValue(item[key], key)}
                                     </td>
                                 ))}
                             </tr>
@@ -226,7 +319,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     return (
         <div
             ref={popupRef}
-            className="fixed card bg-base-100 shadow-2xl border border-base-300 overflow-hidden flex flex-col"
+            className="fixed card bg-base-100 shadow-2xl border border-base-300 overflow-hidden flex flex-col company-financial-popup"
             style={{
                 left: position.x,
                 top: position.y,
@@ -282,6 +375,24 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                 >
                     Ratios
                 </button>
+                <button
+                    className={`tab tab-sm flex-1 ${activeTab === 'shareholders' ? 'tab-active' : ''}`}
+                    onClick={() => setActiveTab('shareholders')}
+                >
+                    Shareholders
+                </button>
+                <button
+                    className={`tab tab-sm flex-1 ${activeTab === 'officers' ? 'tab-active' : ''}`}
+                    onClick={() => setActiveTab('officers')}
+                >
+                    Officers
+                </button>
+                <button
+                    className={`tab tab-sm flex-1 ${activeTab === 'subsidiaries' ? 'tab-active' : ''}`}
+                    onClick={() => setActiveTab('subsidiaries')}
+                >
+                    Subsidiaries
+                </button>
             </div>
 
             {/* Content */}
@@ -295,7 +406,9 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                         <span>{error}</span>
                     </div>
                 ) : (
-                    renderTable()
+                    ['shareholders', 'officers', 'subsidiaries'].includes(activeTab)
+                        ? renderListTable()
+                        : renderTable()
                 )}
             </div>
 

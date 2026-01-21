@@ -1049,5 +1049,78 @@ class VnstockService:
 
 
 
+    async def get_shareholders(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch shareholders for a given stock symbol."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._fetch_shareholders_sync, symbol)
+
+    def _fetch_shareholders_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch shareholders synchronously."""
+        from vnstock import Company
+        try:
+            c = Company(symbol=symbol[:3], source='VCI')
+            df = c.shareholders()
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+        except Exception as e:
+            print(f"Error fetching shareholders for {symbol}: {e}")
+            return []
+
+    async def get_officers(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch officers for a given stock symbol."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._fetch_officers_sync, symbol)
+
+    def _fetch_officers_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch officers synchronously."""
+        from vnstock import Company
+        try:
+            c = Company(symbol=symbol[:3], source='VCI')
+            df = c.officers()
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+        except Exception as e:
+            print(f"Error fetching officers for {symbol}: {e}")
+            return []
+
+    async def get_subsidiaries(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch subsidiaries for a given stock symbol."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._fetch_subsidiaries_sync, symbol)
+
+    def _fetch_subsidiaries_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch subsidiaries synchronously."""
+        from vnstock import Company
+        try:
+            c = Company(symbol=symbol[:3], source='VCI')
+            df = c.subsidiaries()
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+        except Exception as e:
+            print(f"Error fetching subsidiaries for {symbol}: {e}")
+            return []
+
+
 # Singleton instance
 vnstock_service = VnstockService()

@@ -342,3 +342,42 @@ async def get_financial_ratios(symbol: str, period: str = "quarter"):
         data=data,
         count=len(data)
     )
+
+
+@router.get("/company/{symbol}/shareholders", response_model=FinancialDataResponse)
+async def get_shareholders(symbol: str):
+    """
+    Get major shareholders for a specific stock.
+    """
+    data = await vnstock_service.get_shareholders(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/officers", response_model=FinancialDataResponse)
+async def get_officers(symbol: str):
+    """
+    Get company officers for a specific stock.
+    """
+    data = await vnstock_service.get_officers(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/subsidiaries", response_model=FinancialDataResponse)
+async def get_subsidiaries(symbol: str):
+    """
+    Get subsidiaries and relevant companies for a specific stock.
+    """
+    data = await vnstock_service.get_subsidiaries(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )

@@ -165,6 +165,30 @@ export const stockApi = {
         const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/ratios?period=${period}`);
         return response.data;
     },
+
+    /**
+     * Fetch major shareholders for a specific stock
+     */
+    async getShareholders(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/shareholders`);
+        return response.data;
+    },
+
+    /**
+     * Fetch company officers for a specific stock
+     */
+    async getOfficers(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/officers`);
+        return response.data;
+    },
+
+    /**
+     * Fetch subsidiaries for a specific stock
+     */
+    async getSubsidiaries(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/subsidiaries`);
+        return response.data;
+    },
 };
 
 export default apiClient;
