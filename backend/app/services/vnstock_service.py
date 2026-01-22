@@ -84,6 +84,7 @@ class StockInfo:
     company_name: str = ""
     charter_capital: float = 0.0  # In billion VND
     pe_ratio: float | None = None
+    accumulated_value: float | None = None  # In billion VND
     price_change_24h: float | None = None  # Percentage
     price_change_1w: float | None = None  # Percentage
     price_change_1m: float | None = None  # Percentage
@@ -672,7 +673,18 @@ class VnstockService:
                                         pe_ratio = float(pe_val)
                                 except (ValueError, TypeError):
                                     pass
-                            
+
+                            # Get accumulated trading value (in billion VND)
+                            # API returns value in Million VND, divide by 1000 to get Billion VND
+                            accumulated_value = None
+                            if 'match_accumulated_value' in row.index:
+                                try:
+                                    acc_val = row['match_accumulated_value']
+                                    if pd.notna(acc_val):
+                                        accumulated_value = float(acc_val) / 1e3
+                                except (ValueError, TypeError):
+                                    pass
+
                             # Get 24h price change percentage
                             price_change_24h = None
                             if 'match_price_change_ratio' in row.index:
@@ -704,6 +716,7 @@ class VnstockService:
                                     market_cap=round(market_cap, 2),
                                     charter_capital=round(charter_capital, 2),
                                     pe_ratio=round(pe_ratio, 2) if pe_ratio is not None else None,
+                                    accumulated_value=round(accumulated_value, 2) if accumulated_value is not None else None,
                                     price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None
                                 ))
                                 

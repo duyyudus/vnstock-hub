@@ -134,6 +134,15 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         }).format(pe);
     };
 
+    // Format accumulated value (in billion VND)
+    const formatAccumulatedValue = (value: number | null): string => {
+        if (value === null) return '-';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(value);
+    };
+
     // Format price change percentage with color
     const formatPriceChange = (change: number | null): { text: string; className: string } => {
         if (change === null) return { text: '-', className: 'text-base-content/50' };
@@ -434,6 +443,15 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                             </th>
                             <th
                                 className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => handleSort('accumulated_value')}
+                            >
+                                <div className="flex items-center justify-end">
+                                    Volume (B VND)
+                                    {renderSortIcon('accumulated_value')}
+                                </div>
+                            </th>
+                            <th
+                                className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
                                 onClick={() => handleSort('price_change_24h')}
                             >
                                 <div className="flex items-center justify-end">
@@ -474,7 +492,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     <tbody>
                         {sortedStocks.length === 0 ? (
                             <tr>
-                                <td colSpan={10} className="text-center py-8 text-base-content/60 italic">
+                                <td colSpan={11} className="text-center py-8 text-base-content/60 italic">
                                     No stocks found matching "{searchQuery}"
                                 </td>
                             </tr>
@@ -510,6 +528,9 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                         </td>
                                         <td className="text-right font-mono text-base-content">
                                             {formatPE(stock.pe_ratio)}
+                                        </td>
+                                        <td className="text-right font-mono text-base-content">
+                                            {formatAccumulatedValue(stock.accumulated_value)}
                                         </td>
                                         <td className={`text-right font-mono ${change24h.className}`}>
                                             {change24h.text}

@@ -18,6 +18,7 @@ class StockResponse(BaseModel):
     company_name: str
     charter_capital: float = 0.0  # In billion VND
     pe_ratio: Optional[float] = None
+    accumulated_value: Optional[float] = None  # In billion VND
     price_change_24h: Optional[float] = None  # Percentage
     price_change_1w: Optional[float] = None  # Percentage
     price_change_1m: Optional[float] = None  # Percentage
@@ -149,6 +150,7 @@ async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
                 company_name=stock.company_name,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
+                accumulated_value=stock.accumulated_value,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
@@ -196,6 +198,7 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
                 company_name=stock.company_name,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
+                accumulated_value=stock.accumulated_value,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
@@ -227,6 +230,7 @@ async def get_vn100_stocks():
                 company_name=stock.company_name,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
+                accumulated_value=stock.accumulated_value,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
@@ -257,6 +261,7 @@ async def get_vn30_stocks():
                 company_name=stock.company_name,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
+                accumulated_value=stock.accumulated_value,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
