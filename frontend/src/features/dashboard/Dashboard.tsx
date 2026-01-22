@@ -168,7 +168,7 @@ export const Dashboard: React.FC = () => {
         <div className="min-h-screen bg-base-300">
             {/* Header */}
             <header className="navbar bg-base-100 shadow-lg px-4 md:px-6">
-                <div className="max-w-[88rem] mx-auto w-full flex items-center">
+                <div className="max-w-[96.8rem] mx-auto w-full flex items-center">
                     <div className="flex-1">
                         <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                             🚀 VNStock Hub
@@ -198,7 +198,7 @@ export const Dashboard: React.FC = () => {
             </header>
 
             {/* Main content with sidebar centered */}
-            <div className="max-w-[88rem] mx-auto w-full p-6">
+            <div className="max-w-[96.8rem] mx-auto w-full p-6">
                 {/* Index Banners Row */}
                 <IndexBanners />
 

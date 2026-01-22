@@ -42,6 +42,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
         direction: 'desc'
     });
     const [searchQuery, setSearchQuery] = useState('');
+    const [isCompanyCollapsed, setIsCompanyCollapsed] = useState(true);
 
 
     // Update selected index if indices prop changes and we don't have a selection yet
@@ -398,6 +399,25 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                             <th className="text-base-content font-bold">#</th>
                             <th
                                 className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors"
+                                onClick={() => setIsCompanyCollapsed(!isCompanyCollapsed)}
+                            >
+                                <div className="flex items-center">
+                                    {isCompanyCollapsed ? (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    ) : (
+                                        <>
+                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                            Company
+                                        </>
+                                    )}
+                                </div>
+                            </th>
+                            <th
+                                className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors"
                                 onClick={() => handleSort('ticker')}
                             >
                                 <div className="flex items-center">
@@ -410,7 +430,9 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 onClick={() => handleSort('price')}
                             >
                                 <div className="flex items-center justify-end">
-                                    Price (VND)
+                                    <div className="text-right">
+                                        Price<br />(VND)
+                                    </div>
                                     {renderSortIcon('price')}
                                 </div>
                             </th>
@@ -419,7 +441,9 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 onClick={() => handleSort('market_cap')}
                             >
                                 <div className="flex items-center justify-end">
-                                    Market Cap (B VND)
+                                    <div className="text-right">
+                                        Market Cap<br />(B VND)
+                                    </div>
                                     {renderSortIcon('market_cap')}
                                 </div>
                             </th>
@@ -428,7 +452,9 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 onClick={() => handleSort('charter_capital')}
                             >
                                 <div className="flex items-center justify-end">
-                                    Charter Cap (B VND)
+                                    <div className="text-right">
+                                        Charter Cap<br />(B VND)
+                                    </div>
                                     {renderSortIcon('charter_capital')}
                                 </div>
                             </th>
@@ -446,7 +472,9 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 onClick={() => handleSort('accumulated_value')}
                             >
                                 <div className="flex items-center justify-end">
-                                    Vol (B VND)
+                                    <div className="text-right">
+                                        Vol<br />(B VND)
+                                    </div>
                                     {renderSortIcon('accumulated_value')}
                                 </div>
                             </th>
@@ -492,7 +520,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                     <tbody>
                         {sortedStocks.length === 0 ? (
                             <tr>
-                                <td colSpan={11} className="text-center py-8 text-base-content/60 italic">
+                                <td colSpan={12} className="text-center py-8 text-base-content/60 italic">
                                     No stocks found matching "{searchQuery}"
                                 </td>
                             </tr>
@@ -506,6 +534,12 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 return (
                                     <tr key={stock.ticker} className="hover">
                                         <td className="text-base-content/60">{index + 1}</td>
+                                        <td 
+                                            className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`} 
+                                            title={isCompanyCollapsed ? "" : stock.company_name}
+                                        >
+                                            {!isCompanyCollapsed && stock.company_name}
+                                        </td>
                                         <td>
                                             <div className="tooltip tooltip-right" data-tip={stock.company_name}>
                                                 <button
