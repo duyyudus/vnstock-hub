@@ -1134,6 +1134,164 @@ class VnstockService:
             print(f"Error fetching subsidiaries for {symbol}: {e}")
             return []
 
+    async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Fetch volume history for a given stock symbol.
+
+        Args:
+            symbol: Stock ticker symbol
+            days: Number of days to fetch (default: 30)
+
+        Returns:
+            Dict with symbol, company_name, and data (list of VolumeDataPoint dicts)
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._fetch_volume_history_sync, symbol, days)
+
+    def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
+        """Fetch volume history synchronously."""
+        from vnstock import Vnstock
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        symbol_clean = symbol[:3]
+        company_name = symbol_clean
+
+        # Get company name from database
+        sync_url = settings.database_url.replace('+asyncpg', '')
+        engine = create_engine(sync_url)
+
+        try:
+            with Session(engine) as session:
+                # Get company name
+                stmt = select(StockCompany).where(StockCompany.symbol == symbol_clean)
+                company = session.execute(stmt).scalar_one_or_none()
+                if company:
+                    company_name = company.company_name
+
+                # Calculate date range
+                end_date = datetime.now().date()
+                start_date = end_date - timedelta(days=days + 10)  # Extra buffer for weekends/holidays
+
+                # Query cached data
+                stmt = select(StockDailyPrice).where(
+                    and_(
+                        StockDailyPrice.symbol == symbol_clean,
+                        StockDailyPrice.date >= start_date,
+                        StockDailyPrice.date <= end_date
+                    )
+                ).order_by(StockDailyPrice.date.desc())
+
+                cached_records = session.execute(stmt).scalars().all()
+
+                # If we have enough cached data, use it
+                if len(cached_records) >= days:
+                    data = []
+                    for record in sorted(cached_records[:days], key=lambda x: x.date):
+                        value = None
+                        if record.volume and record.close:
+                            # Calculate value in billion VND: (volume * close_price_in_1000_VND) / 1e6
+                            value = (record.volume * record.close) / 1e6
+
+                        data.append({
+                            'date': record.date.strftime('%Y-%m-%d'),
+                            'volume': record.volume if record.volume else 0,
+                            'value': round(value, 2) if value else None
+                        })
+
+                    engine.dispose()
+                    return {
+                        'symbol': symbol_clean,
+                        'company_name': company_name,
+                        'data': data
+                    }
+
+                # Otherwise, fetch from API and cache
+                try:
+                    s = Vnstock().stock(symbol=symbol_clean, source='VCI')
+                    hist = s.quote.history(
+                        start=start_date.strftime('%Y-%m-%d'),
+                        end=end_date.strftime('%Y-%m-%d'),
+                        interval='1D'
+                    )
+
+                    if hist is not None and not hist.empty:
+                        # Cache the data
+                        for _, row in hist.iterrows():
+                            try:
+                                price_date = pd.to_datetime(row['time']).date()
+
+                                # Check if already exists
+                                existing = session.execute(
+                                    select(StockDailyPrice).where(
+                                        and_(
+                                            StockDailyPrice.symbol == symbol_clean,
+                                            StockDailyPrice.date == price_date
+                                        )
+                                    )
+                                ).scalar_one_or_none()
+
+                                if not existing:
+                                    price_record = StockDailyPrice(
+                                        symbol=symbol_clean,
+                                        date=price_date,
+                                        open=float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
+                                        high=float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
+                                        low=float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
+                                        close=float(row['close']),
+                                        volume=int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
+                                    )
+                                    session.add(price_record)
+                            except Exception as e:
+                                print(f"Error caching price for {symbol_clean} on {row.get('time')}: {e}")
+                                continue
+
+                        session.commit()
+
+                        # Convert to response format
+                        data = []
+                        hist_sorted = hist.sort_values('time', ascending=True).tail(days)
+
+                        for _, row in hist_sorted.iterrows():
+                            volume = int(row.get('volume', 0)) if pd.notna(row.get('volume')) else 0
+                            close = float(row['close']) if pd.notna(row['close']) else 0
+                            value = None
+                            if volume and close:
+                                # Calculate value in billion VND
+                                value = (volume * close) / 1e6
+
+                            data.append({
+                                'date': pd.to_datetime(row['time']).strftime('%Y-%m-%d'),
+                                'volume': volume,
+                                'value': round(value, 2) if value else None
+                            })
+
+                        engine.dispose()
+                        return {
+                            'symbol': symbol_clean,
+                            'company_name': company_name,
+                            'data': data
+                        }
+
+                except Exception as e:
+                    print(f"Error fetching volume history for {symbol_clean}: {e}")
+
+                engine.dispose()
+                return {
+                    'symbol': symbol_clean,
+                    'company_name': company_name,
+                    'data': []
+                }
+
+        except Exception as e:
+            print(f"Error in volume history fetch: {e}")
+            engine.dispose()
+            return {
+                'symbol': symbol_clean,
+                'company_name': company_name,
+                'data': []
+            }
+
 
 # Singleton instance
 vnstock_service = VnstockService()

@@ -93,6 +93,21 @@ class IndexValuesResponse(BaseModel):
     count: int
 
 
+class VolumeDataPoint(BaseModel):
+    """A single data point for volume history."""
+    date: str
+    volume: int
+    value: Optional[float] = None
+
+
+class VolumeHistoryResponse(BaseModel):
+    """Response model for volume history."""
+    symbol: str
+    company_name: str
+    data: List[VolumeDataPoint]
+    count: int
+
+
 @router.get("/index-values", response_model=IndexValuesResponse)
 async def get_index_values():
     """
@@ -385,4 +400,25 @@ async def get_subsidiaries(symbol: str):
         symbol=symbol,
         data=data,
         count=len(data)
+    )
+
+
+@router.get("/history/{symbol}/volume", response_model=VolumeHistoryResponse)
+async def get_volume_history(symbol: str, days: int = 30):
+    """
+    Get volume history for a specific stock.
+
+    Args:
+        symbol: Stock ticker symbol
+        days: Number of days to fetch (default: 30)
+
+    Returns:
+        Volume history data points with date, volume, and accumulated value
+    """
+    result = await vnstock_service.get_volume_history(symbol, days=days)
+    return VolumeHistoryResponse(
+        symbol=result["symbol"],
+        company_name=result["company_name"],
+        data=[VolumeDataPoint(**point) for point in result["data"]],
+        count=len(result["data"])
     )

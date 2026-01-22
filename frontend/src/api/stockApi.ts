@@ -78,6 +78,19 @@ export interface FinancialDataResponse {
     count: number;
 }
 
+export interface VolumeDataPoint {
+    date: string;
+    volume: number;
+    value: number | null;
+}
+
+export interface VolumeHistoryResponse {
+    symbol: string;
+    company_name: string;
+    data: VolumeDataPoint[];
+    count: number;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -188,6 +201,16 @@ export const stockApi = {
      */
     async getSubsidiaries(symbol: string): Promise<FinancialDataResponse> {
         const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/subsidiaries`);
+        return response.data;
+    },
+
+    /**
+     * Fetch volume history for a specific stock
+     * @param symbol Stock ticker symbol
+     * @param days Number of days to fetch (default: 30)
+     */
+    async getVolumeHistory(symbol: string, days: number = 30): Promise<VolumeHistoryResponse> {
+        const response = await apiClient.get<VolumeHistoryResponse>(`/stocks/history/${symbol}/volume?days=${days}`);
         return response.data;
     },
 };

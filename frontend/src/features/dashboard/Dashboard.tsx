@@ -11,8 +11,16 @@ const DASHBOARD_TABS = [
 ];
 
 import { CompanyFinancialPopup } from './CompanyFinancialPopup';
+import { VolumeChartPopup } from './VolumeChartPopup';
 
 interface OpenPopup {
+    ticker: string;
+    companyName: string;
+    position: { x: number; y: number };
+    zIndex: number;
+}
+
+interface OpenVolumePopup {
     ticker: string;
     companyName: string;
     position: { x: number; y: number };
@@ -27,6 +35,7 @@ export const Dashboard: React.FC = () => {
     const [indices, setIndices] = useState<IndexConfig[]>([]);
     const [loadingIndices, setLoadingIndices] = useState(true);
     const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
+    const [openVolumePopups, setOpenVolumePopups] = useState<OpenVolumePopup[]>([]);
     const [maxZIndex, setMaxZIndex] = useState(100);
 
     useEffect(() => {
@@ -35,10 +44,14 @@ export const Dashboard: React.FC = () => {
         (window as any).onTickerClick = (ticker: string, companyName: string) => {
             handleTickerClick(ticker, companyName);
         };
+        (window as any).onVolumeClick = (ticker: string, companyName: string) => {
+            handleVolumeClick(ticker, companyName);
+        };
         return () => {
             delete (window as any).onTickerClick;
+            delete (window as any).onVolumeClick;
         };
-    }, [openPopups, maxZIndex]);
+    }, [openPopups, openVolumePopups, maxZIndex]);
 
     const handleTickerClick = (ticker: string, companyName: string) => {
         // Check if already open
@@ -68,6 +81,39 @@ export const Dashboard: React.FC = () => {
     const focusPopup = (ticker: string) => {
         const newZIndex = maxZIndex + 1;
         setOpenPopups(openPopups.map(p =>
+            p.ticker === ticker ? { ...p, zIndex: newZIndex } : p
+        ));
+        setMaxZIndex(newZIndex);
+    };
+
+    const handleVolumeClick = (ticker: string, companyName: string) => {
+        // Check if already open
+        if (openVolumePopups.find(p => p.ticker === ticker)) {
+            // Focus it instead
+            focusVolumePopup(ticker);
+            return;
+        }
+
+        const newZIndex = maxZIndex + 1;
+        const offset = (openPopups.length + openVolumePopups.length) * 30;
+        const newPopup: OpenVolumePopup = {
+            ticker,
+            companyName,
+            position: { x: 150 + offset, y: 150 + offset },
+            zIndex: newZIndex,
+        };
+
+        setOpenVolumePopups([...openVolumePopups, newPopup]);
+        setMaxZIndex(newZIndex);
+    };
+
+    const closeVolumePopup = (ticker: string) => {
+        setOpenVolumePopups(openVolumePopups.filter(p => p.ticker !== ticker));
+    };
+
+    const focusVolumePopup = (ticker: string) => {
+        const newZIndex = maxZIndex + 1;
+        setOpenVolumePopups(openVolumePopups.map(p =>
             p.ticker === ticker ? { ...p, zIndex: newZIndex } : p
         ));
         setMaxZIndex(newZIndex);
@@ -122,7 +168,7 @@ export const Dashboard: React.FC = () => {
         <div className="min-h-screen bg-base-300">
             {/* Header */}
             <header className="navbar bg-base-100 shadow-lg px-4 md:px-6">
-                <div className="max-w-7xl mx-auto w-full flex items-center">
+                <div className="max-w-[88rem] mx-auto w-full flex items-center">
                     <div className="flex-1">
                         <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                             🚀 VNStock Hub
@@ -152,7 +198,7 @@ export const Dashboard: React.FC = () => {
             </header>
 
             {/* Main content with sidebar centered */}
-            <div className="max-w-7xl mx-auto w-full p-6">
+            <div className="max-w-[88rem] mx-auto w-full p-6">
                 {/* Index Banners Row */}
                 <IndexBanners />
 
@@ -183,6 +229,19 @@ export const Dashboard: React.FC = () => {
                     zIndex={popup.zIndex}
                     onClose={() => closePopup(popup.ticker)}
                     onFocus={() => focusPopup(popup.ticker)}
+                />
+            ))}
+
+            {/* Volume Chart Popups */}
+            {openVolumePopups.map((popup) => (
+                <VolumeChartPopup
+                    key={`volume-${popup.ticker}`}
+                    ticker={popup.ticker}
+                    companyName={popup.companyName}
+                    initialPosition={popup.position}
+                    zIndex={popup.zIndex}
+                    onClose={() => closeVolumePopup(popup.ticker)}
+                    onFocus={() => focusVolumePopup(popup.ticker)}
                 />
             ))}
         </div>

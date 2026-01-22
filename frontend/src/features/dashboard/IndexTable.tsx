@@ -446,7 +446,7 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 onClick={() => handleSort('accumulated_value')}
                             >
                                 <div className="flex items-center justify-end">
-                                    Volume (B VND)
+                                    Vol (B VND)
                                     {renderSortIcon('accumulated_value')}
                                 </div>
                             </th>
@@ -530,7 +530,13 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                             {formatPE(stock.pe_ratio)}
                                         </td>
                                         <td className="text-right font-mono text-base-content">
-                                            {formatAccumulatedValue(stock.accumulated_value)}
+                                            <button
+                                                className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
+                                                onClick={() => (window as any).onVolumeClick?.(stock.ticker, stock.company_name)}
+                                                title={`View 30-day volume chart for ${stock.ticker}`}
+                                            >
+                                                {formatAccumulatedValue(stock.accumulated_value)}
+                                            </button>
                                         </td>
                                         <td className={`text-right font-mono ${change24h.className}`}>
                                             {change24h.text}
