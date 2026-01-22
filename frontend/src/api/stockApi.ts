@@ -181,6 +181,14 @@ export const stockApi = {
     },
 
     /**
+     * Fetch company overview for a specific stock
+     */
+    async getCompanyOverview(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/overview`);
+        return response.data;
+    },
+
+    /**
      * Fetch major shareholders for a specific stock
      */
     async getShareholders(symbol: string): Promise<FinancialDataResponse> {

@@ -1062,6 +1062,30 @@ class VnstockService:
 
 
 
+    async def get_company_overview(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch company overview for a given stock symbol."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._fetch_company_overview_sync, symbol)
+
+    def _fetch_company_overview_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch company overview synchronously."""
+        from vnstock import Company
+        try:
+            c = Company(symbol=symbol[:3], source='VCI')
+            df = c.overview()
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+        except Exception as e:
+            print(f"Error fetching company overview for {symbol}: {e}")
+            return []
+
     async def get_shareholders(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch shareholders for a given stock symbol."""
         loop = asyncio.get_event_loop()
