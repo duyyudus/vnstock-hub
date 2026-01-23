@@ -103,6 +103,24 @@ class VnstockService:
 
     def __init__(self):
         self._enriching_tickers = set()
+        # Fund caches: {key: (data, timestamp)}
+        self._fund_listing_cache = {}
+        self._fund_nav_cache = {}
+        self._fund_top_holding_cache = {}
+        self._fund_industry_holding_cache = {}
+        self._fund_asset_holding_cache = {}
+        
+        # Cache TTLs in seconds
+        self._FUND_LISTING_TTL = 3600  # 1 hour
+        self._FUND_DETAILS_TTL = 1800  # 30 minutes
+
+    def _is_cache_valid(self, cache: Dict, key: str, ttl: int) -> bool:
+        """Check if cache entry exists and is not expired."""
+        if key in cache:
+            data, timestamp = cache[key]
+            if time.time() - timestamp < ttl:
+                return True
+        return False
     
     async def sync_indices(self) -> None:
         """
@@ -1315,6 +1333,230 @@ class VnstockService:
                 'company_name': company_name,
                 'data': []
             }
+    async def get_fund_listing(self, fund_type: str = "") -> List[Dict[str, Any]]:
+        """
+        Fetch all available funds.
+        """
+        cache_key = fund_type or "all"
+        if self._is_cache_valid(self._fund_listing_cache, cache_key, self._FUND_LISTING_TTL):
+            return self._fund_listing_cache[cache_key][0]
+            
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._fetch_fund_listing_sync, fund_type)
+        
+        # Update cache
+        if data:
+            self._fund_listing_cache[cache_key] = (data, time.time())
+        return data
+
+    def _fetch_fund_listing_sync(self, fund_type: str) -> List[Dict[str, Any]]:
+        """Fetch fund listing synchronously."""
+        from vnstock import Fund
+
+        def fetch_listing():
+            fund = Fund()
+            df = fund.listing()
+            if df is not None and not df.empty:
+                # Filter by fund_type if provided
+                if fund_type:
+                    df = df[df['fund_type'] == fund_type]
+
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    # Normalize field names for frontend
+                    self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
+                    self._normalize_fund_field(record, 'name', ['name', 'short_name'])
+                    self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
+                    
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+
+        try:
+            return retry_with_backoff(fetch_listing, max_retries=2, initial_delay=30.0)
+        except Exception as e:
+            print(f"Error fetching fund listing: {e}")
+            return []
+
+    def _normalize_fund_field(self, record: dict, target_key: str, source_keys: List[str]) -> None:
+        """
+        Map vnstock field name to expected frontend field name.
+
+        Args:
+            record: Dictionary record to modify
+            target_key: Desired field name for frontend
+            source_keys: List of possible source field names from vnstock (in priority order)
+        """
+        if target_key in record:
+            return
+        for key in source_keys:
+            if key in record:
+                record[target_key] = record[key]
+                break
+
+    async def get_fund_nav_report(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetch NAV (Net Asset Value) history for a specific fund.
+        """
+        if self._is_cache_valid(self._fund_nav_cache, symbol, self._FUND_DETAILS_TTL):
+            return self._fund_nav_cache[symbol][0]
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._fetch_fund_nav_report_sync, symbol)
+        
+        if data:
+            self._fund_nav_cache[symbol] = (data, time.time())
+        return data
+
+    def _fetch_fund_nav_report_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch fund NAV report synchronously."""
+        from vnstock import Fund
+
+        def fetch_nav():
+            fund = Fund()
+            df = fund.details.nav_report(symbol=symbol)
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    # Normalize field names for frontend
+                    self._normalize_fund_field(record, 'nav', ['nav_per_unit', 'nav'])
+                    # Clean NaN values
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+
+        try:
+            return retry_with_backoff(fetch_nav, max_retries=2, initial_delay=30.0)
+        except Exception as e:
+            print(f"Error fetching NAV report for {symbol}: {e}")
+            return []
+
+    async def get_fund_top_holding(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetch top stock holdings for a specific fund.
+        """
+        if self._is_cache_valid(self._fund_top_holding_cache, symbol, self._FUND_DETAILS_TTL):
+            return self._fund_top_holding_cache[symbol][0]
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._fetch_fund_top_holding_sync, symbol)
+        
+        if data:
+            self._fund_top_holding_cache[symbol] = (data, time.time())
+        return data
+
+    def _fetch_fund_top_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch fund top holdings synchronously."""
+        from vnstock import Fund
+
+        def fetch_top_holding():
+            fund = Fund()
+            df = fund.details.top_holding(symbol=symbol)
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    # Normalize field names for frontend
+                    self._normalize_fund_field(record, 'ticker', ['stock_code', 'ticker', 'symbol'])
+                    self._normalize_fund_field(record, 'allocation', ['net_asset_percent', 'allocation', 'weight', 'percentage'])
+                    # Clean NaN values
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+
+        try:
+            return retry_with_backoff(fetch_top_holding, max_retries=2, initial_delay=30.0)
+        except Exception as e:
+            print(f"Error fetching top holdings for {symbol}: {e}")
+            return []
+
+    async def get_fund_industry_holding(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetch industry allocation for a specific fund.
+        """
+        if self._is_cache_valid(self._fund_industry_holding_cache, symbol, self._FUND_DETAILS_TTL):
+            return self._fund_industry_holding_cache[symbol][0]
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._fetch_fund_industry_holding_sync, symbol)
+        
+        if data:
+            self._fund_industry_holding_cache[symbol] = (data, time.time())
+        return data
+
+    def _fetch_fund_industry_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch fund industry holdings synchronously."""
+        from vnstock import Fund
+
+        def fetch_industry():
+            fund = Fund()
+            df = fund.details.industry_holding(symbol=symbol)
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    # Normalize field names for frontend
+                    self._normalize_fund_field(record, 'allocation', ['net_asset_percent', 'allocation', 'weight', 'percentage'])
+                    # Clean NaN values
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+
+        try:
+            return retry_with_backoff(fetch_industry, max_retries=2, initial_delay=30.0)
+        except Exception as e:
+            print(f"Error fetching industry holdings for {symbol}: {e}")
+            return []
+
+    async def get_fund_asset_holding(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetch asset type allocation for a specific fund.
+        """
+        if self._is_cache_valid(self._fund_asset_holding_cache, symbol, self._FUND_DETAILS_TTL):
+            return self._fund_asset_holding_cache[symbol][0]
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._fetch_fund_asset_holding_sync, symbol)
+        
+        if data:
+            self._fund_asset_holding_cache[symbol] = (data, time.time())
+        return data
+
+    def _fetch_fund_asset_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch fund asset holdings synchronously."""
+        from vnstock import Fund
+
+        def fetch_asset():
+            fund = Fund()
+            df = fund.details.asset_holding(symbol=symbol)
+            if df is not None and not df.empty:
+                df = self._flatten_columns(df)
+                records = df.to_dict('records')
+                for record in records:
+                    # Normalize field names for frontend
+                    self._normalize_fund_field(record, 'allocation', ['asset_percent', 'allocation', 'weight', 'percentage'])
+                    # Clean NaN values
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                return records
+            return []
+
+        try:
+            return retry_with_backoff(fetch_asset, max_retries=2, initial_delay=30.0)
+        except Exception as e:
+            print(f"Error fetching asset holdings for {symbol}: {e}")
+            return []
 
 
 # Singleton instance

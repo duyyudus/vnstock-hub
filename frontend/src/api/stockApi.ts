@@ -91,6 +91,13 @@ export interface VolumeHistoryResponse {
     count: number;
 }
 
+// Fund data types
+export interface FundDataResponse {
+    symbol?: string;
+    data: any[];
+    count: number;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -219,6 +226,52 @@ export const stockApi = {
      */
     async getVolumeHistory(symbol: string, days: number = 30): Promise<VolumeHistoryResponse> {
         const response = await apiClient.get<VolumeHistoryResponse>(`/stocks/history/${symbol}/volume?days=${days}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch all available funds
+     * @param fundType Optional filter by fund type (e.g., "STOCK", "BOND", "BALANCED")
+     */
+    async getFunds(fundType: string = ''): Promise<FundDataResponse> {
+        const url = fundType ? `/funds/listing?fund_type=${fundType}` : '/funds/listing';
+        const response = await apiClient.get<FundDataResponse>(url);
+        return response.data;
+    },
+
+    /**
+     * Fetch NAV history for a specific fund
+     * @param symbol Fund symbol
+     */
+    async getFundNavReport(symbol: string): Promise<FundDataResponse> {
+        const response = await apiClient.get<FundDataResponse>(`/funds/${symbol}/nav-report`);
+        return response.data;
+    },
+
+    /**
+     * Fetch top holdings for a specific fund
+     * @param symbol Fund symbol
+     */
+    async getFundTopHolding(symbol: string): Promise<FundDataResponse> {
+        const response = await apiClient.get<FundDataResponse>(`/funds/${symbol}/top-holding`);
+        return response.data;
+    },
+
+    /**
+     * Fetch industry allocation for a specific fund
+     * @param symbol Fund symbol
+     */
+    async getFundIndustryHolding(symbol: string): Promise<FundDataResponse> {
+        const response = await apiClient.get<FundDataResponse>(`/funds/${symbol}/industry-holding`);
+        return response.data;
+    },
+
+    /**
+     * Fetch asset allocation for a specific fund
+     * @param symbol Fund symbol
+     */
+    async getFundAssetHolding(symbol: string): Promise<FundDataResponse> {
+        const response = await apiClient.get<FundDataResponse>(`/funds/${symbol}/asset-holding`);
         return response.data;
     },
 };
