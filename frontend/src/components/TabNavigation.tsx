@@ -27,7 +27,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
                     <li key={tab.id}>
                         <button
                             className={`btn btn-ghost justify-start gap-4 ${activeTab === tab.id
-                                ? 'btn-active bg-primary text-primary-content'
+                                ? 'btn-active bg-primary text-white'
                                 : 'hover:bg-base-300'
                                 }`}
                             onClick={() => onTabChange(tab.id)}

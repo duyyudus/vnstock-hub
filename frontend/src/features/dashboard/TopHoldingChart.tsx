@@ -77,7 +77,7 @@ export const TopHoldingChart: React.FC<TopHoldingChartProps> = ({ data, loading 
                         opacity={0.5}
                         width={50}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
                     <Bar
                         dataKey={(item) => item.allocation || item.weight || item.percentage}
                         fill="#10b981"

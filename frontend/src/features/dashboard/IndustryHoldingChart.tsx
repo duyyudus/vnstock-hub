@@ -80,7 +80,7 @@ export const IndustryHoldingChart: React.FC<IndustryHoldingChartProps> = ({ data
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                     </Pie>
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
                 </PieChart>
             </ResponsiveContainer>
         </div>

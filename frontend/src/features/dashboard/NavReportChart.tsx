@@ -65,7 +65,7 @@ export const NavReportChart: React.FC<NavReportChartProps> = ({ data, loading = 
                         stroke="currentColor"
                         opacity={0.5}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
                     <Line
                         type="monotone"
                         dataKey={(item) => item.nav || item.value}

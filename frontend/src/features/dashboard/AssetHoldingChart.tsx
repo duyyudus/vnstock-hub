@@ -80,7 +80,7 @@ export const AssetHoldingChart: React.FC<AssetHoldingChartProps> = ({ data, load
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                     </Pie>
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
 
                 </PieChart>
             </ResponsiveContainer>

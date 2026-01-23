@@ -228,7 +228,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                                 stroke="currentColor"
                                 opacity={0.5}
                             />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
                             <Bar dataKey="volume" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
