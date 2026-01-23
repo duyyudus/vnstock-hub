@@ -250,7 +250,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
             detailed: keys.filter(k => longTextFields.includes(k)),
         };
 
-        const row1Keys = ['symbol', 'issue_share', 'financial_ratio_issue_share', 'charter_capital'];
+        const row1Keys = ['symbol', 'charter_capital', 'financial_ratio_issue_share', 'issue_share'];
         const row2Keys = ['icb_name1', 'icb_name2', 'icb_name3', 'icb_name4'];
         const specialFields = [...row1Keys, ...row2Keys];
 
@@ -284,12 +284,16 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                     <div className="text-sm leading-relaxed text-base-content/80 whitespace-pre-wrap bg-base-200/40 p-5 rounded-2xl border border-base-300/50 shadow-inner">
                         {isHistory && typeof content === 'string' ? (
                             <div className="space-y-3">
-                                {content.split('-').filter(s => s.trim()).map((part, idx) => (
-                                    <div key={idx} className="flex gap-3 items-start group/item">
-                                        <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover/item:bg-primary transition-colors flex-shrink-0" />
-                                        <div className="flex-1">{part.trim()}</div>
-                                    </div>
-                                ))}
+                                {content
+                                    .split(/;\s*[-–—]\s*/)
+                                    .map(part => part.trim().replace(/^-/, '').trim())
+                                    .filter(s => s)
+                                    .map((part, idx) => (
+                                        <div key={idx} className="flex gap-3 items-start group/item">
+                                            <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover/item:bg-primary transition-colors flex-shrink-0" />
+                                            <div className="flex-1">{part}</div>
+                                        </div>
+                                    ))}
                             </div>
                         ) : content}
                     </div>
@@ -299,39 +303,43 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
 
         return (
             <div className="p-6 overflow-auto h-full space-y-8 bg-base-100 custom-scrollbar">
-                {/* Company Profile - Priority 1 */}
-                {item['company_profile'] && renderDetailedSection('company_profile')}
+                <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 items-start">
+                    {/* Company Profile - Priority 1 */}
+                    <div className="lg:col-span-6">
+                        {item['company_profile'] && renderDetailedSection('company_profile')}
+                    </div>
 
-                {/* General Information - Priority 2 */}
-                {sections.general.length > 0 && (
-                    <section>
-                        <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-base-300 pb-2 text-primary flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            General Information
-                        </h3>
+                    {/* General Information - Priority 2 */}
+                    {sections.general.length > 0 && (
+                        <section className="lg:col-span-4">
+                            <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-base-300 pb-2 text-primary flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                General Information
+                            </h3>
 
-                        <div className="space-y-6">
-                            {/* Row 1: Symbol & Shares */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
-                                {row1Keys.map(k => item[k] !== undefined && renderField(k))}
-                            </div>
-
-                            {/* Row 2: ICB Hierarchy */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
-                                {row2Keys.map(k => item[k] !== undefined && renderField(k))}
-                            </div>
-
-                            {/* Remaining General Info */}
-                            {remainingGeneral.length > 0 && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-                                    {remainingGeneral.map((k: string) => renderField(k))}
+                            <div className="space-y-6">
+                                {/* Row 1: Symbol & Shares */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
+                                    {row1Keys.map(k => item[k] !== undefined && renderField(k))}
                                 </div>
-                            )}
-                        </div>
-                    </section>
-                )}
+
+                                {/* Row 2: ICB Hierarchy */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
+                                    {row2Keys.map(k => item[k] !== undefined && renderField(k))}
+                                </div>
+
+                                {/* Remaining General Info */}
+                                {remainingGeneral.length > 0 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+                                        {remainingGeneral.map((k: string) => renderField(k))}
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+                </div>
 
                 {/* Other Detailed Sections - Priority 3 */}
                 {sections.detailed
