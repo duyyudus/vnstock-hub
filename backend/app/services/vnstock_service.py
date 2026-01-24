@@ -9,7 +9,7 @@ import time
 import pandas as pd
 from sqlalchemy import select, and_
 from app.db.database import async_session
-from app.db.models import StockCompany, StockDailyPrice, StockIndex
+from app.db.models import StockCompany, StockDailyPrice, StockIndex, FundNav
 from app.core.config import settings
 
 T = TypeVar('T')
@@ -1400,19 +1400,89 @@ class VnstockService:
     async def get_fund_nav_report(self, symbol: str) -> List[Dict[str, Any]]:
         """
         Fetch NAV (Net Asset Value) history for a specific fund.
+        Uses database as primary source, syncs from API only for missing/newer data.
         """
+        # Check memory cache first (short TTL for fast repeated requests)
         if self._is_cache_valid(self._fund_nav_cache, symbol, self._FUND_DETAILS_TTL):
             return self._fund_nav_cache[symbol][0]
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._fetch_fund_nav_report_sync, symbol)
+        # Load from database and sync missing data
+        data = await self._get_fund_nav_with_sync(symbol)
         
         if data:
             self._fund_nav_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_nav_report_sync(self, symbol: str) -> List[Dict[str, Any]]:
-        """Fetch fund NAV report synchronously."""
+    async def _get_fund_nav_with_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Get NAV data from database, syncing missing data from API.
+        This is the core DB-backed NAV storage method used by multiple features.
+        """
+        async with async_session() as session:
+            # Step 1: Load existing NAV records from database
+            stmt = select(FundNav).where(FundNav.symbol == symbol).order_by(FundNav.date)
+            result = await session.execute(stmt)
+            db_records = list(result.scalars().all())
+            
+            # Step 2: Determine if we need to sync from API
+            need_api_sync = False
+            latest_db_date = None
+            
+            if not db_records:
+                # No data in DB, need full sync
+                need_api_sync = True
+            else:
+                latest_db_date = db_records[-1].date
+                # Sync if latest DB date is more than 1 day old
+                today = date.today()
+                if (today - latest_db_date).days > 1:
+                    need_api_sync = True
+            
+            # Step 3: Sync from API if needed
+            if need_api_sync:
+                loop = asyncio.get_event_loop()
+                api_records = await loop.run_in_executor(
+                    None, 
+                    self._fetch_fund_nav_from_api_sync, 
+                    symbol
+                )
+                
+                if api_records:
+                    # Filter to only new records (dates not in DB)
+                    existing_dates = {r.date for r in db_records}
+                    new_records = [
+                        r for r in api_records 
+                        if r['date'] not in existing_dates
+                    ]
+                    
+                    # Insert new records into database
+                    if new_records:
+                        for record in new_records:
+                            fund_nav = FundNav(
+                                symbol=symbol,
+                                date=record['date'],
+                                nav=record['nav']
+                            )
+                            session.add(fund_nav)
+                        await session.commit()
+                        print(f"Stored {len(new_records)} new NAV records for fund {symbol}")
+                        
+                        # Reload from DB to get complete sorted list
+                        stmt = select(FundNav).where(FundNav.symbol == symbol).order_by(FundNav.date)
+                        result = await session.execute(stmt)
+                        db_records = list(result.scalars().all())
+            
+            # Step 4: Convert to frontend format
+            return [
+                {
+                    'date': record.date.isoformat(),
+                    'nav': record.nav
+                }
+                for record in db_records
+            ]
+
+    def _fetch_fund_nav_from_api_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch fund NAV data from vnstock API synchronously."""
         from vnstock import Fund
 
         def fetch_nav():
@@ -1420,22 +1490,120 @@ class VnstockService:
             df = fund.details.nav_report(symbol=symbol)
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
-                records = df.to_dict('records')
-                for record in records:
-                    # Normalize field names for frontend
-                    self._normalize_fund_field(record, 'nav', ['nav_per_unit', 'nav'])
-                    # Clean NaN values
-                    for key, value in record.items():
-                        if pd.isna(value):
-                            record[key] = None
+                records = []
+                for _, row in df.iterrows():
+                    date_val = row.get('date') or row.get('nav_date')
+                    nav_val = row.get('nav') or row.get('nav_per_unit') or row.get('value')
+                    
+                    if pd.isna(date_val) or pd.isna(nav_val):
+                        continue
+                    
+                    try:
+                        parsed_date = pd.to_datetime(date_val).date()
+                        records.append({
+                            'date': parsed_date,
+                            'nav': float(nav_val)
+                        })
+                    except Exception:
+                        continue
                 return records
             return []
 
         try:
             return retry_with_backoff(fetch_nav, max_retries=2, initial_delay=30.0)
         except Exception as e:
-            print(f"Error fetching NAV report for {symbol}: {e}")
+            print(f"Error fetching NAV from API for {symbol}: {e}")
             return []
+
+    def _get_fund_nav_with_sync_db(
+        self, 
+        db_session, 
+        symbol: str, 
+        fund_api
+    ) -> List[Dict[str, Any]]:
+        """
+        Sync version of NAV retrieval with database storage.
+        Used by _compute_fund_performance_sync for efficiency.
+        
+        Args:
+            db_session: SQLAlchemy sync Session
+            symbol: Fund symbol
+            fund_api: vnstock Fund instance for API calls
+        """
+        from sqlalchemy import select as sync_select
+        
+        # Step 1: Load existing NAV records from database
+        stmt = sync_select(FundNav).where(FundNav.symbol == symbol).order_by(FundNav.date)
+        db_records = list(db_session.execute(stmt).scalars().all())
+        
+        # Step 2: Determine if we need to sync from API
+        need_api_sync = False
+        
+        if not db_records:
+            # No data in DB, need full sync
+            need_api_sync = True
+        else:
+            latest_db_date = db_records[-1].date
+            today = date.today()
+            # Sync if latest DB date is more than 1 day old
+            if (today - latest_db_date).days > 1:
+                need_api_sync = True
+        
+        # Step 3: Sync from API if needed
+        if need_api_sync:
+            try:
+                def fetch_nav():
+                    return fund_api.details.nav_report(symbol=symbol)
+                
+                nav_df = retry_with_backoff(fetch_nav, max_retries=3, initial_delay=30.0)
+                
+                if nav_df is not None and not nav_df.empty:
+                    nav_df = self._flatten_columns(nav_df)
+                    
+                    # Get existing dates for deduplication
+                    existing_dates = {r.date for r in db_records}
+                    new_count = 0
+                    
+                    for _, row in nav_df.iterrows():
+                        date_val = row.get('date') or row.get('nav_date')
+                        nav_val = row.get('nav') or row.get('nav_per_unit') or row.get('value')
+                        
+                        if pd.isna(date_val) or pd.isna(nav_val):
+                            continue
+                        
+                        try:
+                            parsed_date = pd.to_datetime(date_val).date()
+                            
+                            if parsed_date not in existing_dates:
+                                fund_nav = FundNav(
+                                    symbol=symbol,
+                                    date=parsed_date,
+                                    nav=float(nav_val)
+                                )
+                                db_session.add(fund_nav)
+                                existing_dates.add(parsed_date)
+                                new_count += 1
+                        except Exception:
+                            continue
+                    
+                    if new_count > 0:
+                        db_session.commit()
+                        print(f"Stored {new_count} new NAV records for fund {symbol}")
+                        
+                        # Reload from DB
+                        db_records = list(db_session.execute(stmt).scalars().all())
+                        
+            except Exception as e:
+                print(f"Failed to fetch NAV for fund {symbol} from API: {e}")
+        
+        # Step 4: Return in frontend format
+        return [
+            {
+                'date': record.date.isoformat(),
+                'nav': record.nav
+            }
+            for record in db_records
+        ]
 
     async def get_fund_top_holding(self, symbol: str) -> List[Dict[str, Any]]:
         """
@@ -1557,6 +1725,335 @@ class VnstockService:
         except Exception as e:
             print(f"Error fetching asset holdings for {symbol}: {e}")
             return []
+
+    # Fund Performance Analytics Cache
+    _fund_performance_cache: Dict[str, tuple] = {}
+    _FUND_PERFORMANCE_TTL = 86400  # 24 hours
+
+    async def get_fund_performance_data(self) -> Dict[str, Any]:
+        """
+        Get aggregated fund performance data for comparison charts.
+        Includes normalized NAV, periodic returns, and risk metrics.
+        Data is cached daily.
+        """
+        cache_key = "performance"
+        if self._is_cache_valid(self._fund_performance_cache, cache_key, self._FUND_PERFORMANCE_TTL):
+            return self._fund_performance_cache[cache_key][0]
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, self._compute_fund_performance_sync)
+
+        if data:
+            self._fund_performance_cache[cache_key] = (data, time.time())
+        return data
+
+    def _compute_fund_performance_sync(self) -> Dict[str, Any]:
+        """
+        Compute fund performance metrics synchronously.
+        Normalizes NAV to base 100, calculates returns and risk metrics.
+        """
+        from vnstock import Fund, Vnstock
+        import numpy as np
+
+        # Risk-free rate for Vietnam (government bond yield ~4%)
+        RISK_FREE_RATE = 0.04
+
+        try:
+            # Step 1: Get all funds (with retry)
+            fund = Fund()
+            
+            def fetch_listing():
+                return fund.listing()
+            
+            try:
+                listing_df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
+            except Exception as e:
+                print(f"Failed to fetch fund listing after retries: {e}")
+                return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+            
+            if listing_df is None or listing_df.empty:
+                return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+
+            funds_data = []
+            all_nav_dates = set()
+
+            # Set up sync database connection for NAV storage
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import Session
+            sync_url = settings.database_url.replace('+asyncpg', '')
+            engine = create_engine(sync_url)
+
+            # Step 2: Fetch NAV data for each fund (using DB-backed storage)
+            with Session(engine) as db_session:
+                for _, row in listing_df.iterrows():
+                    symbol = row.get('short_name') or row.get('fund_code') or row.get('symbol')
+                    name = row.get('name') or row.get('fund_name') or symbol
+
+                    if not symbol:
+                        continue
+
+                    try:
+                        # Get NAV data from DB, sync from API if needed
+                        nav_records = self._get_fund_nav_with_sync_db(
+                            db_session, symbol, fund
+                        )
+                        
+                        if len(nav_records) < 10:  # Need minimum data points
+                            continue
+
+                        for record in nav_records:
+                            all_nav_dates.add(record['date'])
+
+                        funds_data.append({
+                            'symbol': symbol,
+                            'name': name,
+                            'nav_records': nav_records,
+                            'data_start_date': nav_records[0]['date']
+                        })
+
+                    except Exception as e:
+                        print(f"Error fetching NAV for fund {symbol}: {e}")
+                        continue
+
+            if not funds_data:
+                return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+
+            # Step 3: Find common start date (oldest date where most funds have data)
+            sorted_dates = sorted(all_nav_dates)
+            common_start_date = sorted_dates[0] if sorted_dates else None
+
+            # Step 4: Process each fund - normalize and calculate metrics
+            processed_funds = []
+            for fund_data in funds_data:
+                nav_records = fund_data['nav_records']
+
+                # Convert to dataframe for easier calculations
+                df = pd.DataFrame(nav_records)
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values('date').reset_index(drop=True)
+
+                if len(df) < 2:
+                    continue
+
+                # Normalize NAV (base = 100 at start)
+                base_nav = df.iloc[0]['nav']
+                df['normalized_nav'] = (df['nav'] / base_nav) * 100
+
+                # Calculate daily returns for volatility
+                df['daily_return'] = df['nav'].pct_change()
+
+                # Calculate periodic returns
+                today = datetime.now()
+                returns = {}
+                yearly_returns = {}
+
+                # YTD
+                ytd_start = datetime(today.year, 1, 1)
+                ytd_df = df[df['date'] >= ytd_start]
+                if len(ytd_df) >= 2:
+                    returns['ytd'] = round(((ytd_df.iloc[-1]['nav'] / ytd_df.iloc[0]['nav']) - 1) * 100, 2)
+
+                # 1Y, 3Y, 5Y returns
+                for years, key in [(1, '1y'), (3, '3y'), (5, '5y')]:
+                    start_date = today - timedelta(days=years * 365)
+                    period_df = df[df['date'] >= start_date]
+                    if len(period_df) >= 2:
+                        returns[key] = round(((period_df.iloc[-1]['nav'] / period_df.iloc[0]['nav']) - 1) * 100, 2)
+                    else:
+                        returns[key] = None
+
+                # All-times return (from inception)
+                if len(df) >= 2:
+                    returns['all'] = round(((df.iloc[-1]['nav'] / df.iloc[0]['nav']) - 1) * 100, 2)
+
+                # Yearly returns for heatmap
+                first_year = df['date'].min().year
+                for year in range(first_year, today.year + 1):
+                    year_start = datetime(year, 1, 1)
+                    year_end = datetime(year, 12, 31)
+                    year_df = df[(df['date'] >= year_start) & (df['date'] <= year_end)]
+                    if len(year_df) >= 2:
+                        yearly_returns[str(year)] = round(
+                            ((year_df.iloc[-1]['nav'] / year_df.iloc[0]['nav']) - 1) * 100, 2
+                        )
+
+                # Risk metrics (annualized)
+                annualized_return = None
+                annualized_volatility = None
+                sharpe_ratio = None
+
+                if returns.get('1y') is not None:
+                    annualized_return = returns['1y']
+
+                    # Calculate volatility from daily returns (past year)
+                    one_year_ago = today - timedelta(days=365)
+                    year_df = df[df['date'] >= one_year_ago]
+                    if len(year_df) > 20:
+                        daily_vol = year_df['daily_return'].std()
+                        annualized_volatility = round(daily_vol * np.sqrt(252) * 100, 2)  # 252 trading days
+
+                        if annualized_volatility and annualized_volatility > 0:
+                            sharpe_ratio = round((annualized_return / 100 - RISK_FREE_RATE) / (annualized_volatility / 100), 2)
+
+                # Prepare NAV history for charts
+                nav_history = []
+                for _, row in df.iterrows():
+                    nav_history.append({
+                        'date': row['date'].strftime('%Y-%m-%d'),
+                        'normalized_nav': round(row['normalized_nav'], 2),
+                        'raw_nav': round(row['nav'], 2)
+                    })
+
+                processed_funds.append({
+                    'symbol': fund_data['symbol'],
+                    'name': fund_data['name'],
+                    'data_start_date': fund_data['data_start_date'],
+                    'nav_history': nav_history,
+                    'returns': returns,
+                    'risk_metrics': {
+                        'annualized_return': annualized_return,
+                        'annualized_volatility': annualized_volatility,
+                        'sharpe_ratio': sharpe_ratio
+                    },
+                    'yearly_returns': yearly_returns
+                })
+
+            # Step 5: Fetch benchmark data (VN-Index and VN30)
+            benchmarks = {}
+            for benchmark_symbol in ['VNINDEX', 'VN30']:
+                try:
+                    benchmark_data = self._fetch_benchmark_data_sync(benchmark_symbol, common_start_date)
+                    if benchmark_data:
+                        benchmarks[benchmark_symbol] = benchmark_data
+                except Exception as e:
+                    print(f"Error fetching benchmark {benchmark_symbol}: {e}")
+
+            return {
+                'funds': processed_funds,
+                'benchmarks': benchmarks,
+                'common_start_date': common_start_date,
+                'last_updated': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error computing fund performance: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+
+    def _fetch_benchmark_data_sync(self, symbol: str, common_start_date: str) -> Dict[str, Any] | None:
+        """
+        Fetch and process benchmark (VN-Index or VN30) data.
+        """
+        from vnstock import Vnstock
+        import numpy as np
+
+        RISK_FREE_RATE = 0.04
+
+        try:
+            today = datetime.now()
+            start_date = common_start_date or (today - timedelta(days=365 * 5)).strftime('%Y-%m-%d')
+
+            vs = Vnstock(symbol=symbol, source='VCI')
+            stock = vs.stock()
+            
+            # Wrap benchmark fetch in retry logic
+            def fetch_benchmark_history():
+                return stock.quote.history(start=start_date, end=today.strftime('%Y-%m-%d'))
+            
+            try:
+                df = retry_with_backoff(fetch_benchmark_history, max_retries=3, initial_delay=30.0)
+            except Exception as e:
+                print(f"Failed to fetch benchmark {symbol} after retries: {e}")
+                return None
+
+            if df is None or df.empty:
+                return None
+
+            df['date'] = pd.to_datetime(df['time'])
+            df = df.sort_values('date').reset_index(drop=True)
+
+            # Use close price as "NAV"
+            df['nav'] = df['close']
+            base_nav = df.iloc[0]['nav']
+            df['normalized_nav'] = (df['nav'] / base_nav) * 100
+            df['daily_return'] = df['nav'].pct_change()
+
+            # Calculate returns
+            returns = {}
+            yearly_returns = {}
+
+            # YTD
+            ytd_start = datetime(today.year, 1, 1)
+            ytd_df = df[df['date'] >= ytd_start]
+            if len(ytd_df) >= 2:
+                returns['ytd'] = round(((ytd_df.iloc[-1]['nav'] / ytd_df.iloc[0]['nav']) - 1) * 100, 2)
+
+            # 1Y, 3Y, 5Y returns
+            for years, key in [(1, '1y'), (3, '3y'), (5, '5y')]:
+                period_start = today - timedelta(days=years * 365)
+                period_df = df[df['date'] >= period_start]
+                if len(period_df) >= 2:
+                    returns[key] = round(((period_df.iloc[-1]['nav'] / period_df.iloc[0]['nav']) - 1) * 100, 2)
+                else:
+                    returns[key] = None
+
+            # All-times return
+            if len(df) >= 2:
+                returns['all'] = round(((df.iloc[-1]['nav'] / df.iloc[0]['nav']) - 1) * 100, 2)
+
+            # Yearly returns
+            first_year = df['date'].min().year
+            for year in range(first_year, today.year + 1):
+                year_start = datetime(year, 1, 1)
+                year_end = datetime(year, 12, 31)
+                year_df = df[(df['date'] >= year_start) & (df['date'] <= year_end)]
+                if len(year_df) >= 2:
+                    yearly_returns[str(year)] = round(
+                        ((year_df.iloc[-1]['nav'] / year_df.iloc[0]['nav']) - 1) * 100, 2
+                    )
+
+            # Risk metrics
+            annualized_return = returns.get('1y')
+            annualized_volatility = None
+            sharpe_ratio = None
+
+            one_year_ago = today - timedelta(days=365)
+            year_df = df[df['date'] >= one_year_ago]
+            if len(year_df) > 20:
+                daily_vol = year_df['daily_return'].std()
+                annualized_volatility = round(daily_vol * np.sqrt(252) * 100, 2)
+
+                if annualized_volatility and annualized_volatility > 0 and annualized_return is not None:
+                    sharpe_ratio = round((annualized_return / 100 - RISK_FREE_RATE) / (annualized_volatility / 100), 2)
+
+            # NAV history
+            nav_history = []
+            for _, row in df.iterrows():
+                nav_history.append({
+                    'date': row['date'].strftime('%Y-%m-%d'),
+                    'normalized_nav': round(row['normalized_nav'], 2),
+                    'raw_nav': round(row['nav'], 2)
+                })
+
+            name_map = {'VNINDEX': 'VN-Index', 'VN30': 'VN30'}
+
+            return {
+                'symbol': symbol,
+                'name': name_map.get(symbol, symbol),
+                'nav_history': nav_history,
+                'returns': returns,
+                'risk_metrics': {
+                    'annualized_return': annualized_return,
+                    'annualized_volatility': annualized_volatility,
+                    'sharpe_ratio': sharpe_ratio
+                },
+                'yearly_returns': yearly_returns
+            }
+
+        except Exception as e:
+            print(f"Error fetching benchmark data for {symbol}: {e}")
+            return None
 
 
 # Singleton instance

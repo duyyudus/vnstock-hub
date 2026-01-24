@@ -17,6 +17,14 @@ class FundDataResponse(BaseModel):
     count: int
 
 
+class FundPerformanceResponse(BaseModel):
+    """Response model for fund performance comparison data."""
+    funds: List[dict]
+    benchmarks: dict
+    common_start_date: Optional[str] = None
+    last_updated: Optional[str] = None
+
+
 @router.get("/listing", response_model=FundDataResponse)
 async def get_fund_listing(fund_type: str = ""):
     """
@@ -33,6 +41,21 @@ async def get_fund_listing(fund_type: str = ""):
         data=data,
         count=len(data)
     )
+
+
+@router.get("/performance", response_model=FundPerformanceResponse)
+async def get_fund_performance():
+    """
+    Get aggregated fund performance data for comparison charts.
+    Includes normalized NAV, periodic returns (YTD, 1Y, 3Y, 5Y), and risk metrics.
+    Data is cached daily.
+
+    Returns:
+        FundPerformanceResponse with funds, benchmarks (VN-Index & VN30),
+        common start date, and cache timestamp.
+    """
+    data = await vnstock_service.get_fund_performance_data()
+    return FundPerformanceResponse(**data)
 
 
 @router.get("/{symbol}/nav-report", response_model=FundDataResponse)

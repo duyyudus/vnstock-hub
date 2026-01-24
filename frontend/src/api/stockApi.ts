@@ -98,6 +98,44 @@ export interface FundDataResponse {
     count: number;
 }
 
+// Fund Performance Types
+export interface FundRiskMetrics {
+    annualized_return: number | null;
+    annualized_volatility: number | null;
+    sharpe_ratio: number | null;
+}
+
+export interface FundReturns {
+    ytd?: number;
+    '1y'?: number | null;
+    '3y'?: number | null;
+    '5y'?: number | null;
+    'all'?: number | null;
+}
+
+export interface NavHistoryPoint {
+    date: string;
+    normalized_nav: number;
+    raw_nav: number;
+}
+
+export interface FundPerformanceMetrics {
+    symbol: string;
+    name: string;
+    data_start_date: string;
+    nav_history: NavHistoryPoint[];
+    returns: FundReturns;
+    risk_metrics: FundRiskMetrics;
+    yearly_returns: Record<string, number>;
+}
+
+export interface FundPerformanceData {
+    funds: FundPerformanceMetrics[];
+    benchmarks: Record<string, FundPerformanceMetrics>;
+    common_start_date: string | null;
+    last_updated: string | null;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -272,6 +310,15 @@ export const stockApi = {
      */
     async getFundAssetHolding(symbol: string): Promise<FundDataResponse> {
         const response = await apiClient.get<FundDataResponse>(`/funds/${symbol}/asset-holding`);
+        return response.data;
+    },
+
+    /**
+     * Fetch aggregated fund performance data for comparison charts
+     * Includes normalized NAV, periodic returns, and risk metrics
+     */
+    async getFundPerformance(): Promise<FundPerformanceData> {
+        const response = await apiClient.get<FundPerformanceData>('/funds/performance');
         return response.data;
     },
 };

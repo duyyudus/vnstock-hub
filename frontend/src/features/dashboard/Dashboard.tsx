@@ -5,11 +5,13 @@ import IndexBanners from './IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indexConfig';
 import { FundsTab } from './FundsTab';
+import { FundsPerformanceTab } from './FundsPerformanceTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
     { id: 'funds', label: 'Funds' },
+    { id: 'funds-performance', label: 'Funds Performance' },
 ];
 
 import { CompanyFinancialPopup } from './CompanyFinancialPopup';
@@ -159,6 +161,8 @@ export const Dashboard: React.FC = () => {
                 return <IndexTable indices={indices} />;
             case 'funds':
                 return <FundsTab />;
+            case 'funds-performance':
+                return <FundsPerformanceTab />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">

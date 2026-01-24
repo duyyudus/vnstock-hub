@@ -45,3 +45,20 @@ class StockDailyPrice(Base):
         Index('ix_stock_daily_prices_symbol_date', 'symbol', 'date'),
     )
 
+
+class FundNav(Base):
+    """Historical NAV data for mutual funds."""
+    __tablename__ = "fund_navs"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(30), nullable=False)  # Fund symbol/short_name
+    date = Column(Date, nullable=False)
+    nav = Column(Float, nullable=False)  # NAV per unit
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('symbol', 'date', name='uq_fund_symbol_date'),
+        Index('ix_fund_navs_symbol_date', 'symbol', 'date'),
+    )
+
+
