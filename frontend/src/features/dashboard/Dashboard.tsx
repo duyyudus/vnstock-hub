@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import SyncIndicator from '../../components/SyncIndicator';
 import IndexTable from './indices/IndexTable';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
@@ -40,26 +39,8 @@ export const Dashboard: React.FC = () => {
     const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
     const [openVolumePopups, setOpenVolumePopups] = useState<OpenVolumePopup[]>([]);
     const [maxZIndex, setMaxZIndex] = useState(100);
-    const [isSyncing, setIsSyncing] = useState(false);
 
-    // Listen for sync status changes from FundsTab via custom event
-    useEffect(() => {
-        const handleSyncStatusChange = (event: CustomEvent<{ isSyncing: boolean }>) => {
-            setIsSyncing(event.detail.isSyncing);
-        };
 
-        window.addEventListener('fundSyncStatusChange', handleSyncStatusChange as EventListener);
-        return () => {
-            window.removeEventListener('fundSyncStatusChange', handleSyncStatusChange as EventListener);
-        };
-    }, []);
-
-    // Reset sync status when leaving funds tab
-    useEffect(() => {
-        if (activeTab !== 'funds') {
-            setIsSyncing(false);
-        }
-    }, [activeTab]);
 
     useEffect(() => {
         // Expose handleTickerClick to global window for IndexTable to use
@@ -200,7 +181,6 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">
-                        <SyncIndicator isVisible={isSyncing} />
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle">
                                 <svg

@@ -73,12 +73,7 @@ export const FundsTab: React.FC = () => {
         fetchPerformanceData();
     }, []);
 
-    // Dispatch sync status for header indicator
-    useEffect(() => {
-        window.dispatchEvent(new CustomEvent('fundSyncStatusChange', {
-            detail: { isSyncing: isSyncing }
-        }));
-    }, [isSyncing]);
+
 
     // Poll for fresh data when syncing
     useEffect(() => {
