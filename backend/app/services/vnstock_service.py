@@ -1814,6 +1814,16 @@ class VnstockService:
         # Check if there's an existing task that's still running
         if self._background_sync_task and not self._background_sync_task.done():
             return
+
+        # Check if last sync was successful recently (within 6 hours)
+        # This prevents redundant API hits on every page refresh
+        if sync_status.fund_performance.last_sync:
+            try:
+                last_sync_dt = datetime.fromisoformat(sync_status.fund_performance.last_sync)
+                if (datetime.now() - last_sync_dt).total_seconds() < 6 * 3600:
+                    return
+            except (ValueError, TypeError):
+                pass
         
         # Start background sync
         self._background_sync_task = asyncio.create_task(self._background_sync_coroutine())
