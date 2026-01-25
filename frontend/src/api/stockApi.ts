@@ -134,6 +134,20 @@ export interface FundPerformanceData {
     benchmarks: Record<string, FundPerformanceMetrics>;
     common_start_date: string | null;
     last_updated: string | null;
+    is_stale?: boolean;
+    is_syncing?: boolean;
+}
+
+// Sync Status Types
+export interface SyncStatusItem {
+    is_syncing: boolean;
+    last_sync: string | null;
+    error: string | null;
+    started_at: string | null;
+}
+
+export interface SyncStatusResponse {
+    fund_performance: SyncStatusItem;
 }
 
 // Stock API functions
@@ -319,6 +333,14 @@ export const stockApi = {
      */
     async getFundPerformance(): Promise<FundPerformanceData> {
         const response = await apiClient.get<FundPerformanceData>('/funds/performance');
+        return response.data;
+    },
+
+    /**
+     * Fetch current background sync status
+     */
+    async getSyncStatus(): Promise<SyncStatusResponse> {
+        const response = await apiClient.get<SyncStatusResponse>('/sync/status');
         return response.data;
     },
 };

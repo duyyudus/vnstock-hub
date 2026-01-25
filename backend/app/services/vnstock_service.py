@@ -103,14 +103,13 @@ class VnstockService:
 
     def __init__(self):
         self._enriching_tickers = set()
-        # Fund caches: {key: (data, timestamp)}
+        # Fund holding caches (no DB backing): {key: (data, timestamp)}
         self._fund_listing_cache = {}
-        self._fund_nav_cache = {}
         self._fund_top_holding_cache = {}
         self._fund_industry_holding_cache = {}
         self._fund_asset_holding_cache = {}
         
-        # Cache TTLs in seconds
+        # Cache TTLs in seconds (for holdings without DB backing)
         self._FUND_LISTING_TTL = 3600  # 1 hour
         self._FUND_DETAILS_TTL = 1800  # 30 minutes
 
@@ -1402,16 +1401,8 @@ class VnstockService:
         Fetch NAV (Net Asset Value) history for a specific fund.
         Uses database as primary source, syncs from API only for missing/newer data.
         """
-        # Check memory cache first (short TTL for fast repeated requests)
-        if self._is_cache_valid(self._fund_nav_cache, symbol, self._FUND_DETAILS_TTL):
-            return self._fund_nav_cache[symbol][0]
-
-        # Load from database and sync missing data
-        data = await self._get_fund_nav_with_sync(symbol)
-        
-        if data:
-            self._fund_nav_cache[symbol] = (data, time.time())
-        return data
+        # Load directly from database (with API sync if data is stale)
+        return await self._get_fund_nav_with_sync(symbol)
 
     async def _get_fund_nav_with_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """
@@ -1433,9 +1424,10 @@ class VnstockService:
                 need_api_sync = True
             else:
                 latest_db_date = db_records[-1].date
-                # Sync if latest DB date is more than 1 day old
                 today = date.today()
-                if (today - latest_db_date).days > 1:
+                # Sync if latest DB date is more than 3 days old
+                # Using 3 days to handle weekends (fund NAV only updates on trading days)
+                if (today - latest_db_date).days > 3:
                     need_api_sync = True
             
             # Step 3: Sync from API if needed
@@ -1519,7 +1511,8 @@ class VnstockService:
         self, 
         db_session, 
         symbol: str, 
-        fund_api
+        fund_api,
+        skip_api_sync: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Sync version of NAV retrieval with database storage.
@@ -1529,6 +1522,7 @@ class VnstockService:
             db_session: SQLAlchemy sync Session
             symbol: Fund symbol
             fund_api: vnstock Fund instance for API calls
+            skip_api_sync: If True, skip API sync and only return DB data (for fast loading)
         """
         from sqlalchemy import select as sync_select
         
@@ -1539,15 +1533,17 @@ class VnstockService:
         # Step 2: Determine if we need to sync from API
         need_api_sync = False
         
-        if not db_records:
-            # No data in DB, need full sync
-            need_api_sync = True
-        else:
-            latest_db_date = db_records[-1].date
-            today = date.today()
-            # Sync if latest DB date is more than 1 day old
-            if (today - latest_db_date).days > 1:
+        if not skip_api_sync:
+            if not db_records:
+                # No data in DB, need full sync
                 need_api_sync = True
+            else:
+                latest_db_date = db_records[-1].date
+                today = date.today()
+                # Sync if latest DB date is more than 3 days old
+                # Using 3 days to handle weekends (fund NAV only updates on trading days)
+                if (today - latest_db_date).days > 3:
+                    need_api_sync = True
         
         # Step 3: Sync from API if needed
         if need_api_sync:
@@ -1726,31 +1722,86 @@ class VnstockService:
             print(f"Error fetching asset holdings for {symbol}: {e}")
             return []
 
-    # Fund Performance Analytics Cache
-    _fund_performance_cache: Dict[str, tuple] = {}
-    _FUND_PERFORMANCE_TTL = 86400  # 24 hours
+    # Background sync task (no memory cache - DB is the cache)
+    _background_sync_task: asyncio.Task | None = None
 
     async def get_fund_performance_data(self) -> Dict[str, Any]:
         """
         Get aggregated fund performance data for comparison charts.
         Includes normalized NAV, periodic returns, and risk metrics.
-        Data is cached daily.
+        
+        Always loads from database (which is fast since NAV data is persisted).
+        Background sync runs if any fund data is stale (>3 days old).
         """
-        cache_key = "performance"
-        if self._is_cache_valid(self._fund_performance_cache, cache_key, self._FUND_PERFORMANCE_TTL):
-            return self._fund_performance_cache[cache_key][0]
+        from app.services.sync_status import sync_status
+        
+        try:
+            loop = asyncio.get_event_loop()
+            # Load from DB (with conditional API sync based on data freshness)
+            data = await loop.run_in_executor(
+                None, 
+                lambda: self._compute_fund_performance_sync(skip_api_sync=True)
+            )
+            
+            if data and data.get('funds'):
+                data = data.copy()
+                data['is_stale'] = False
+                data['is_syncing'] = sync_status.fund_performance.is_syncing
+                
+                # Check if we should trigger background sync (done inside _compute)
+                # by checking if any NAV data needs updating
+                self._trigger_background_sync_if_needed()
+                return data
+            else:
+                # No DB data at all, must sync from API (first time ever)
+                sync_status.start_fund_performance_sync()
+                data = await loop.run_in_executor(None, self._compute_fund_performance_sync)
+                if data:
+                    data['is_stale'] = False
+                    data['is_syncing'] = False
+                sync_status.complete_fund_performance_sync(success=True)
+                return data
+        except Exception as e:
+            sync_status.complete_fund_performance_sync(success=False, error=str(e))
+            raise
+    
+    def _trigger_background_sync_if_needed(self):
+        """Trigger background sync if not already running and data might be stale."""
+        from app.services.sync_status import sync_status
+        
+        # Check if already syncing
+        if sync_status.fund_performance.is_syncing:
+            return
+        
+        # Check if there's an existing task that's still running
+        if self._background_sync_task and not self._background_sync_task.done():
+            return
+        
+        # Start background sync
+        self._background_sync_task = asyncio.create_task(self._background_sync_coroutine())
+    
+    async def _background_sync_coroutine(self):
+        """Background coroutine to sync fund NAV data from API to database."""
+        from app.services.sync_status import sync_status
+        
+        sync_status.start_fund_performance_sync()
+        try:
+            loop = asyncio.get_event_loop()
+            # Run full sync (with API calls) to update DB with fresh data
+            await loop.run_in_executor(None, self._compute_fund_performance_sync)
+            print("Background sync completed: Fund NAV data updated in database")
+            sync_status.complete_fund_performance_sync(success=True)
+        except Exception as e:
+            print(f"Background sync failed: {e}")
+            sync_status.complete_fund_performance_sync(success=False, error=str(e))
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._compute_fund_performance_sync)
-
-        if data:
-            self._fund_performance_cache[cache_key] = (data, time.time())
-        return data
-
-    def _compute_fund_performance_sync(self) -> Dict[str, Any]:
+    def _compute_fund_performance_sync(self, skip_api_sync: bool = False) -> Dict[str, Any]:
         """
         Compute fund performance metrics synchronously.
         Normalizes NAV to base 100, calculates returns and risk metrics.
+        
+        Args:
+            skip_api_sync: If True, only load from DB without API sync (for fast initial load).
         """
         from vnstock import Fund, Vnstock
         import numpy as np
@@ -1795,7 +1846,7 @@ class VnstockService:
                     try:
                         # Get NAV data from DB, sync from API if needed
                         nav_records = self._get_fund_nav_with_sync_db(
-                            db_session, symbol, fund
+                            db_session, symbol, fund, skip_api_sync=skip_api_sync
                         )
                         
                         if len(nav_records) < 10:  # Need minimum data points

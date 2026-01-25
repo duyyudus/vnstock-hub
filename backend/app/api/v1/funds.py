@@ -23,6 +23,8 @@ class FundPerformanceResponse(BaseModel):
     benchmarks: dict
     common_start_date: Optional[str] = None
     last_updated: Optional[str] = None
+    is_stale: bool = False
+    is_syncing: bool = False
 
 
 @router.get("/listing", response_model=FundDataResponse)

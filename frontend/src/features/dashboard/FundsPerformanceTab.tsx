@@ -17,6 +17,7 @@ export const FundsPerformanceTab: React.FC = () => {
     const [chartType, setChartType] = useState<ChartType>('growth');
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
     const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3); // Default to last 3 years
+    const [isSyncing, setIsSyncing] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -25,6 +26,8 @@ export const FundsPerformanceTab: React.FC = () => {
             try {
                 const response = await stockApi.getFundPerformance();
                 setData(response);
+                // Use is_syncing for indicator - more accurate than is_stale
+                setIsSyncing(response.is_syncing || response.is_stale || false);
 
                 // Set initial start year to something reasonable like 3 years ago if available
                 if (response.funds.length > 0) {
@@ -52,6 +55,36 @@ export const FundsPerformanceTab: React.FC = () => {
 
         fetchData();
     }, []);
+
+    // Dispatch sync status to Dashboard for header indicator
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('fundSyncStatusChange', {
+            detail: { isSyncing: isSyncing }
+        }));
+    }, [isSyncing]);
+
+    // Poll for fresh data when syncing
+    useEffect(() => {
+        if (!isSyncing) return;
+
+        const pollForFreshData = async () => {
+            try {
+                const response = await stockApi.getFundPerformance();
+                // Stop polling when sync is complete
+                if (!response.is_syncing && !response.is_stale) {
+                    setData(response);
+                    setIsSyncing(false);
+                    console.log('Fresh fund performance data received');
+                }
+            } catch (err) {
+                console.error('Error polling for fresh data:', err);
+            }
+        };
+
+        // Poll every 5 seconds while syncing
+        const interval = setInterval(pollForFreshData, 5000);
+        return () => clearInterval(interval);
+    }, [isSyncing]);
 
     // Get all unique years available in the data for the start year selector
     const availableYears = useMemo(() => {
@@ -178,6 +211,12 @@ export const FundsPerformanceTab: React.FC = () => {
                         {/* Stats */}
                         <div className="ml-auto flex items-center gap-4 text-sm text-base-content/50">
                             <span>{filteredFunds.length} funds</span>
+                            {isSyncing && (
+                                <span className="text-warning flex items-center gap-1">
+                                    <span className="loading loading-spinner loading-xs"></span>
+                                    Syncing NAV data...
+                                </span>
+                            )}
                             {data.last_updated && (
                                 <span>Updated: {new Date(data.last_updated).toLocaleDateString()}</span>
                             )}

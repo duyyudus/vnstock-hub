@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.stocks import router as stocks_router
 from app.api.v1.funds import router as funds_router
+from app.api.v1.sync import router as sync_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
 from app.services.vnstock_service import vnstock_service
@@ -46,6 +47,7 @@ app.add_middleware(
 # Include routers
 app.include_router(stocks_router, prefix=settings.api_v1_prefix)
 app.include_router(funds_router, prefix=settings.api_v1_prefix)
+app.include_router(sync_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")
