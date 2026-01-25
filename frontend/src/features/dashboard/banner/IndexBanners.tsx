@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { stockApi } from '../../api/stockApi';
-import type { IndexValueInfo } from '../../api/stockApi';
+import { stockApi } from '../../../api/stockApi';
+import type { IndexValueInfo } from '../../../api/stockApi';
 
 interface IndexBannerProps {
     index: IndexValueInfo;

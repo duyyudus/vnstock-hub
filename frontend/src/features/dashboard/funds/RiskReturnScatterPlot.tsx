@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ZAxis } from 'recharts';
-import type { FundPerformanceMetrics } from '../../api/stockApi';
+import type { FundPerformanceMetrics } from '../../../api/stockApi';
 
 interface RiskReturnScatterPlotProps {
     funds: FundPerformanceMetrics[];

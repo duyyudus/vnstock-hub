@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { stockApi, type FundPerformanceData } from '../../api/stockApi';
+import { stockApi, type FundPerformanceData } from '../../../api/stockApi';
 import { FundSelector, type FundInfo } from './FundSelector';
 import { FundInfoCard } from './FundInfoCard';
 import { NavReportChart } from './NavReportChart';

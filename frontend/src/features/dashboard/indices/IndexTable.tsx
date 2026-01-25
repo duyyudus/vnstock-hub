@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { stockApi } from '../../api/stockApi';
-import type { Stock } from '../../api/stockApi';
-import type { IndustryInfo } from '../../api/stockApi';
+import { stockApi } from '../../../api/stockApi';
+import type { Stock } from '../../../api/stockApi';
+import type { IndustryInfo } from '../../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
 import type { IndexConfig } from './indexConfig';

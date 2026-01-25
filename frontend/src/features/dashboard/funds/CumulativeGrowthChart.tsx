@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import type { FundPerformanceMetrics } from '../../api/stockApi';
+import type { FundPerformanceMetrics } from '../../../api/stockApi';
 
 interface CumulativeGrowthChartProps {
     funds: FundPerformanceMetrics[];

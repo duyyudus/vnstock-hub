@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { FundPerformanceMetrics } from '../../api/stockApi';
+import type { FundPerformanceMetrics } from '../../../api/stockApi';
 
 interface PeriodicReturnHeatmapProps {
     funds: FundPerformanceMetrics[];

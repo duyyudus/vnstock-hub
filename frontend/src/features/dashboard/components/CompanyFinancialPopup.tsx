@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { stockApi } from '../../api/stockApi';
-import type { FinancialDataResponse } from '../../api/stockApi';
+import { stockApi } from '../../../api/stockApi';
+import type { FinancialDataResponse } from '../../../api/stockApi';
 
 interface Position {
     x: number;

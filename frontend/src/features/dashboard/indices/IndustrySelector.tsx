@@ -1,5 +1,5 @@
 import React from 'react';
-import type { IndustryInfo } from '../../api/stockApi';
+import type { IndustryInfo } from '../../../api/stockApi';
 
 interface IndustrySelectorProps {
     /** List of available industries */

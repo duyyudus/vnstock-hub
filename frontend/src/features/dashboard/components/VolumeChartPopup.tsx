@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { stockApi } from '../../api/stockApi';
-import type { VolumeHistoryResponse } from '../../api/stockApi';
+import { stockApi } from '../../../api/stockApi';
+import type { VolumeHistoryResponse } from '../../../api/stockApi';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface Position {

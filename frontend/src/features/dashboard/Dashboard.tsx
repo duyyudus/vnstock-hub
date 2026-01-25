@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
 import SyncIndicator from '../../components/SyncIndicator';
-import IndexTable from './IndexTable';
-import IndexBanners from './IndexBanners';
+import IndexTable from './indices/IndexTable';
+import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
-import type { IndexConfig } from './indexConfig';
-import { FundsTab } from './FundsTab';
+import type { IndexConfig } from './indices/indexConfig';
+import { FundsTab } from './funds/FundsTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
@@ -13,8 +13,8 @@ const DASHBOARD_TABS = [
     { id: 'funds', label: 'Funds' },
 ];
 
-import { CompanyFinancialPopup } from './CompanyFinancialPopup';
-import { VolumeChartPopup } from './VolumeChartPopup';
+import { CompanyFinancialPopup } from './components/CompanyFinancialPopup';
+import { VolumeChartPopup } from './components/VolumeChartPopup';
 
 interface OpenPopup {
     ticker: string;
