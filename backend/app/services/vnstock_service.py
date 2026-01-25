@@ -108,6 +108,9 @@ class VnstockService:
         self._fund_top_holding_cache = {}
         self._fund_industry_holding_cache = {}
         self._fund_asset_holding_cache = {}
+        self._fund_listing_df_cache = None
+        self._fund_listing_df_timestamp = 0
+        self._sync_engine = None
         
         # Cache TTLs in seconds (for holdings without DB backing)
         self._FUND_LISTING_TTL = 3600  # 1 hour
@@ -121,6 +124,14 @@ class VnstockService:
                 return True
         return False
     
+    def _get_sync_engine(self):
+        """Get or create cached synchronous SQLAlchemy engine."""
+        if self._sync_engine is None:
+            from sqlalchemy import create_engine
+            sync_url = settings.database_url.replace('+asyncpg', '')
+            self._sync_engine = create_engine(sync_url)
+        return self._sync_engine
+
     async def sync_indices(self) -> None:
         """
         Fetch all indices from vnstock and update the database.
@@ -780,8 +791,7 @@ class VnstockService:
         }
         
         # Use sync connection for DB lookup  
-        sync_url = settings.database_url.replace('+asyncpg', '')
-        engine = create_engine(sync_url)
+        engine = self._get_sync_engine()
         
         symbols = [s.ticker[:3] for s in stocks]
         
@@ -1198,9 +1208,8 @@ class VnstockService:
         symbol_clean = symbol[:3]
         company_name = symbol_clean
 
-        # Get company name from database
-        sync_url = settings.database_url.replace('+asyncpg', '')
-        engine = create_engine(sync_url)
+        # Use sync connection for DB lookup
+        engine = self._get_sync_engine()
 
         try:
             with Session(engine) as session:
@@ -1351,34 +1360,50 @@ class VnstockService:
     def _fetch_fund_listing_sync(self, fund_type: str) -> List[Dict[str, Any]]:
         """Fetch fund listing synchronously."""
         from vnstock import Fund
+        
+        df = None
+        # Use DF cache if valid and no fund_type filtering needed at the source level
+        if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
+            df = self._fund_listing_df_cache.copy() # Copy to avoid mutating cache
+            print(f"Using cached fund listing DF for endpoint (type={fund_type or 'all'})")
+        else:
+            def fetch_listing():
+                fund = Fund()
+                return fund.listing()
+            
+            try:
+                df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
+                if df is not None and not df.empty:
+                    self._fund_listing_df_cache = df
+                    self._fund_listing_df_timestamp = time.time()
+                    print("Fetched and cached fresh fund listing from API for endpoint")
+                    df = df.copy()
+            except Exception as e:
+                print(f"Error fetching fund listing from API: {e}")
+                if self._fund_listing_df_cache is not None:
+                    print("Using stale cache as fallback for endpoint")
+                    df = self._fund_listing_df_cache.copy()
+                else:
+                    return []
 
-        def fetch_listing():
-            fund = Fund()
-            df = fund.listing()
-            if df is not None and not df.empty:
-                # Filter by fund_type if provided
-                if fund_type:
-                    df = df[df['fund_type'] == fund_type]
+        if df is not None and not df.empty:
+            # Filter by fund_type if provided
+            if fund_type:
+                df = df[df['fund_type'] == fund_type]
 
-                df = self._flatten_columns(df)
-                records = df.to_dict('records')
-                for record in records:
-                    # Normalize field names for frontend
-                    self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
-                    self._normalize_fund_field(record, 'name', ['name', 'short_name'])
-                    self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
+            df = self._flatten_columns(df)
+            records = df.to_dict('records')
+            for record in records:
+                # Normalize field names for frontend
+                self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
+                self._normalize_fund_field(record, 'name', ['name', 'short_name'])
+                self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
                     
-                    for key, value in record.items():
-                        if pd.isna(value):
-                            record[key] = None
-                return records
-            return []
-
-        try:
-            return retry_with_backoff(fetch_listing, max_retries=2, initial_delay=30.0)
-        except Exception as e:
-            print(f"Error fetching fund listing: {e}")
-            return []
+                for key, value in record.items():
+                    if pd.isna(value):
+                        record[key] = None
+            return records
+        return []
 
     def _normalize_fund_field(self, record: dict, target_key: str, source_keys: List[str]) -> None:
         """
@@ -1817,35 +1842,51 @@ class VnstockService:
             skip_api_sync: If True, only load from DB without API sync (for fast initial load).
         """
         from vnstock import Fund, Vnstock
+        from sqlalchemy.orm import Session
         import numpy as np
 
         # Risk-free rate for Vietnam (government bond yield ~4%)
         RISK_FREE_RATE = 0.04
 
         try:
-            # Step 1: Get all funds (with retry)
-            fund = Fund()
+            # Step 1: Get all funds (with retry and cache)
+            listing_df = None
             
-            def fetch_listing():
-                return fund.listing()
-            
-            try:
-                listing_df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
-            except Exception as e:
-                print(f"Failed to fetch fund listing after retries: {e}")
-                return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+            # Check cache first
+            if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
+                listing_df = self._fund_listing_df_cache
+                print("Using cached fund listing for performance calculation")
+            else:
+                fund = Fund()
+                def fetch_listing():
+                    return fund.listing()
+                
+                try:
+                    listing_df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
+                    if listing_df is not None and not listing_df.empty:
+                        self._fund_listing_df_cache = listing_df
+                        self._fund_listing_df_timestamp = time.time()
+                        print("Fetched and cached fresh fund listing from API")
+                except Exception as e:
+                    print(f"Failed to fetch fund listing after retries: {e}")
+                    # If we have a stale cache, use it as fallback
+                    if self._fund_listing_df_cache is not None:
+                        print("Using stale fund listing cache as fallback")
+                        listing_df = self._fund_listing_df_cache
+                    else:
+                        return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
             
             if listing_df is None or listing_df.empty:
                 return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+
+            # Prepare for fetching NAVs
+            fund = Fund() # Re-initialize for safety if needed
 
             funds_data = []
             all_nav_dates = set()
 
             # Set up sync database connection for NAV storage
-            from sqlalchemy import create_engine
-            from sqlalchemy.orm import Session
-            sync_url = settings.database_url.replace('+asyncpg', '')
-            engine = create_engine(sync_url)
+            engine = self._get_sync_engine()
 
             # Step 2: Fetch NAV data for each fund (using DB-backed storage)
             with Session(engine) as db_session:
