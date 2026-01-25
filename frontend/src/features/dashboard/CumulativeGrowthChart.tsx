@@ -139,7 +139,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
         <div className="w-full h-full flex flex-col">
             <div className="flex-1 min-h-0 relative">
                 <ResponsiveContainer width="100%" height={680} debounce={50}>
-                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
+                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 30 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                         <XAxis
                             dataKey="date"

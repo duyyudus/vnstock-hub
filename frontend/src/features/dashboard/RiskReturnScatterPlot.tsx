@@ -145,8 +145,8 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
 
     return (
         <div className="w-full">
-            <ResponsiveContainer width="100%" height={650} minWidth={0}>
-                <ScatterChart margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+            <ResponsiveContainer width="100%" height={680} minWidth={0}>
+                <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                     <XAxis
                         type="number"

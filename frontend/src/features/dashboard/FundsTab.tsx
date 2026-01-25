@@ -282,7 +282,7 @@ export const FundsTab: React.FC = () => {
                                     {chartType === 'scatter' && '⚖️ Risk vs Return'}
                                     {chartType === 'heatmap' && '🗓️ Yearly Performance Heatmap'}
                                 </h3>
-                                <div className={chartType === 'heatmap' ? 'w-full' : 'w-full h-[600px]'}>
+                                <div className={chartType === 'heatmap' ? 'w-full' : 'w-full h-[750px]'}>
                                     {chartType === 'growth' && (
                                         <CumulativeGrowthChart
                                             funds={performanceFunds}
