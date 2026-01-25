@@ -112,6 +112,7 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
         ? (benchmarkPoint.y - riskFreeRate) / benchmarkPoint.x!
         : 0.5;
 
+    // ... rest of Tooltip and Guards ...
     const CustomTooltip = ({ active, payload }: any) => {
         if (active && payload && payload.length) {
             const data = payload[0].payload;
@@ -137,11 +138,26 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
         );
     }
 
-    // Note: axis domains are calculated via callback functions directly in the YAxis/XAxis domain prop
-    // But we need xMax for the Capital Market Line reference
-    const xMax = chartData.length > 0
-        ? Math.min(Math.max(...chartData.map(d => d.x), benchmarkPoint?.x || 0) * 1.1, 100)
-        : 50;
+    // Determine axis bounds for line clipping
+    const xDataMax = Math.max(...chartData.map(d => d.x), benchmarkPoint?.x || 0);
+    const yDataMax = Math.max(...chartData.map(d => d.y), benchmarkPoint?.y || 0);
+
+    const xLimit = Math.min(xDataMax * 1.1, 100);
+    const yLimit = Math.max(yDataMax * 1.1, 10);
+
+    // Clip the line so it doesn't go to infinity or break SVG rendering
+    // We want the line to end at either the xLimit or the yLimit
+    let lineEndX = xLimit;
+    let lineEndY = riskFreeRate + (cmlSlope * lineEndX);
+
+    if (lineEndY > yLimit) {
+        lineEndY = yLimit;
+        lineEndX = (lineEndY - riskFreeRate) / (cmlSlope || 0.1);
+    }
+
+    // Final sanity check for coordinates
+    const safeLineEndX = isFinite(lineEndX) ? Math.max(0, lineEndX) : 50;
+    const safeLineEndY = isFinite(lineEndY) ? lineEndY : 50;
 
     return (
         <div className="w-full">
@@ -175,7 +191,10 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
 
                     {/* Capital Market Line - funds above are "alpha" generators */}
                     <ReferenceLine
-                        segment={[{ x: 0, y: riskFreeRate }, { x: xMax, y: riskFreeRate + (cmlSlope * xMax) }]}
+                        segment={[
+                            { x: 0, y: riskFreeRate },
+                            { x: safeLineEndX, y: safeLineEndY }
+                        ]}
                         stroke="#fbbf24"
                         strokeDasharray="5 5"
                         strokeWidth={2}
