@@ -56,8 +56,8 @@ export const IndexBanners: React.FC = () => {
 
         fetchIndexValues();
 
-        // Refresh every 60 seconds
-        const interval = setInterval(fetchIndexValues, 60000);
+        // Refresh every 5 minutes
+        const interval = setInterval(fetchIndexValues, 300000);
         return () => clearInterval(interval);
     }, []);
 
