@@ -6,14 +6,14 @@ import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
 import type { IndexConfig } from './indexConfig';
 
-interface IndexTableProps {
+interface StocksTableProps {
     /** List of available indices */
     indices: IndexConfig[];
 }
 
 /**
- * Generic index stocks table component.
- * Displays stocks for the selected index with price, market cap, and additional metrics.
+ * Generic stocks table component.
+ * Displays stocks for the selected index or industry with price, market cap, and additional metrics.
  */
 
 type SortKey = keyof Stock;
@@ -24,7 +24,7 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-export const IndexTable: React.FC<IndexTableProps> = ({
+export const StocksTable: React.FC<StocksTableProps> = ({
     indices
 }) => {
     // Default to VN30 if available, otherwise first index
@@ -534,8 +534,8 @@ export const IndexTable: React.FC<IndexTableProps> = ({
                                 return (
                                     <tr key={stock.ticker} className="hover">
                                         <td className="text-base-content/60">{index + 1}</td>
-                                        <td 
-                                            className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`} 
+                                        <td
+                                            className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`}
                                             title={isCompanyCollapsed ? "" : stock.company_name}
                                         >
                                             {!isCompanyCollapsed && stock.company_name}
@@ -595,4 +595,4 @@ export const IndexTable: React.FC<IndexTableProps> = ({
     );
 };
 
-export default IndexTable;
+export default StocksTable;

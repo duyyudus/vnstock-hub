@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import IndexTable from './indices/IndexTable';
+import StocksTable from './indices/StocksTable';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
@@ -43,7 +43,7 @@ export const Dashboard: React.FC = () => {
 
 
     useEffect(() => {
-        // Expose handleTickerClick to global window for IndexTable to use
+        // Expose handleTickerClick to global window for StocksTable to use
         // This is a workaround to avoid passing props deep or using Context for now
         (window as any).onTickerClick = (ticker: string, companyName: string) => {
             handleTickerClick(ticker, companyName);
@@ -158,7 +158,7 @@ export const Dashboard: React.FC = () => {
                         </div>
                     );
                 }
-                return <IndexTable indices={indices} />;
+                return <StocksTable indices={indices} />;
             case 'funds':
                 return <FundsTab />;
             default:
