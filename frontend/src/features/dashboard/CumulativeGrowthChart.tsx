@@ -170,6 +170,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                                 strokeOpacity={idx < 10 ? 1 : 0.3}
                                 dot={false}
                                 name={fund.name}
+                                connectNulls={true}
                             />
                         ))}
 
@@ -183,6 +184,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                                 strokeDasharray="5 5"
                                 dot={false}
                                 name={benchmark.name}
+                                connectNulls={true}
                             />
                         )}
                     </LineChart>

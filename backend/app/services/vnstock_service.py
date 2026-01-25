@@ -1464,14 +1464,27 @@ class VnstockService:
                         result = await session.execute(stmt)
                         db_records = list(result.scalars().all())
             
-            # Step 4: Convert to frontend format
-            return [
-                {
-                    'date': record.date.isoformat(),
-                    'nav': record.nav
-                }
+            # Step 4: Convert to dataframe and sample to weekly frequency
+            df = pd.DataFrame([
+                {'date': record.date, 'nav': record.nav}
                 for record in db_records
-            ]
+            ])
+            
+            if not df.empty:
+                df['date'] = pd.to_datetime(df['date'])
+                # resample to weekly, taking the last available point in each week
+                # Consistent with performance API (using Sunday labels)
+                df_weekly = df.resample('W', on='date').last().dropna().reset_index()
+                
+                return [
+                    {
+                        'date': row['date'].strftime('%Y-%m-%d'),
+                        'nav': row['nav']
+                    }
+                    for _, row in df_weekly.iterrows()
+                ]
+            
+            return []
 
     def _fetch_fund_nav_from_api_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch fund NAV data from vnstock API synchronously."""
@@ -1946,9 +1959,13 @@ class VnstockService:
                         if annualized_volatility and annualized_volatility > 0:
                             sharpe_ratio = round((annualized_return / 100 - RISK_FREE_RATE) / (annualized_volatility / 100), 2)
 
-                # Prepare NAV history for charts
+                # Prepare NAV history for charts (Sample to weekly to reduce payload)
                 nav_history = []
-                for _, row in df.iterrows():
+                # resample to weekly, taking the last available point in each week
+                # This naturally uses Sunday as the label, providing a consistent axis
+                df_weekly = df.resample('W', on='date').last().dropna().reset_index()
+
+                for _, row in df_weekly.iterrows():
                     nav_history.append({
                         'date': row['date'].strftime('%Y-%m-%d'),
                         'normalized_nav': round(row['normalized_nav'], 2),
@@ -2078,9 +2095,12 @@ class VnstockService:
                 if annualized_volatility and annualized_volatility > 0 and annualized_return is not None:
                     sharpe_ratio = round((annualized_return / 100 - RISK_FREE_RATE) / (annualized_volatility / 100), 2)
 
-            # NAV history
+            # NAV history (Sample to weekly to reduce payload)
             nav_history = []
-            for _, row in df.iterrows():
+            # resample to weekly
+            df_weekly = df.resample('W', on='date').last().dropna().reset_index()
+
+            for _, row in df_weekly.iterrows():
                 nav_history.append({
                     'date': row['date'].strftime('%Y-%m-%d'),
                     'normalized_nav': round(row['normalized_nav'], 2),

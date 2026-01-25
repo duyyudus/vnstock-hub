@@ -72,6 +72,7 @@ export const NavReportChart: React.FC<NavReportChartProps> = ({ data, loading = 
                         stroke="#3b82f6"
                         strokeWidth={2}
                         dot={false}
+                        connectNulls={true}
                     />
                 </LineChart>
             </ResponsiveContainer>
