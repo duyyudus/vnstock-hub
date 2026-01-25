@@ -6,13 +6,11 @@ import IndexBanners from './IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indexConfig';
 import { FundsTab } from './FundsTab';
-import { FundsPerformanceTab } from './FundsPerformanceTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
     { id: 'funds', label: 'Funds' },
-    { id: 'funds-performance', label: 'Funds Performance' },
 ];
 
 import { CompanyFinancialPopup } from './CompanyFinancialPopup';
@@ -44,7 +42,7 @@ export const Dashboard: React.FC = () => {
     const [maxZIndex, setMaxZIndex] = useState(100);
     const [isSyncing, setIsSyncing] = useState(false);
 
-    // Listen for sync status changes from FundsPerformanceTab via custom event
+    // Listen for sync status changes from FundsTab via custom event
     useEffect(() => {
         const handleSyncStatusChange = (event: CustomEvent<{ isSyncing: boolean }>) => {
             setIsSyncing(event.detail.isSyncing);
@@ -56,9 +54,9 @@ export const Dashboard: React.FC = () => {
         };
     }, []);
 
-    // Reset sync status when leaving funds-performance tab
+    // Reset sync status when leaving funds tab
     useEffect(() => {
-        if (activeTab !== 'funds-performance') {
+        if (activeTab !== 'funds') {
             setIsSyncing(false);
         }
     }, [activeTab]);
@@ -182,8 +180,6 @@ export const Dashboard: React.FC = () => {
                 return <IndexTable indices={indices} />;
             case 'funds':
                 return <FundsTab />;
-            case 'funds-performance':
-                return <FundsPerformanceTab />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">
