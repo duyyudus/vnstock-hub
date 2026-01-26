@@ -137,9 +137,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         <h2 className="text-2xl font-bold text-base-content">
                             {selectedIndustryName || selectedIndex.title}
                         </h2>
-                        <p className="text-base-content/60 text-sm">
-                            {selectedIndustryName ? `Top stocks in ${selectedIndustryName}` : selectedIndex.description}
-                        </p>
                     </div>
 
                     {/* Toolbar */}
