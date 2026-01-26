@@ -285,7 +285,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                         {isHistory && typeof content === 'string' ? (
                             <div className="space-y-3">
                                 {content
-                                    .split(/;\s*[-–—]\s*/)
+                                    .split(/(?:;\.?|\.)\s*[-–—]\s*/)
                                     .map(part => part.trim().replace(/^-/, '').trim())
                                     .filter(s => s)
                                     .map((part, idx) => (
