@@ -57,7 +57,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
     // Local State
     const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
-    
+
     // Data State
     const [priceData, setPriceData] = useState<StocksWeeklyPricesResponse | null>(null);
     const [loading, setLoading] = useState(false);
@@ -226,15 +226,13 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
 
                 <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-base-content/70">Vs:</span>
-                    <label className="swap swap-flip">
-                        <input
-                            type="checkbox"
-                            checked={benchmark === 'VN30'}
-                            onChange={(e) => setBenchmark(e.target.checked ? 'VN30' : 'VNINDEX')}
-                        />
-                        <div className="swap-on btn btn-sm btn-secondary">VN30</div>
-                        <div className="swap-off btn btn-sm btn-accent">VN-Index</div>
-                    </label>
+                    <button
+                        className={`btn btn-sm ${benchmark === 'VN30' ? 'btn-secondary' : 'btn-accent'}`}
+                        onClick={() => setBenchmark(prev => prev === 'VNINDEX' ? 'VN30' : 'VNINDEX')}
+                        title={`Click to switch to ${benchmark === 'VN30' ? 'VN-Index' : 'VN30'}`}
+                    >
+                        {benchmark === 'VNINDEX' ? 'VN-Index' : 'VN30'}
+                    </button>
                 </div>
 
                 {isSyncing && (
@@ -325,12 +323,12 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                         <span>{stock.symbol}</span>
                     </div>
                 ))}
-                
+
                 {/* Benchmark Legend */}
                 {priceData?.benchmarks && priceData.benchmarks[benchmark] && (
                     <div className="flex items-center gap-1">
-                        <div className="w-4 h-0.5 border-t-2 border-dashed" 
-                             style={{ borderColor: benchmark === 'VNINDEX' ? VNINDEX_COLOR : VN30_COLOR }}>
+                        <div className="w-4 h-0.5 border-t-2 border-dashed"
+                            style={{ borderColor: benchmark === 'VNINDEX' ? VNINDEX_COLOR : VN30_COLOR }}>
                         </div>
                         <span>{benchmark === 'VNINDEX' ? "VN-Index" : "VN30"}</span>
                     </div>

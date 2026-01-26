@@ -245,15 +245,13 @@ export const FundsTab: React.FC = () => {
 
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium text-base-content/70">Vs:</span>
-                                        <label className="swap swap-flip">
-                                            <input
-                                                type="checkbox"
-                                                checked={benchmark === 'VN30'}
-                                                onChange={(e) => setBenchmark(e.target.checked ? 'VN30' : 'VNINDEX')}
-                                            />
-                                            <div className="swap-on btn btn-sm btn-secondary">VN30</div>
-                                            <div className="swap-off btn btn-sm btn-accent">VN-Index</div>
-                                        </label>
+                                        <button
+                                            className={`btn btn-sm ${benchmark === 'VN30' ? 'btn-secondary' : 'btn-accent'}`}
+                                            onClick={() => setBenchmark(prev => prev === 'VNINDEX' ? 'VN30' : 'VNINDEX')}
+                                            title={`Click to switch to ${benchmark === 'VN30' ? 'VN-Index' : 'VN30'}`}
+                                        >
+                                            {benchmark === 'VNINDEX' ? 'VN-Index' : 'VN30'}
+                                        </button>
                                     </div>
 
                                     <div className="ml-auto flex items-center gap-4 text-sm text-base-content/50">
