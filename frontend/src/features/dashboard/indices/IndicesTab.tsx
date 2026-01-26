@@ -36,9 +36,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('table');
     const [searchQuery, setSearchQuery] = useState('');
-    const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
-    const [showVnIndex, setShowVnIndex] = useState<boolean>(true);
-    const [showVn30, setShowVn30] = useState<boolean>(false);
 
     // --- Effects ---
 
@@ -110,10 +107,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         );
     }, [stocks, searchQuery]);
 
-    // Generate year options for dropdown (last 10 years)
-    const currentYear = new Date().getFullYear();
-    const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
-
     // --- Render ---
 
     if (!selectedIndex) {
@@ -157,40 +150,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 Growth Chart
                             </button>
                         </div>
-
-                        {/* Chart Specific Controls */}
-                        {viewMode === 'growth' && (
-                            <>
-                                <select
-                                    className="select select-sm select-bordered"
-                                    value={startYear}
-                                    onChange={(e) => setStartYear(parseInt(e.target.value))}
-                                >
-                                    {yearOptions.map(year => (
-                                        <option key={year} value={year}>From {year}</option>
-                                    ))}
-                                </select>
-
-                                <label className="label cursor-pointer gap-1">
-                                    <input
-                                        type="checkbox"
-                                        className="checkbox checkbox-sm checkbox-warning"
-                                        checked={showVnIndex}
-                                        onChange={(e) => setShowVnIndex(e.target.checked)}
-                                    />
-                                    <span className="label-text text-xs">VN-Index</span>
-                                </label>
-                                <label className="label cursor-pointer gap-1">
-                                    <input
-                                        type="checkbox"
-                                        className="checkbox checkbox-sm checkbox-info"
-                                        checked={showVn30}
-                                        onChange={(e) => setShowVn30(e.target.checked)}
-                                    />
-                                    <span className="label-text text-xs">VN30</span>
-                                </label>
-                            </>
-                        )}
 
                         {/* Search & Selectors */}
                         <div className="relative">
@@ -244,9 +203,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         {viewMode === 'growth' ? (
                             <StocksGrowthChart
                                 stocks={filteredStocks}
-                                startYear={startYear}
-                                showVnIndex={showVnIndex}
-                                showVn30={showVn30}
                             />
                         ) : (
                             <StocksTable stocks={filteredStocks} />

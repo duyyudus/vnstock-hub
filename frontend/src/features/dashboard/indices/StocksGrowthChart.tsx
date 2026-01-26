@@ -5,10 +5,9 @@ import type { Stock, StocksWeeklyPricesResponse } from '../../../api/stockApi';
 
 interface StocksGrowthChartProps {
     stocks: Stock[];
-    startYear: number;
-    showVnIndex: boolean;
-    showVn30: boolean;
 }
+
+type Benchmark = 'VNINDEX' | 'VN30';
 
 // Color palette for top stocks
 const TOP_COLORS = [
@@ -54,10 +53,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
     stocks,
-    startYear,
-    showVnIndex,
-    showVn30,
 }) => {
+    // Local State
+    const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
+    const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
+    
+    // Data State
     const [priceData, setPriceData] = useState<StocksWeeklyPricesResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -65,6 +66,12 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
 
     // Extract symbols from stocks
     const symbols = useMemo(() => stocks.map(s => s.ticker), [stocks]);
+
+    // Generate year options (last 10 years)
+    const yearOptions = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 10 }, (_, i) => currentYear - i);
+    }, []);
 
     // Fetch price data when stocks or startYear change
     useEffect(() => {
@@ -78,10 +85,11 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
             setError(null);
 
             try {
+                // Always request benchmarks
                 const response = await stockApi.getStocksWeeklyPrices(
                     symbols,
                     startYear,
-                    showVnIndex || showVn30
+                    true
                 );
                 setPriceData(response);
                 setIsSyncing(response.is_syncing || response.is_stale || false);
@@ -94,7 +102,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         };
 
         fetchData();
-    }, [symbols, startYear, showVnIndex, showVn30]);
+    }, [symbols, startYear]);
 
     // Poll for fresh data when syncing
     useEffect(() => {
@@ -105,7 +113,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                 const response = await stockApi.getStocksWeeklyPrices(
                     symbols,
                     startYear,
-                    showVnIndex || showVn30
+                    true
                 );
                 if (!response.is_syncing && !response.is_stale) {
                     setPriceData(response);
@@ -118,7 +126,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
 
         const interval = setInterval(pollForFreshData, 5000);
         return () => clearInterval(interval);
-    }, [isSyncing, symbols, startYear, showVnIndex, showVn30]);
+    }, [isSyncing, symbols, startYear]);
 
     // Process data for chart - normalize to base 100
     const chartData = useMemo(() => {
@@ -149,10 +157,11 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
             }
         });
 
-        // Add benchmark data
-        if (showVnIndex && priceData.benchmarks.VNINDEX) {
-            const prices = priceData.benchmarks.VNINDEX;
-            if (prices.length > 0) {
+        // Add benchmark data (only the selected one)
+        const benchmarkKey = benchmark;
+        if (priceData.benchmarks && priceData.benchmarks[benchmarkKey]) {
+            const prices = priceData.benchmarks[benchmarkKey];
+            if (prices && prices.length > 0) {
                 const startOfSelectedYear = `${startYear}-01-01`;
                 const filteredPrices = prices.filter(p => p.date >= startOfSelectedYear);
 
@@ -163,26 +172,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                             dateMap.set(point.date, { date: point.date as unknown as number });
                         }
                         const record = dateMap.get(point.date)!;
-                        record['VNINDEX'] = basePrice > 0 ? (point.close / basePrice) * 100 : 100;
-                    });
-                }
-            }
-        }
-
-        if (showVn30 && priceData.benchmarks.VN30) {
-            const prices = priceData.benchmarks.VN30;
-            if (prices.length > 0) {
-                const startOfSelectedYear = `${startYear}-01-01`;
-                const filteredPrices = prices.filter(p => p.date >= startOfSelectedYear);
-
-                if (filteredPrices.length > 0) {
-                    const basePrice = filteredPrices[0].close;
-                    filteredPrices.forEach((point) => {
-                        if (!dateMap.has(point.date)) {
-                            dateMap.set(point.date, { date: point.date as unknown as number });
-                        }
-                        const record = dateMap.get(point.date)!;
-                        record['VN30'] = basePrice > 0 ? (point.close / basePrice) * 100 : 100;
+                        record[benchmarkKey] = basePrice > 0 ? (point.close / basePrice) * 100 : 100;
                     });
                 }
             }
@@ -192,7 +182,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         return Array.from(dateMap.values()).sort((a, b) =>
             String(a.date).localeCompare(String(b.date))
         );
-    }, [priceData, showVnIndex, showVn30]);
+    }, [priceData, benchmark, startYear]);
 
     // Sort stocks by final performance to determine colors
     const sortedStocks = useMemo(() => {
@@ -217,113 +207,115 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         return value.toFixed(0);
     };
 
-    if (loading) {
-        return (
-            <div className="flex flex-col items-center justify-center h-96 gap-4">
-                <span className="loading loading-spinner loading-lg text-primary"></span>
-                <p className="text-base-content/70">Loading price data...</p>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex flex-col items-center justify-center h-96 gap-4">
-                <div className="alert alert-error max-w-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>{error}</span>
-                </div>
-            </div>
-        );
-    }
-
-    if (chartData.length === 0) {
-        return (
-            <div className="flex items-center justify-center h-96 text-base-content/50">
-                No price data available for the selected timeframe
-            </div>
-        );
-    }
-
     return (
-        <div className="w-full h-full flex flex-col">
-            {/* Syncing indicator */}
-            {isSyncing && (
-                <div className="flex items-center gap-1 text-xs text-warning mb-2 justify-end">
-                    <span className="loading loading-spinner loading-xs"></span>
-                    Syncing...
+        <div className="w-full h-full flex flex-col space-y-4">
+            {/* Controls Bar */}
+            <div className="flex flex-wrap items-center gap-4 border-b border-base-300 pb-2">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-base-content/70">Start:</span>
+                    <select
+                        className="select select-sm select-bordered"
+                        value={startYear}
+                        onChange={(e) => setStartYear(parseInt(e.target.value))}
+                    >
+                        {yearOptions.map(year => (
+                            <option key={year} value={year}>From {year}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-base-content/70">Vs:</span>
+                    <label className="swap swap-flip">
+                        <input
+                            type="checkbox"
+                            checked={benchmark === 'VN30'}
+                            onChange={(e) => setBenchmark(e.target.checked ? 'VN30' : 'VNINDEX')}
+                        />
+                        <div className="swap-on btn btn-sm btn-secondary">VN30</div>
+                        <div className="swap-off btn btn-sm btn-accent">VN-Index</div>
+                    </label>
+                </div>
+
+                {isSyncing && (
+                    <div className="ml-auto flex items-center gap-1 text-xs text-warning">
+                        <span className="loading loading-spinner loading-xs"></span>
+                        Syncing...
+                    </div>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="flex flex-col items-center justify-center h-96 gap-4">
+                    <span className="loading loading-spinner loading-lg text-primary"></span>
+                    <p className="text-base-content/70">Loading price data...</p>
+                </div>
+            ) : error ? (
+                <div className="flex flex-col items-center justify-center h-96 gap-4">
+                    <div className="alert alert-error max-w-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>{error}</span>
+                    </div>
+                </div>
+            ) : chartData.length === 0 ? (
+                <div className="flex items-center justify-center h-96 text-base-content/50">
+                    No price data available for the selected timeframe
+                </div>
+            ) : (
+                <div className="flex-1 min-h-0 relative">
+                    <ResponsiveContainer width="100%" height={500} debounce={50}>
+                        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 30 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
+                            <XAxis
+                                dataKey="date"
+                                tickFormatter={formatDate}
+                                tick={{ fontSize: 11 }}
+                                stroke="currentColor"
+                                opacity={0.5}
+                                interval="preserveStartEnd"
+                            />
+                            <YAxis
+                                tickFormatter={formatValue}
+                                tick={{ fontSize: 11 }}
+                                stroke="currentColor"
+                                opacity={0.5}
+                                domain={['auto', 'auto']}
+                                label={{ value: 'Growth (Base=100)', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
+                            />
+                            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+
+                            {/* Render stocks - top 10 get colors, rest are gray */}
+                            {sortedStocks.map((stock, idx) => (
+                                <Line
+                                    key={stock.symbol}
+                                    type="monotone"
+                                    dataKey={stock.symbol}
+                                    stroke={idx < 10 ? TOP_COLORS[idx] : GRAY_COLOR}
+                                    strokeWidth={idx < 3 ? 2.5 : idx < 10 ? 1.5 : 0.8}
+                                    strokeOpacity={idx < 10 ? 1 : 0.3}
+                                    dot={false}
+                                    name={stock.company_name || stock.symbol}
+                                    connectNulls={true}
+                                />
+                            ))}
+
+                            {/* Benchmark Line (Only one) */}
+                            <Line
+                                type="monotone"
+                                dataKey={benchmark}
+                                stroke={benchmark === 'VNINDEX' ? VNINDEX_COLOR : VN30_COLOR}
+                                strokeWidth={3}
+                                strokeDasharray="5 5"
+                                dot={false}
+                                name={benchmark === 'VNINDEX' ? "VN-Index" : "VN30"}
+                                connectNulls={true}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
                 </div>
             )}
-
-            <div className="flex-1 min-h-0 relative">
-                <ResponsiveContainer width="100%" height={500} debounce={50}>
-                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 30 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-                        <XAxis
-                            dataKey="date"
-                            tickFormatter={formatDate}
-                            tick={{ fontSize: 11 }}
-                            stroke="currentColor"
-                            opacity={0.5}
-                            interval="preserveStartEnd"
-                        />
-                        <YAxis
-                            tickFormatter={formatValue}
-                            tick={{ fontSize: 11 }}
-                            stroke="currentColor"
-                            opacity={0.5}
-                            domain={['auto', 'auto']}
-                            label={{ value: 'Growth (Base=100)', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
-                        />
-                        <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
-
-                        {/* Render stocks - top 10 get colors, rest are gray */}
-                        {sortedStocks.map((stock, idx) => (
-                            <Line
-                                key={stock.symbol}
-                                type="monotone"
-                                dataKey={stock.symbol}
-                                stroke={idx < 10 ? TOP_COLORS[idx] : GRAY_COLOR}
-                                strokeWidth={idx < 3 ? 2.5 : idx < 10 ? 1.5 : 0.8}
-                                strokeOpacity={idx < 10 ? 1 : 0.3}
-                                dot={false}
-                                name={stock.company_name || stock.symbol}
-                                connectNulls={true}
-                            />
-                        ))}
-
-                        {/* VNINDEX benchmark - dashed amber line */}
-                        {showVnIndex && priceData?.benchmarks.VNINDEX && (
-                            <Line
-                                type="monotone"
-                                dataKey="VNINDEX"
-                                stroke={VNINDEX_COLOR}
-                                strokeWidth={2.5}
-                                strokeDasharray="5 5"
-                                dot={false}
-                                name="VN-Index"
-                                connectNulls={true}
-                            />
-                        )}
-
-                        {/* VN30 benchmark - dashed cyan line */}
-                        {showVn30 && priceData?.benchmarks.VN30 && (
-                            <Line
-                                type="monotone"
-                                dataKey="VN30"
-                                stroke={VN30_COLOR}
-                                strokeWidth={2.5}
-                                strokeDasharray="5 5"
-                                dot={false}
-                                name="VN30"
-                                connectNulls={true}
-                            />
-                        )}
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
 
             {/* Legend for top stocks and benchmarks */}
             <div className="flex flex-wrap justify-center gap-3 mt-4 mb-2 text-xs">
@@ -333,16 +325,14 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                         <span>{stock.symbol}</span>
                     </div>
                 ))}
-                {showVnIndex && priceData?.benchmarks.VNINDEX && (
+                
+                {/* Benchmark Legend */}
+                {priceData?.benchmarks && priceData.benchmarks[benchmark] && (
                     <div className="flex items-center gap-1">
-                        <div className="w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: VNINDEX_COLOR }}></div>
-                        <span>VN-Index</span>
-                    </div>
-                )}
-                {showVn30 && priceData?.benchmarks.VN30 && (
-                    <div className="flex items-center gap-1">
-                        <div className="w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: VN30_COLOR }}></div>
-                        <span>VN30</span>
+                        <div className="w-4 h-0.5 border-t-2 border-dashed" 
+                             style={{ borderColor: benchmark === 'VNINDEX' ? VNINDEX_COLOR : VN30_COLOR }}>
+                        </div>
+                        <span>{benchmark === 'VNINDEX' ? "VN-Index" : "VN30"}</span>
                     </div>
                 )}
             </div>
