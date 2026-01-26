@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import StocksTable from './indices/StocksTable';
+import IndicesTab from './indices/IndicesTab';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
@@ -158,7 +158,7 @@ export const Dashboard: React.FC = () => {
                         </div>
                     );
                 }
-                return <StocksTable indices={indices} />;
+                return <IndicesTab indices={indices} />;
             case 'funds':
                 return <FundsTab />;
             default:

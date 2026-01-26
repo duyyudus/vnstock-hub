@@ -875,68 +875,108 @@ class VnstockService:
         
         return result
     
+    def _upsert_stock_price_history(
+        self, 
+        symbol: str, 
+        start_date: date, 
+        end_date: date, 
+        session=None
+    ) -> int:
+        """
+        Fetch stock history from API and store in database using upsert-like logic.
+        Returns number of new records inserted.
+        """
+        from vnstock import Vnstock
+        from sqlalchemy.orm import Session
+        
+        # Use provided session or create a temporary one
+        own_session = False
+        if session is None:
+            engine = self._get_sync_engine()
+            session = Session(engine)
+            own_session = True
+            
+        try:
+            # Fetch from API with retry logic
+            def fetch_history():
+                s = Vnstock().stock(symbol=symbol, source='VCI')
+                return s.quote.history(
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d'),
+                    interval='1D'
+                )
+
+            hist = retry_with_backoff(fetch_history, max_retries=2, initial_delay=25.0)
+
+            if hist is None or hist.empty:
+                return 0
+
+            count = 0
+            for _, row in hist.iterrows():
+                try:
+                    price_date = pd.to_datetime(row['time']).date()
+
+                    # Check if already exists in DB
+                    stmt = select(StockDailyPrice).where(
+                        and_(
+                            StockDailyPrice.symbol == symbol,
+                            StockDailyPrice.date == price_date
+                        )
+                    )
+                    existing = session.execute(stmt).scalar_one_or_none()
+
+                    if not existing:
+                        price_record = StockDailyPrice(
+                            symbol=symbol,
+                            date=price_date,
+                            open=float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
+                            high=float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
+                            low=float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
+                            close=float(row['close']),
+                            volume=int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
+                        )
+                        session.add(price_record)
+                        count += 1
+                except Exception as e:
+                    print(f"Error processing price for {symbol} on {row.get('time')}: {e}")
+                    continue
+
+            if count > 0:
+                session.commit()
+            
+            return count
+        except Exception as e:
+            print(f"Error in _upsert_stock_price_history for {symbol}: {e}")
+            return 0
+        finally:
+            if own_session:
+                session.close()
+
     def _fetch_and_cache_history_sync(self, session, symbols: List[str]) -> None:
         """
         Fetch historical data for given symbols from vnstock API and cache to DB.
-        Uses retry mechanism with exponential backoff to handle rate limits.
+        Optimized version using unified upsert helper.
         """
-        from vnstock import Vnstock
-        
-        today = datetime.now()
-        one_year_ago = today - timedelta(days=400)  # Fetch extra buffer
+        today = date.today()
+        one_year_ago = today - timedelta(days=400)
         
         for symbol in symbols:
             try:
-                # Use retry mechanism for API call
-                def fetch_history():
-                    s = Vnstock().stock(symbol=symbol, source='VCI')
-                    return s.quote.history(
-                        start=one_year_ago.strftime('%Y-%m-%d'),
-                        end=today.strftime('%Y-%m-%d'),
-                        interval='1D'
-                    )
+                # Add slight delay between symbols to avoid aggressive rate limiting
+                if symbols.index(symbol) > 0:
+                    time.sleep(1.0)
                 
-                hist = retry_with_backoff(fetch_history, max_retries=3, initial_delay=25.0)
-                
-                # Add delay between symbols to proactively avoid rate limits
-                time.sleep(1.0)
-                
-                if hist is not None and not hist.empty:
-                    # Insert each day's data
-                    for _, row in hist.iterrows():
-                        try:
-                            price_date = pd.to_datetime(row['time']).date()
-                            
-                            # Check if already exists
-                            existing = session.execute(
-                                select(StockDailyPrice).where(
-                                    and_(
-                                        StockDailyPrice.symbol == symbol,
-                                        StockDailyPrice.date == price_date
-                                    )
-                                )
-                            ).scalar_one_or_none()
-                            
-                            if not existing:
-                                price_record = StockDailyPrice(
-                                    symbol=symbol,
-                                    date=price_date,
-                                    open=float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
-                                    high=float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
-                                    low=float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
-                                    close=float(row['close']),
-                                    volume=int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
-                                )
-                                session.add(price_record)
-                        except Exception as e:
-                            print(f"Error inserting price for {symbol} on {row.get('time')}: {e}")
-                            continue
-                    
-                    session.commit()
-                    print(f"Cached {len(hist)} price records for {symbol}")
+                count = self._upsert_stock_price_history(
+                    symbol=symbol,
+                    start_date=one_year_ago,
+                    end_date=today,
+                    session=session
+                )
+                if count > 0:
+                    print(f"Cached {count} new price records for {symbol}")
                     
             except Exception as e:
-                print(f"Error fetching history for {symbol}: {e}")
+                print(f"Error syncing history for {symbol}: {e}")
                 continue
     
 
@@ -1341,6 +1381,345 @@ class VnstockService:
                 'company_name': company_name,
                 'data': []
             }
+
+    # Track background sync task for weekly prices
+    _weekly_prices_sync_task = None
+    _weekly_prices_syncing_symbols = set()
+
+    async def get_stocks_weekly_prices(
+        self,
+        symbols: List[str],
+        start_year: int,
+        include_benchmarks: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get weekly price data for multiple stocks.
+        Returns cached data immediately and triggers background sync if stale.
+
+        Args:
+            symbols: List of stock symbols
+            start_year: Starting year for the data
+            include_benchmarks: Whether to include VNINDEX and VN30 benchmarks
+
+        Returns:
+            Dict with stocks data, benchmarks, date range, and sync status
+        """
+        # Clean symbols (use first 3 chars)
+        clean_symbols = [s[:3] for s in symbols]
+
+        # Calculate date range
+        start_date = date(start_year, 1, 1)
+        end_date = date.today()
+
+        # Load from database
+        stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
+
+        # Check staleness and historical data coverage
+        is_stale = self._check_prices_staleness(stocks_data, start_date, end_date)
+
+        # Load benchmarks if requested
+        benchmarks = {}
+        if include_benchmarks:
+            benchmarks = await self._load_benchmark_prices(start_date, end_date)
+
+        # Get company names
+        company_names = await self._get_company_names(clean_symbols)
+
+        # Format response
+        stocks_response = []
+        for symbol in clean_symbols:
+            prices = stocks_data.get(symbol, [])
+            stocks_response.append({
+                'symbol': symbol,
+                'ticker': symbol,
+                'company_name': company_names.get(symbol, symbol),
+                'prices': prices
+            })
+
+        # Trigger background sync if stale
+        is_syncing = False
+        if is_stale:
+            is_syncing = await self._trigger_price_history_sync(clean_symbols, start_date, end_date)
+
+        return {
+            'stocks': stocks_response,
+            'benchmarks': benchmarks,
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': end_date.strftime('%Y-%m-%d'),
+            'is_stale': is_stale,
+            'is_syncing': is_syncing
+        }
+
+    async def _get_company_names(self, symbols: List[str]) -> Dict[str, str]:
+        """Get company names for given symbols from database."""
+        async with async_session() as session:
+            stmt = select(StockCompany).where(StockCompany.symbol.in_(symbols))
+            result = await session.execute(stmt)
+            companies = result.scalars().all()
+            return {c.symbol: c.company_name for c in companies}
+
+    async def _load_weekly_prices_from_db(
+        self,
+        symbols: List[str],
+        start_date: date,
+        end_date: date
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Load daily prices from database and aggregate to weekly.
+        Uses Friday as the weekly reference point.
+        """
+        async with async_session() as session:
+            stmt = select(StockDailyPrice).where(
+                and_(
+                    StockDailyPrice.symbol.in_(symbols),
+                    StockDailyPrice.date >= start_date,
+                    StockDailyPrice.date <= end_date
+                )
+            ).order_by(StockDailyPrice.symbol, StockDailyPrice.date)
+
+            result = await session.execute(stmt)
+            records = result.scalars().all()
+
+            # Group by symbol
+            symbol_data = {}
+            for record in records:
+                if record.symbol not in symbol_data:
+                    symbol_data[record.symbol] = []
+                symbol_data[record.symbol].append({
+                    'date': record.date,
+                    'close': record.close
+                })
+
+            # Aggregate to weekly using pandas
+            weekly_data = {}
+            for symbol, daily_prices in symbol_data.items():
+                if not daily_prices:
+                    weekly_data[symbol] = []
+                    continue
+
+                df = pd.DataFrame(daily_prices)
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.set_index('date').sort_index()
+
+                # Resample to weekly (Friday close) - 'W-FRI' means week ending on Friday
+                weekly_df = df.resample('W-FRI').last().dropna()
+                
+                # Ensure we strictly respect the start_date after resampling
+                # (Resampling can sometimes include the previous week's end)
+                weekly_df = weekly_df[weekly_df.index >= pd.Timestamp(start_date)]
+
+                weekly_data[symbol] = [
+                    {
+                        'date': idx.strftime('%Y-%m-%d'),
+                        'close': float(row['close'])
+                    }
+                    for idx, row in weekly_df.iterrows()
+                ]
+
+            return weekly_data
+
+    def _check_prices_staleness(
+        self,
+        stocks_data: Dict[str, List[Dict[str, Any]]],
+        start_date: date,
+        end_date: date
+    ) -> bool:
+        """
+        Check if price data is stale or incomplete.
+        Returns True if any stock:
+        - Has no data
+        - Latest date is >7 days old (stale)
+        - Earliest date is >30 days after requested start_date (incomplete historical data)
+        """
+        if not stocks_data:
+            return True
+
+        stale_threshold = end_date - timedelta(days=7)
+        # Allow 30 days tolerance for start date (some stocks may not have been listed that early)
+        start_threshold = start_date + timedelta(days=30)
+
+        for symbol, prices in stocks_data.items():
+            if not prices:
+                return True
+
+            # Check latest date (data freshness)
+            latest_date_str = prices[-1]['date']
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+
+            if latest_date < stale_threshold:
+                return True
+
+            # Check earliest date (historical data coverage)
+            earliest_date_str = prices[0]['date']
+            earliest_date = datetime.strptime(earliest_date_str, '%Y-%m-%d').date()
+
+            if earliest_date > start_threshold:
+                # Data doesn't cover the requested start date range
+                return True
+
+        return False
+
+    async def _load_benchmark_prices(
+        self,
+        start_date: date,
+        end_date: date
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Load weekly prices for VNINDEX and VN30 benchmarks.
+        Fetches from vnstock API since these are index values, not stock prices.
+        """
+        benchmarks = {}
+        loop = asyncio.get_event_loop()
+
+        for index_symbol in ['VNINDEX', 'VN30']:
+            try:
+                prices = await loop.run_in_executor(
+                    None,
+                    self._fetch_index_history_sync,
+                    index_symbol,
+                    start_date,
+                    end_date
+                )
+                if prices:
+                    benchmarks[index_symbol] = prices
+            except Exception as e:
+                print(f"Error fetching benchmark {index_symbol}: {e}")
+
+        return benchmarks
+
+    def _fetch_index_history_sync(
+        self,
+        index_symbol: str,
+        start_date: date,
+        end_date: date
+    ) -> List[Dict[str, Any]]:
+        """Fetch historical index values and aggregate to weekly."""
+        from vnstock import Vnstock
+
+        try:
+            vs = Vnstock(symbol=index_symbol, source='VCI')
+            stock = vs.stock()
+            df = stock.quote.history(
+                start=start_date.strftime('%Y-%m-%d'),
+                end=end_date.strftime('%Y-%m-%d'),
+                interval='1D'
+            )
+
+            if df is not None and not df.empty:
+                # Convert to proper format
+                df['date'] = pd.to_datetime(df['time'])
+                df = df.set_index('date').sort_index()
+
+                # Resample to weekly (Friday close)
+                weekly_df = df[['close']].resample('W-FRI').last().dropna()
+
+                # Ensure we strictly respect the start_date after resampling
+                weekly_df = weekly_df[weekly_df.index >= pd.Timestamp(start_date)]
+
+                return [
+                    {
+                        'date': idx.strftime('%Y-%m-%d'),
+                        'close': float(row['close'])
+                    }
+                    for idx, row in weekly_df.iterrows()
+                ]
+        except Exception as e:
+            print(f"Error fetching index history for {index_symbol}: {e}")
+
+        return []
+
+    async def _trigger_price_history_sync(
+        self,
+        symbols: List[str],
+        start_date: date,
+        end_date: date
+    ) -> bool:
+        """
+        Trigger background sync for price history.
+        Returns True if sync was triggered, False if already syncing.
+        """
+        # Check if already syncing these symbols
+        symbols_to_sync = [s for s in symbols if s not in self._weekly_prices_syncing_symbols]
+
+        if not symbols_to_sync:
+            return True  # Already syncing
+
+        # Mark as syncing
+        self._weekly_prices_syncing_symbols.update(symbols_to_sync)
+
+        # Create background task
+        asyncio.create_task(
+            self._sync_price_history_background(symbols_to_sync, start_date, end_date)
+        )
+
+        return True
+
+    async def _sync_price_history_background(
+        self,
+        symbols: List[str],
+        start_date: date,
+        end_date: date
+    ) -> None:
+        """
+        Background task to sync price history for given symbols.
+        Fetches from vnstock API and stores in database.
+        """
+        print(f"Starting background sync for {len(symbols)} symbols...")
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Sync in batches to avoid overwhelming the API
+            batch_size = 10
+            for i in range(0, len(symbols), batch_size):
+                batch = symbols[i:i + batch_size]
+
+                for symbol in batch:
+                    try:
+                        await loop.run_in_executor(
+                            None,
+                            self._fetch_and_store_stock_history,
+                            symbol,
+                            start_date,
+                            end_date
+                        )
+                        # Small delay between symbols
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"Error syncing {symbol}: {e}")
+
+                # Longer delay between batches
+                if i + batch_size < len(symbols):
+                    await asyncio.sleep(2.0)
+
+            print(f"Completed background sync for {len(symbols)} symbols")
+        finally:
+            # Clear syncing status
+            for symbol in symbols:
+                self._weekly_prices_syncing_symbols.discard(symbol)
+
+    def _fetch_and_store_stock_history(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date
+    ) -> None:
+        """Fetch stock history from API and store in database using unified helper."""
+        try:
+            count = self._upsert_stock_price_history(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date
+            )
+            if count > 0:
+                print(f"Synced {count} price records for {symbol}")
+        except Exception as e:
+            print(f"Error in background sync for {symbol}: {e}")
+        finally:
+            # Clean up connections
+            engine = self._get_sync_engine()
+            engine.dispose()
+
     async def get_fund_listing(self, fund_type: str = "") -> List[Dict[str, Any]]:
         """
         Fetch all available funds.

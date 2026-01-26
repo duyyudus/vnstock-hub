@@ -91,6 +91,31 @@ export interface VolumeHistoryResponse {
     count: number;
 }
 
+// Weekly prices types for growth chart
+export interface WeeklyPricePoint {
+    date: string;
+    close: number;
+}
+
+export interface StockWeeklyPriceData {
+    symbol: string;
+    ticker: string;
+    company_name: string;
+    prices: WeeklyPricePoint[];
+}
+
+export interface StocksWeeklyPricesResponse {
+    stocks: StockWeeklyPriceData[];
+    benchmarks: {
+        VNINDEX?: WeeklyPricePoint[];
+        VN30?: WeeklyPricePoint[];
+    };
+    start_date: string;
+    end_date: string;
+    is_stale: boolean;
+    is_syncing: boolean;
+}
+
 // Fund data types
 export interface FundDataResponse {
     symbol?: string;
@@ -278,6 +303,25 @@ export const stockApi = {
      */
     async getVolumeHistory(symbol: string, days: number = 30): Promise<VolumeHistoryResponse> {
         const response = await apiClient.get<VolumeHistoryResponse>(`/stocks/history/${symbol}/volume?days=${days}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch weekly prices for multiple stocks (for growth chart)
+     * @param symbols List of stock ticker symbols
+     * @param startYear Starting year for the data
+     * @param includeBenchmarks Whether to include VNINDEX and VN30 benchmarks
+     */
+    async getStocksWeeklyPrices(
+        symbols: string[],
+        startYear: number,
+        includeBenchmarks: boolean = true
+    ): Promise<StocksWeeklyPricesResponse> {
+        const response = await apiClient.post<StocksWeeklyPricesResponse>('/stocks/weekly-prices', {
+            symbols,
+            start_year: startYear,
+            include_benchmarks: includeBenchmarks
+        });
         return response.data;
     },
 

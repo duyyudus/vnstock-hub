@@ -108,6 +108,37 @@ class VolumeHistoryResponse(BaseModel):
     count: int
 
 
+class WeeklyPricePoint(BaseModel):
+    """A single weekly price data point."""
+    date: str
+    close: float
+
+
+class StockWeeklyPriceData(BaseModel):
+    """Weekly price data for a single stock."""
+    symbol: str
+    ticker: str
+    company_name: str
+    prices: List[WeeklyPricePoint]
+
+
+class StocksWeeklyPricesRequest(BaseModel):
+    """Request model for fetching weekly prices for multiple stocks."""
+    symbols: List[str]
+    start_year: int
+    include_benchmarks: bool = True
+
+
+class StocksWeeklyPricesResponse(BaseModel):
+    """Response model for weekly prices of multiple stocks."""
+    stocks: List[StockWeeklyPriceData]
+    benchmarks: dict
+    start_date: str
+    end_date: str
+    is_stale: bool = False
+    is_syncing: bool = False
+
+
 @router.get("/index-values", response_model=IndexValuesResponse)
 async def get_index_values():
     """
@@ -435,3 +466,23 @@ async def get_volume_history(symbol: str, days: int = 30):
         data=[VolumeDataPoint(**point) for point in result["data"]],
         count=len(result["data"])
     )
+
+
+@router.post("/weekly-prices", response_model=StocksWeeklyPricesResponse)
+async def get_stocks_weekly_prices(request: StocksWeeklyPricesRequest):
+    """
+    Get weekly price data for multiple stocks.
+    Used for growth chart visualization.
+
+    Args:
+        request: Request with list of symbols, start year, and benchmark options
+
+    Returns:
+        Weekly prices for each stock normalized for chart display
+    """
+    result = await vnstock_service.get_stocks_weekly_prices(
+        symbols=request.symbols,
+        start_year=request.start_year,
+        include_benchmarks=request.include_benchmarks
+    )
+    return StocksWeeklyPricesResponse(**result)
