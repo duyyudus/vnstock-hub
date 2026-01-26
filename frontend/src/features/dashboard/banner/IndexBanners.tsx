@@ -44,7 +44,16 @@ export const IndexBanners: React.FC = () => {
             try {
                 setLoading(true);
                 const response = await stockApi.getIndexValues();
-                setIndices(response.indices);
+
+                // Sort indices according to the desired order
+                const order = ['VNINDEX', 'VN30', 'HNXINDEX', 'HNX30', 'UPCOMINDEX'];
+                const sortedIndices = [...response.indices].sort((a, b) => {
+                    const indexA = order.indexOf(a.symbol);
+                    const indexB = order.indexOf(b.symbol);
+                    return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                });
+
+                setIndices(sortedIndices);
                 setError(null);
             } catch (err) {
                 console.error('Failed to fetch index values:', err);
