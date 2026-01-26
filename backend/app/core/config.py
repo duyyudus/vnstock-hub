@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     vn100_limit: int = 100
     vn30_limit: int = 30
     
+    # vnstock API
+    vnstock_api_key: str | None = None
+    
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from JSON string."""

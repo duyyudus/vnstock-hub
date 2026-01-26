@@ -119,6 +119,15 @@ class VnstockService:
     }
 
     def __init__(self):
+        # Initialize vnstock API key if provided
+        if settings.vnstock_api_key:
+            try:
+                import vnstock
+                vnstock.change_api_key(settings.vnstock_api_key)
+                print(f"vnstock API key configured.")
+            except Exception as e:
+                print(f"Error configuring vnstock API key: {e}")
+
         self._enriching_tickers = set()
         # Fund holding caches (no DB backing): {key: (data, timestamp)}
         self._fund_listing_cache = {}
@@ -248,7 +257,7 @@ class VnstockService:
     def _fetch_all_indices_from_lib(self) -> pd.DataFrame:
         """Fetch all indices from vnstock library synchronously."""
         from vnstock import Listing
-        return Listing().all_indices()
+        return Listing(source='VCI').all_indices()
 
     async def get_indices(self) -> List[StockIndex]:
         """
@@ -363,7 +372,7 @@ class VnstockService:
     def _fetch_industries_sync(self) -> pd.DataFrame:
         """Fetch industries synchronously."""
         from vnstock import Listing
-        return Listing().industries_icb()
+        return Listing(source='VCI').industries_icb()
 
     async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
         """
@@ -555,7 +564,7 @@ class VnstockService:
     def _fetch_all_symbols(self) -> pd.DataFrame:
         """Fetch all symbols from vnstock."""
         from vnstock import Listing
-        listing = Listing()
+        listing = Listing(source='VCI')
         return listing.all_symbols()
     
     def _flatten_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -601,7 +610,7 @@ class VnstockService:
             group_code = self._get_group_code_for_index(index_name)
             
             # Get stock symbols for the specified group
-            listing = Listing()
+            listing = Listing(source='VCI')
             try:
                 symbols_df = listing.symbols_by_group(group_code)
             except ValueError as e:
@@ -630,7 +639,7 @@ class VnstockService:
         """
         from vnstock import Listing
         try:
-            listing = Listing()
+            listing = Listing(source='VCI')
             # Get all symbols with industry info
             df = listing.symbols_by_industries()
             if df is not None and not df.empty:
