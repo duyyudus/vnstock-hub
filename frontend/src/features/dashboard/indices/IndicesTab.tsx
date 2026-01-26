@@ -74,8 +74,23 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                     setStocks(response.stocks);
                 }
-            } catch (err) {
+            } catch (err: any) {
                 const label = selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks');
+
+                // If it's a rate limit error (429) or if we can check global status
+                try {
+                    const syncStatus = await stockApi.getSyncStatus();
+                    if (syncStatus.is_rate_limited) {
+                        setError(`Market data source is currently busy. Retrying automatically...`);
+
+                        // Set up a one-time retry after a delay
+                        setTimeout(() => fetchData(), 30000);
+                        return;
+                    }
+                } catch (e) {
+                    // Ignore sync status fetch error
+                }
+
                 setError(`Failed to fetch ${label} stocks data. Please try again.`);
                 console.error(`Error fetching ${label} data:`, err);
             } finally {

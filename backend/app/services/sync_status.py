@@ -2,7 +2,7 @@
 Global sync status tracking for background tasks.
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 
@@ -19,6 +19,8 @@ class SyncStatusData:
 class GlobalSyncStatus:
     """Global sync status tracker for all background sync operations."""
     fund_performance: SyncStatusData = field(default_factory=SyncStatusData)
+    is_rate_limited: bool = False
+    rate_limit_reset_at: Optional[str] = None
     
     def start_fund_performance_sync(self):
         """Mark fund performance sync as started."""
@@ -32,6 +34,17 @@ class GlobalSyncStatus:
         self.fund_performance.last_sync = datetime.now().isoformat()
         if not success:
             self.fund_performance.error = error
+
+    def set_rate_limited(self, reset_in_seconds: float = 60.0):
+        """Mark the system as rate limited."""
+        self.is_rate_limited = True
+        reset_time = datetime.now() + timedelta(seconds=reset_in_seconds)
+        self.rate_limit_reset_at = reset_time.isoformat()
+    
+    def clear_rate_limit(self):
+        """Clear the rate limit status."""
+        self.is_rate_limited = False
+        self.rate_limit_reset_at = None
 
 
 # Global singleton instance

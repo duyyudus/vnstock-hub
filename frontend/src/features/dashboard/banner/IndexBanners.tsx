@@ -48,6 +48,18 @@ export const IndexBanners: React.FC = () => {
                 setError(null);
             } catch (err) {
                 console.error('Failed to fetch index values:', err);
+
+                // Check if rate limited
+                try {
+                    const syncStatus = await stockApi.getSyncStatus();
+                    if (syncStatus.is_rate_limited) {
+                        setError('Market data source busy. Retrying...');
+                        return;
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+
                 setError('Failed to load market indices');
             } finally {
                 setLoading(false);

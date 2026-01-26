@@ -11,6 +11,7 @@ from sqlalchemy import select, and_
 from app.db.database import async_session
 from app.db.models import StockCompany, StockDailyPrice, StockIndex, FundNav
 from app.core.config import settings
+from app.services.sync_status import sync_status
 
 T = TypeVar('T')
 
@@ -41,12 +42,19 @@ def retry_with_backoff(
     if rate_limit_keywords is None:
         rate_limit_keywords = ["Rate limit", "rate limit", "429", "quá nhiều request"]
     
+    # Proactive check: if we are already rate limited, wait a bit or raise immediately
+    # For now, let's just log and continue, but we could be more aggressive
+    if sync_status.is_rate_limited:
+        print(f"Warning: System is marked as rate limited. Proceeding with caution...")
+
     last_exception = None
     delay = initial_delay
     
     for attempt in range(max_retries + 1):
         try:
-            return func()
+            result = func()
+            sync_status.clear_rate_limit()
+            return result
         except (SystemExit, Exception) as e:
             last_exception = e
             error_msg = str(e)
@@ -56,11 +64,20 @@ def retry_with_backoff(
             
             if is_rate_limit and attempt < max_retries:
                 print(f"Rate limit hit (attempt {attempt + 1}/{max_retries + 1}). Waiting {delay:.1f}s before retry...")
+                # Update global sync status
+                sync_status.set_rate_limited(reset_in_seconds=delay)
                 time.sleep(delay)
                 delay *= backoff_multiplier
             else:
+                # Clear rate limit if we're done or it wasn't a rate limit
+                if not is_rate_limit:
+                    sync_status.clear_rate_limit()
                 # Not a rate limit error or out of retries
                 raise
+    
+    # If we got here, it means the loop finished successfully (should not happen due to return/raise)
+    sync_status.clear_rate_limit()
+    return last_exception # Should not be reachable
     
     raise last_exception
 

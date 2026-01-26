@@ -173,6 +173,8 @@ export interface SyncStatusItem {
 
 export interface SyncStatusResponse {
     fund_performance: SyncStatusItem;
+    is_rate_limited: boolean;
+    rate_limit_reset_at: string | null;
 }
 
 // Stock API functions
