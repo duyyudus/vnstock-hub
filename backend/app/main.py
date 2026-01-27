@@ -6,6 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.logging_config import setup_logging, get_main_logger
+from app.core.exceptions import register_exception_handlers
+
+# Initialize logging before anything else
+setup_logging()
+logger = get_main_logger()
 from app.api.v1.stocks import router as stocks_router
 from app.api.v1.funds import router as funds_router
 from app.api.v1.sync import router as sync_router
@@ -23,7 +29,7 @@ async def lifespan(app: FastAPI):
     try:
         await vnstock_service.sync_indices()
     except Exception as e:
-        print(f"Error syncing indices on startup: {e}")
+        logger.error(f"Error syncing indices on startup: {e}")
         
     yield
 
@@ -34,6 +40,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Register global exception handlers
+register_exception_handlers(app)
 
 # Configure CORS
 app.add_middleware(

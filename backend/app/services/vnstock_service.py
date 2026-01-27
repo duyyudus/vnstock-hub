@@ -1,84 +1,226 @@
 """
 Service for interacting with vnstock library to fetch Vietnam stock market data.
+
+Architecture:
+- Frontend executor: Handles user-facing API calls (larger pool for responsiveness)
+- Background executor: Handles sync operations (smaller pool to limit API pressure)
+- Circuit breaker: Stops all API calls when rate limited
+- Non-blocking retry: Uses asyncio.sleep instead of time.sleep
 """
 from typing import List, Dict, Callable, TypeVar, Any
 from dataclasses import dataclass
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date, timedelta
+import os
 import time
 import pandas as pd
 from sqlalchemy import select, and_
 from app.db.database import async_session
-from app.db.models import StockCompany, StockDailyPrice, StockIndex, FundNav
+from app.db.models import StockCompany, StockDailyPrice, StockIndex, FundNav, FundDetailCache, FundListing
 from app.core.config import settings
 from app.services.sync_status import sync_status
+from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+from app.core.logging_config import (
+    get_main_logger,
+    get_background_logger,
+    log_background_start,
+    log_background_complete,
+    log_background_error
+)
+
+# Initialize loggers
+logger = get_main_logger()
+bg_logger = get_background_logger()
+
+# Determine worker counts based on CPU cores
+_cpu_count = os.cpu_count() or 4
+
+# Frontend executor: handles user-facing API calls
+# Sized larger to handle concurrent user requests with good responsiveness
+_frontend_executor = ThreadPoolExecutor(
+    max_workers=max(8, _cpu_count * 2),
+    thread_name_prefix="frontend"
+)
+
+# Background executor: handles sync operations
+# Sized smaller to avoid overwhelming the vnstock API with concurrent requests
+_background_executor = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="bg_sync"
+)
+
+# Thread-local storage for vnstock Fund API instances
+_fund_api_local = threading.local()
+
+
+class RateLimitError(Exception):
+    """Custom exception raised when API rate limit is hit to prevent SystemExit."""
+    pass
+
+
+# Rate limit detection keywords
+RATE_LIMIT_KEYWORDS = [
+    "Rate limit", "rate limit", "429",
+    "quá nhiều request", "GIỚI HẠN API"
+]
 
 T = TypeVar('T')
 
 
+def _is_rate_limit_error(error: BaseException) -> bool:
+    """Check if an exception indicates a rate limit error."""
+    if isinstance(error, (RateLimitError, CircuitOpenError)):
+        return True
+    if isinstance(error, SystemExit):
+        return True
+    error_msg = str(error)
+    return any(keyword in error_msg for keyword in RATE_LIMIT_KEYWORDS)
+
+
+def _record_rate_limit(reset_seconds: float = 30.0) -> None:
+    """Record a rate limit event across circuit breaker and sync status."""
+    api_circuit_breaker.record_failure(reset_timeout=reset_seconds)
+    sync_status.set_rate_limited(reset_in_seconds=reset_seconds)
+
+
 def retry_with_backoff(
     func: Callable[..., T],
+    max_retries: int = 2,
+    rate_limit_keywords: List[str] = None,
+) -> T:
+    """
+    Execute a function with retry logic. ALWAYS fails fast on rate limit.
+
+    This is the synchronous version for use in executor threads.
+    It NEVER uses time.sleep() to avoid blocking executor threads.
+
+    Args:
+        func: Callable to execute
+        max_retries: Maximum retry attempts for non-rate-limit errors
+        rate_limit_keywords: Keywords in error message that indicate rate limit
+
+    Returns:
+        Result of the function call
+
+    Raises:
+        CircuitOpenError: If circuit breaker is open
+        RateLimitError: If rate limit is hit
+        Exception: For other errors after retries exhausted
+    """
+    if rate_limit_keywords is None:
+        rate_limit_keywords = RATE_LIMIT_KEYWORDS
+
+    # Circuit breaker check BEFORE attempting - fail fast
+    if not api_circuit_breaker.can_proceed():
+        raise CircuitOpenError("Circuit breaker is open - API rate limited")
+
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            result = func()
+            api_circuit_breaker.record_success()
+            return result
+        except (SystemExit, Exception) as e:
+            last_exception = e
+            is_rate_limit = _is_rate_limit_error(e)
+
+            if is_rate_limit:
+                # Record failure in circuit breaker
+                _record_rate_limit(reset_seconds=30.0)
+
+                # Convert SystemExit to RateLimitError to prevent process termination
+                if isinstance(e, SystemExit):
+                    logger.warning("Caught SystemExit (Rate Limit) - converting to RateLimitError")
+                    last_exception = RateLimitError(str(e))
+
+                # ALWAYS fail fast on rate limit - no blocking sleep
+                logger.warning(f"Rate limit hit - failing fast (attempt {attempt + 1})")
+                raise last_exception
+            else:
+                # Non-rate-limit error - may retry
+                if attempt < max_retries:
+                    logger.warning(f"Error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                    continue
+                raise
+
+    raise last_exception
+
+
+async def async_retry_with_backoff(
+    func: Callable[..., T],
+    executor: ThreadPoolExecutor = None,
     max_retries: int = 3,
-    initial_delay: float = 25.0,  # VCI rate limit is typically 21 seconds
+    initial_delay: float = 30.0,
     backoff_multiplier: float = 2.0,
     rate_limit_keywords: List[str] = None
 ) -> T:
     """
-    Execute a function with retry logic and exponential backoff for rate limits.
-    
+    Async retry with non-blocking delays using asyncio.sleep.
+
+    This should be used for background sync tasks. The func is run in
+    an executor, and delays use asyncio.sleep (non-blocking).
+
     Args:
-        func: Callable to execute
-        max_retries: Maximum number of retry attempts
-        initial_delay: Initial delay in seconds after rate limit hit
-        backoff_multiplier: Multiplier for delay on each subsequent retry
-        rate_limit_keywords: Keywords in error message that indicate rate limit
-        
+        func: Synchronous callable to execute
+        executor: ThreadPoolExecutor to use (defaults to _background_executor)
+        max_retries: Maximum retry attempts
+        initial_delay: Initial delay in seconds after rate limit
+        backoff_multiplier: Multiplier for delay on each retry
+        rate_limit_keywords: Keywords that indicate rate limit error
+
     Returns:
         Result of the function call
-        
+
     Raises:
-        Last exception if all retries failed
+        CircuitOpenError: If circuit breaker is open
+        RateLimitError: If rate limit persists after retries
     """
     if rate_limit_keywords is None:
-        rate_limit_keywords = ["Rate limit", "rate limit", "429", "quá nhiều request"]
-    
-    # Proactive check: if we are already rate limited, wait a bit or raise immediately
-    # For now, let's just log and continue, but we could be more aggressive
-    if sync_status.is_rate_limited:
-        print(f"Warning: System is marked as rate limited. Proceeding with caution...")
+        rate_limit_keywords = RATE_LIMIT_KEYWORDS
+    if executor is None:
+        executor = _background_executor
 
+    loop = asyncio.get_event_loop()
     last_exception = None
     delay = initial_delay
-    
+
     for attempt in range(max_retries + 1):
+        # Check circuit breaker before each attempt
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker is open - API rate limited")
+
         try:
-            result = func()
-            sync_status.clear_rate_limit()
+            result = await loop.run_in_executor(executor, func)
+            api_circuit_breaker.record_success()
             return result
-        except (SystemExit, Exception) as e:
+        except (SystemExit, RateLimitError, CircuitOpenError, Exception) as e:
             last_exception = e
-            error_msg = str(e)
-            
-            # Check if it's a rate limit error
-            is_rate_limit = any(keyword in error_msg for keyword in rate_limit_keywords)
-            
-            if is_rate_limit and attempt < max_retries:
-                print(f"Rate limit hit (attempt {attempt + 1}/{max_retries + 1}). Waiting {delay:.1f}s before retry...")
-                # Update global sync status
-                sync_status.set_rate_limited(reset_in_seconds=delay)
-                time.sleep(delay)
-                delay *= backoff_multiplier
+            is_rate_limit = _is_rate_limit_error(e)
+
+            if is_rate_limit:
+                _record_rate_limit(reset_seconds=delay)
+
+                # Convert SystemExit
+                if isinstance(e, SystemExit):
+                    last_exception = RateLimitError(str(e))
+
+                if attempt < max_retries:
+                    bg_logger.warning(
+                        f"Rate limit hit (attempt {attempt + 1}/{max_retries + 1}). "
+                        f"Waiting {delay:.1f}s (non-blocking)..."
+                    )
+                    # Non-blocking sleep - event loop can handle other tasks
+                    await asyncio.sleep(delay)
+                    delay *= backoff_multiplier
+                else:
+                    raise last_exception
             else:
-                # Clear rate limit if we're done or it wasn't a rate limit
-                if not is_rate_limit:
-                    sync_status.clear_rate_limit()
-                # Not a rate limit error or out of retries
+                # Non-rate-limit error
                 raise
-    
-    # If we got here, it means the loop finished successfully (should not happen due to return/raise)
-    sync_status.clear_rate_limit()
-    return last_exception # Should not be reachable
-    
+
     raise last_exception
 
 
@@ -124,9 +266,9 @@ class VnstockService:
             try:
                 import vnstock
                 vnstock.change_api_key(settings.vnstock_api_key)
-                print(f"vnstock API key configured.")
+                logger.info("vnstock API key configured")
             except Exception as e:
-                print(f"Error configuring vnstock API key: {e}")
+                logger.error(f"Error configuring vnstock API key: {e}")
 
         self._enriching_tickers = set()
         # Fund holding caches (no DB backing): {key: (data, timestamp)}
@@ -136,11 +278,149 @@ class VnstockService:
         self._fund_asset_holding_cache = {}
         self._fund_listing_df_cache = None
         self._fund_listing_df_timestamp = 0
+        self._fund_listing_refresh_lock = threading.Lock()
         self._sync_engine = None
+        # Fund benchmark cache to avoid API hits on every request
+        self._fund_benchmark_cache = {}
         
         # Cache TTLs in seconds (for holdings without DB backing)
         self._FUND_LISTING_TTL = 3600  # 1 hour
         self._FUND_DETAILS_TTL = 1800  # 30 minutes
+        self._FUND_LISTING_DB_TTL = 7 * 24 * 3600  # 7 days
+        self._FUND_BENCHMARK_TTL = 6 * 3600  # 6 hours
+
+    def _fund_listing_is_fresh(self, last_updated: datetime | None) -> bool:
+        if not last_updated:
+            return False
+        return (datetime.utcnow() - last_updated).total_seconds() < self._FUND_LISTING_DB_TTL
+
+    def _get_fund_listing_records_from_db_sync(
+        self,
+        fund_type: str | None = None
+    ) -> tuple[list[dict], datetime | None]:
+        """Load fund listing records from DB."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_sync_engine()
+        with Session(engine) as session:
+            stmt = select(FundListing)
+            if fund_type:
+                stmt = stmt.where(FundListing.fund_type == fund_type)
+            rows = list(session.execute(stmt).scalars().all())
+
+            if not rows:
+                return [], None
+
+            last_updated = max((r.updated_at for r in rows if r.updated_at), default=None)
+            records: list[dict] = []
+            for row in rows:
+                record = dict(row.data) if isinstance(row.data, dict) else {}
+                if 'symbol' not in record and row.symbol:
+                    record['symbol'] = row.symbol
+                if 'name' not in record and row.name:
+                    record['name'] = row.name
+                if 'fund_type' not in record and row.fund_type:
+                    record['fund_type'] = row.fund_type
+                if 'fund_owner' not in record and row.fund_owner:
+                    record['fund_owner'] = row.fund_owner
+                records.append(record)
+
+            return records, last_updated
+
+    def _get_fund_listing_df_from_db_sync(self) -> tuple[pd.DataFrame | None, datetime | None]:
+        """Load fund listing from DB as DataFrame."""
+        records, last_updated = self._get_fund_listing_records_from_db_sync()
+        if not records:
+            return None, last_updated
+        return pd.DataFrame(records), last_updated
+
+    def _upsert_fund_listing_db_sync(self, records: list[dict]) -> None:
+        """Upsert fund listing records to DB."""
+        from sqlalchemy.orm import Session
+        from sqlalchemy.dialects.postgresql import insert
+
+        if not records:
+            return
+
+        engine = self._get_sync_engine()
+        with Session(engine) as session:
+            for record in records:
+                symbol = record.get('symbol') or record.get('fund_code') or record.get('short_name')
+                if not symbol:
+                    continue
+
+                name = record.get('name') or record.get('fund_name') or symbol
+                fund_type = record.get('fund_type') or record.get('type')
+                fund_owner = record.get('fund_owner') or record.get('owner') or record.get('management_company')
+                now = datetime.utcnow()
+
+                stmt = insert(FundListing).values(
+                    symbol=symbol,
+                    name=name,
+                    fund_type=fund_type,
+                    fund_owner=fund_owner,
+                    data=record,
+                    updated_at=now
+                ).on_conflict_do_update(
+                    index_elements=[FundListing.symbol],
+                    set_={
+                        "name": name,
+                        "fund_type": fund_type,
+                        "fund_owner": fund_owner,
+                        "data": record,
+                        "updated_at": now
+                    }
+                )
+                session.execute(stmt)
+            session.commit()
+
+    def _get_fund_detail_cache_sync(self, symbol: str, detail_type: str) -> tuple[list, bool]:
+        """Get cached fund detail data and freshness flag."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_sync_engine()
+        with Session(engine) as session:
+            stmt = select(FundDetailCache).where(
+                and_(
+                    FundDetailCache.symbol == symbol,
+                    FundDetailCache.detail_type == detail_type
+                )
+            )
+            record = session.execute(stmt).scalar_one_or_none()
+
+            if not record:
+                return [], False
+
+            age_seconds = (datetime.utcnow() - record.updated_at).total_seconds() if record.updated_at else None
+            is_fresh = age_seconds is not None and age_seconds < self._FUND_DETAILS_TTL
+            data = record.data if isinstance(record.data, list) else []
+            return data, is_fresh
+
+    def _upsert_fund_detail_cache_sync(self, symbol: str, detail_type: str, data: list) -> None:
+        """Upsert cached fund detail data."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_sync_engine()
+        with Session(engine) as session:
+            stmt = select(FundDetailCache).where(
+                and_(
+                    FundDetailCache.symbol == symbol,
+                    FundDetailCache.detail_type == detail_type
+                )
+            )
+            record = session.execute(stmt).scalar_one_or_none()
+
+            if record:
+                record.data = data
+                record.updated_at = datetime.utcnow()
+            else:
+                session.add(FundDetailCache(
+                    symbol=symbol,
+                    detail_type=detail_type,
+                    data=data,
+                    updated_at=datetime.utcnow()
+                ))
+            session.commit()
 
     def _is_cache_valid(self, cache: Dict, key: str, ttl: int) -> bool:
         """Check if cache entry exists and is not expired."""
@@ -149,6 +429,19 @@ class VnstockService:
             if time.time() - timestamp < ttl:
                 return True
         return False
+
+    def _get_cached_fund_benchmarks(self) -> Dict[str, Any] | None:
+        """Return cached fund benchmarks if fresh."""
+        cache_key = "fund_benchmarks"
+        if self._is_cache_valid(self._fund_benchmark_cache, cache_key, self._FUND_BENCHMARK_TTL):
+            return self._fund_benchmark_cache[cache_key][0]
+        return None
+
+    def _set_cached_fund_benchmarks(self, benchmarks: Dict[str, Any]) -> None:
+        """Store fund benchmarks in memory cache."""
+        if not benchmarks:
+            return
+        self._fund_benchmark_cache["fund_benchmarks"] = (benchmarks, time.time())
     
     def _get_sync_engine(self):
         """Get or create cached synchronous SQLAlchemy engine."""
@@ -158,12 +451,32 @@ class VnstockService:
             self._sync_engine = create_engine(sync_url)
         return self._sync_engine
 
+    def _get_thread_local_fund_api(self):
+        """Get or create a thread-local vnstock Fund API instance."""
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - cannot initialize fund API")
+
+        fund_api = getattr(_fund_api_local, "fund_api", None)
+        if fund_api is not None:
+            return fund_api
+
+        try:
+            from vnstock import Fund
+            fund_api = Fund()
+            _fund_api_local.fund_api = fund_api
+            return fund_api
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=60.0)
+                raise CircuitOpenError("Rate limited while initializing fund API")
+            raise
+
     async def sync_indices(self) -> None:
         """
         Fetch all indices from vnstock and update the database.
         """
         loop = asyncio.get_event_loop()
-        indices_df = await loop.run_in_executor(None, self._fetch_all_indices_from_lib)
+        indices_df = await loop.run_in_executor(_frontend_executor, self._fetch_all_indices_from_lib)
         
         # Define manual indices (Exchanges/Groups that are not in all_indices but are supported)
         manual_indices = [
@@ -201,7 +514,7 @@ class VnstockService:
                         session.add(new_index)
                     count += 1
                 except Exception as e:
-                    print(f"Error processing manual index {item['symbol']}: {e}")
+                    logger.warning(f"Error processing manual index {item['symbol']}: {e}")
 
             # Process fetched indices
             if indices_df is not None and not indices_df.empty:
@@ -249,15 +562,28 @@ class VnstockService:
                             session.add(new_index)
                         count += 1
                     except Exception as e:
-                        print(f"Error processing index {row.get('symbol')}: {e}")
-                    
+                        logger.warning(f"Error processing index {row.get('symbol')}: {e}")
+
             await session.commit()
-            print(f"Synced {count} supported indices to database.")
+            logger.info(f"Synced {count} supported indices to database")
 
     def _fetch_all_indices_from_lib(self) -> pd.DataFrame:
         """Fetch all indices from vnstock library synchronously."""
         from vnstock import Listing
-        return Listing(source='VCI').all_indices()
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - cannot fetch indices list")
+
+        try:
+            result = Listing(source='VCI').all_indices()
+            api_circuit_breaker.record_success()
+            return result
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching indices: {e}")
+            raise
 
     async def get_indices(self) -> List[StockIndex]:
         """
@@ -295,35 +621,41 @@ class VnstockService:
         
         for symbol in symbols:
             try:
-                index_data = await loop.run_in_executor(None, self._fetch_index_value_sync, symbol)
+                index_data = await loop.run_in_executor(_frontend_executor, self._fetch_index_value_sync, symbol)
                 if index_data:
                     results.append(index_data)
             except Exception as e:
-                print(f"Error fetching index value for {symbol}: {e}")
-        
+                logger.warning(f"Error fetching index value for {symbol}: {e}")
+
         return results
 
     def _fetch_index_value_sync(self, symbol: str) -> IndexValue | None:
         """
         Fetch latest value for a single index synchronously.
+        Checks circuit breaker before API call to fail fast when rate limited.
         """
         from vnstock import Vnstock
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch index value for {symbol}")
+
         try:
             today = datetime.now().strftime('%Y-%m-%d')
             week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-            
+
             vs = Vnstock(symbol=symbol, source='VCI')
             stock = vs.stock()
             df = stock.quote.history(start=week_ago, end=today)
-            
+
             if df is not None and not df.empty:
                 last_row = df.iloc[-1]
                 open_price = float(last_row['open'])
                 close_price = float(last_row['close'])
                 change_value = close_price - open_price
                 change_pct = (change_value / open_price) * 100 if open_price > 0 else 0
-                
+
+                api_circuit_breaker.record_success()
                 return IndexValue(
                     symbol=symbol,
                     name=self.INDEX_NAMES.get(symbol, symbol),
@@ -331,10 +663,17 @@ class VnstockService:
                     change=round(change_pct, 2),
                     change_value=round(change_value, 2)
                 )
-        except Exception as e:
-            print(f"Error fetching index value for {symbol}: {e}")
-        
-        return None
+
+            api_circuit_breaker.record_success()
+            return None
+
+        except (SystemExit, Exception) as e:
+            # Check if this is a rate limit error
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching index value for {symbol}: {e}")
+            logger.warning(f"Error fetching index value for {symbol}: {e}")
+            return None
 
 
     async def get_index_stocks(self, index_symbol: str, limit: int = 100) -> List[StockInfo]:
@@ -349,7 +688,7 @@ class VnstockService:
             List of StockInfo objects
         """
         loop = asyncio.get_event_loop()
-        stocks = await loop.run_in_executor(None, self._fetch_index_data, index_symbol, limit)
+        stocks = await loop.run_in_executor(_frontend_executor, self._fetch_index_data, index_symbol, limit)
         
         # Launch background task for enrichment
         asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
@@ -362,7 +701,7 @@ class VnstockService:
         Fetch all ICB level 2 industries.
         """
         loop = asyncio.get_event_loop()
-        df = await loop.run_in_executor(None, self._fetch_industries_sync)
+        df = await loop.run_in_executor(_frontend_executor, self._fetch_industries_sync)
         if df is not None and not df.empty:
             # Filter for level 2 industries
             l2_df = df[df['level'] == 2]
@@ -372,14 +711,27 @@ class VnstockService:
     def _fetch_industries_sync(self) -> pd.DataFrame:
         """Fetch industries synchronously."""
         from vnstock import Listing
-        return Listing(source='VCI').industries_icb()
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - cannot fetch industries")
+
+        try:
+            result = Listing(source='VCI').industries_icb()
+            api_circuit_breaker.record_success()
+            return result
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching industries: {e}")
+            raise
 
     async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
         """
         Fetch stocks for a specific ICB industry.
         """
         loop = asyncio.get_event_loop()
-        stocks = await loop.run_in_executor(None, self._fetch_industry_data, industry_name, limit)
+        stocks = await loop.run_in_executor(_frontend_executor, self._fetch_industry_data, industry_name, limit)
         
         # Launch background task for enrichment
         asyncio.create_task(self._enrich_stocks_with_metadata(stocks))
@@ -459,58 +811,71 @@ class VnstockService:
             # Fetch missing names if needed
             if tickers_needing_name:
                 loop = asyncio.get_event_loop()
-                all_symbols_df = await loop.run_in_executor(None, self._fetch_all_symbols)
+                try:
+                    all_symbols_df = await loop.run_in_executor(_background_executor, self._fetch_all_symbols)
+                except CircuitOpenError as e:
+                    bg_logger.warning(f"Skipping symbol name enrichment due to rate limit: {e}")
+                    all_symbols_df = None
                 
-                for _, row in all_symbols_df.iterrows():
-                    symbol = row['symbol']
-                    name = row['organ_name']
-                    if symbol in tickers_needing_name:
-                        if symbol not in cached_data:
-                            new_company = StockCompany(symbol=symbol, company_name=name)
-                            session.add(new_company)
-                            cached_data[symbol] = new_company
-                        else:
-                            cached_data[symbol].company_name = name
+                if all_symbols_df is not None and not all_symbols_df.empty:
+                    for _, row in all_symbols_df.iterrows():
+                        symbol = row['symbol']
+                        name = row['organ_name']
+                        if symbol in tickers_needing_name:
+                            if symbol not in cached_data:
+                                new_company = StockCompany(symbol=symbol, company_name=name)
+                                session.add(new_company)
+                                cached_data[symbol] = new_company
+                            else:
+                                cached_data[symbol].company_name = name
             
             # Fetch missing/stale financial data if needed
             if tickers_needing_finance:
-                # Limit batch size to avoid long hangs in one request
-                batch_limit = 50
-                tickers_to_fetch = [t for t in tickers_needing_finance if t not in self._enriching_tickers][:batch_limit]
-                
-                if not tickers_to_fetch:
-                    return stocks
-
-                # Mark as enriching to avoid multiple tasks for same symbols
-                self._enriching_tickers.update(tickers_to_fetch)
-                
-                try:
-                    print(f"Fetching financial metadata for {len(tickers_to_fetch)}/{len(tickers_needing_finance)} stocks in background...")
-                    loop = asyncio.get_event_loop()
+                # Early bail-out if rate limited - skip API calls entirely
+                if sync_status.is_rate_limited:
+                    bg_logger.debug("Skipping metadata enrichment API calls due to rate limit")
+                    # Still apply existing cached data below
+                else:
+                    # Limit batch size to avoid long hangs in one request
+                    batch_limit = 50
+                    tickers_to_fetch = [t for t in tickers_needing_finance if t not in self._enriching_tickers][:batch_limit]
                     
-                    # Fetch one by one and commit incrementally
-                    for symbol in tickers_to_fetch:
+                    if tickers_to_fetch:
+                        # Mark as enriching to avoid multiple tasks for same symbols
+                        self._enriching_tickers.update(tickers_to_fetch)
+                        
                         try:
-                            # Add a small delay between symbols
-                            await asyncio.sleep(1.0)
-                            data = await loop.run_in_executor(None, self._fetch_stock_finance_sync, symbol)
+                            log_background_start("Metadata Enrichment", f"{len(tickers_to_fetch)}/{len(tickers_needing_finance)} stocks")
+                            loop = asyncio.get_event_loop()
                             
-                            if data and symbol in cached_data:
-                                cached_data[symbol].pe_ratio = data.get('pe_ratio')
-                                cached_data[symbol].updated_at = now
-                                await session.commit()
-                            elif symbol in cached_data:
-                                # Still update to avoid retrying immediately, but mark as updated now
-                                cached_data[symbol].updated_at = now
-                                await session.commit()
-                        except Exception as e:
-                            print(f"Error enriching {symbol}: {e}")
-                            if "Rate limit" in str(e) or "429" in str(e) or "quá nhiều" in str(e):
-                                break
-                finally:
-                    # Clean up
-                    for t in tickers_to_fetch:
-                        self._enriching_tickers.discard(t)
+                            # Fetch one by one and commit incrementally
+                            for symbol in tickers_to_fetch:
+                                # Check rate limit on each iteration for early exit
+                                if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
+                                    bg_logger.warning("Rate limit detected during enrichment, stopping batch")
+                                    break
+                                try:
+                                    # Add a small delay between symbols
+                                    await asyncio.sleep(1.0)
+                                    data = await loop.run_in_executor(_background_executor, self._fetch_stock_finance_sync, symbol)
+                                    
+                                    if data and symbol in cached_data:
+                                        cached_data[symbol].pe_ratio = data.get('pe_ratio')
+                                        cached_data[symbol].updated_at = now
+                                        await session.commit()
+                                    elif symbol in cached_data:
+                                        # Still update to avoid retrying immediately, but mark as updated now
+                                        cached_data[symbol].updated_at = now
+                                        await session.commit()
+                                except Exception as e:
+                                    bg_logger.error(f"Error enriching {symbol}: {e}")
+                                    if _is_rate_limit_error(e):
+                                        bg_logger.warning("Rate limit hit during enrichment, stopping batch")
+                                        break
+                        finally:
+                            # Clean up
+                            for t in tickers_to_fetch:
+                                self._enriching_tickers.discard(t)
             
             await session.commit()
             
@@ -556,16 +921,29 @@ class VnstockService:
             return None
         
         try:
-            return retry_with_backoff(fetch_finance, max_retries=3, initial_delay=25.0)
+            return retry_with_backoff(fetch_finance, max_retries=3)
         except Exception as e:
-            print(f"Error fetching financial metadata for {symbol}: {e}")
+            bg_logger.error(f"Error fetching financial metadata for {symbol}: {e}")
             raise e
 
     def _fetch_all_symbols(self) -> pd.DataFrame:
         """Fetch all symbols from vnstock."""
         from vnstock import Listing
-        listing = Listing(source='VCI')
-        return listing.all_symbols()
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - cannot fetch all symbols")
+
+        try:
+            listing = Listing(source='VCI')
+            result = listing.all_symbols()
+            api_circuit_breaker.record_success()
+            return result
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching all symbols: {e}")
+            raise
     
     def _flatten_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Flatten multi-level column names."""
@@ -604,33 +982,43 @@ class VnstockService:
         Called in thread pool executor to avoid blocking.
         """
         from vnstock import Listing
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch index {index_name}")
+
         try:
             # Map index name to group code
             group_code = self._get_group_code_for_index(index_name)
-            
+
             # Get stock symbols for the specified group
             listing = Listing(source='VCI')
             try:
                 symbols_df = listing.symbols_by_group(group_code)
+                api_circuit_breaker.record_success()
             except ValueError as e:
-                print(f"Warning: Group '{group_code}' (mapped from '{index_name}') not supported by symbols_by_group: {e}")
+                logger.warning(f"Group '{group_code}' (mapped from '{index_name}') not supported by symbols_by_group: {e}")
                 return []
-            except Exception as e:
-                print(f"Error fetching symbols for group '{group_code}': {e}")
+            except (SystemExit, Exception) as e:
+                if _is_rate_limit_error(e):
+                    _record_rate_limit(reset_seconds=30.0)
+                    raise CircuitOpenError(f"Rate limited fetching symbols for {group_code}: {e}")
+                logger.warning(f"Error fetching symbols for group '{group_code}': {e}")
                 return []
 
             if symbols_df is None or symbols_df.empty:
-                print(f"Warning: Could not fetch symbols for {group_code} group.")
+                logger.warning(f"Could not fetch symbols for {group_code} group")
                 return []
             else:
                 # The series returned by symbols_by_group contains the symbols
                 symbols = symbols_df.tolist()
-            
+
             return self._fetch_symbols_data(symbols, limit)
-            
+
+        except CircuitOpenError:
+            raise  # Re-raise circuit breaker errors
         except Exception as e:
-            print(f"Error fetching {index_name} data: {e}")
+            logger.warning(f"Error fetching {index_name} data: {e}")
             return []
 
     def _fetch_industry_data(self, industry_name: str, limit: int) -> List[StockInfo]:
@@ -638,10 +1026,17 @@ class VnstockService:
         Synchronous method to fetch industry data using vnstock.
         """
         from vnstock import Listing
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch industry {industry_name}")
+
         try:
             listing = Listing(source='VCI')
             # Get all symbols with industry info
             df = listing.symbols_by_industries()
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 # Filter by icb_name2 (Level 2) or icb_name3/4 if needed
                 # We'll match against any of them for flexibility
@@ -650,14 +1045,19 @@ class VnstockService:
                 for col in cols_to_check:
                     if col in df.columns:
                         mask |= (df[col] == industry_name)
-                
+
                 filtered_df = df[mask]
                 symbols = filtered_df['symbol'].tolist()
-                
+
                 return self._fetch_symbols_data(symbols, limit)
             return []
-        except Exception as e:
-            print(f"Error fetching industry {industry_name} data: {e}")
+        except CircuitOpenError:
+            raise  # Re-raise circuit breaker errors
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching industry {industry_name}: {e}")
+            logger.warning(f"Error fetching industry {industry_name} data: {e}")
             return []
 
     def _fetch_symbols_data(self, symbols: List[str], limit: int) -> List[StockInfo]:
@@ -665,6 +1065,12 @@ class VnstockService:
         Generic method to fetch price and market cap data for a list of symbols.
         """
         from vnstock import Trading
+        from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+
+        # Check circuit breaker before making API calls
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - API rate limited")
+
         try:
             # Get price board for stocks in batches
             trading = Trading(source='VCI')
@@ -676,10 +1082,8 @@ class VnstockService:
                 batch = symbols[i:i + batch_size]
                 try:
                     price_board = trading.price_board(batch)
-                    
-                    # Add delay between batches
-                    time.sleep(1.0) # Slightly longer delay for safety
-                    
+                    api_circuit_breaker.record_success()
+
                     if price_board is not None and not price_board.empty:
                         # Flatten multi-level column names
                         price_board = self._flatten_columns(price_board)
@@ -774,8 +1178,11 @@ class VnstockService:
                                     price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None
                                 ))
                                 
-                except Exception as e:
-                    print(f"Error fetching batch {i}: {e}")
+                except (SystemExit, Exception) as e:
+                    if _is_rate_limit_error(e):
+                        _record_rate_limit(reset_seconds=60.0)
+                        raise CircuitOpenError(f"Rate limited while fetching price board batch {i}")
+                    logger.warning(f"Error fetching batch {i}: {e}")
                     continue
             
             # Sort by market cap descending and take the requested limit
@@ -787,24 +1194,34 @@ class VnstockService:
             
             return top_stocks
             
-        except Exception as e:
-            print(f"Error fetching symbols data: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            # Check if this is a rate limit error and record circuit breaker failure
+            error_name = type(e).__name__
+            if error_name in {"RateLimitExceeded", "RateLimitError"} or "rate limit" in str(e).lower():
+                _record_rate_limit(reset_seconds=60.0)
+                raise CircuitOpenError(f"Rate limited while fetching symbols data: {e}")
+            logger.warning(f"Error fetching symbols data: {e}")
             import traceback
-            traceback.print_exc()
+            bg_logger.error(f"Stack trace for symbols data error:\n{traceback.format_exc()}")
             return []
-    
+
     def _enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
         Enrich stock data with historical price changes (1w, 1m, 1y).
         """
         return self._enrich_with_price_changes_sync(stocks)
     
-    def _enrich_with_price_changes_sync(self, stocks: List[StockInfo]) -> List[StockInfo]:
+    def _enrich_with_price_changes_sync(
+        self,
+        stocks: List[StockInfo],
+        fetch_missing_history: bool = False
+    ) -> List[StockInfo]:
         """
         Synchronous fallback for price change enrichment.
         Queries DB cache directly, fetches missing from API.
         """
-        from vnstock import Vnstock
         from sqlalchemy import create_engine
         from sqlalchemy.orm import Session
         
@@ -836,12 +1253,15 @@ class VnstockService:
             if symbols_needing_fetch:
                 # Limit how many symbols we fetch history for in one request
                 # To avoid hitting API limits and long timeouts
-                max_history_fetch = 100
-                symbols_to_fetch = list(symbols_needing_fetch)[:max_history_fetch]
-                print(f"Fetching historical data for {len(symbols_to_fetch)}/{len(symbols_needing_fetch)} symbols (capped at {max_history_fetch})...")
-                self._fetch_and_cache_history_sync(session, symbols_to_fetch)
-                # Re-query cached prices after fetch
-                cached_prices = self._get_cached_prices_sync(session, symbols, target_dates)
+                if fetch_missing_history and not sync_status.is_rate_limited and api_circuit_breaker.can_proceed():
+                    max_history_fetch = 100
+                    symbols_to_fetch = list(symbols_needing_fetch)[:max_history_fetch]
+                    logger.info(f"Fetching historical data for {len(symbols_to_fetch)}/{len(symbols_needing_fetch)} symbols")
+                    self._fetch_and_cache_history_sync(session, symbols_to_fetch)
+                    # Re-query cached prices after fetch
+                    cached_prices = self._get_cached_prices_sync(session, symbols, target_dates)
+                else:
+                    bg_logger.debug("Skipping historical price fetch in request path")
         
         engine.dispose()
         
@@ -932,7 +1352,7 @@ class VnstockService:
                     interval='1D'
                 )
 
-            hist = retry_with_backoff(fetch_history, max_retries=2, initial_delay=25.0)
+            hist = retry_with_backoff(fetch_history, max_retries=2)
 
             if hist is None or hist.empty:
                 return 0
@@ -964,7 +1384,7 @@ class VnstockService:
                         session.add(price_record)
                         count += 1
                 except Exception as e:
-                    print(f"Error processing price for {symbol} on {row.get('time')}: {e}")
+                    bg_logger.error(f"Error processing price for {symbol} on {row.get('time')}: {e}")
                     continue
 
             if count > 0:
@@ -972,7 +1392,7 @@ class VnstockService:
             
             return count
         except Exception as e:
-            print(f"Error in _upsert_stock_price_history for {symbol}: {e}")
+            bg_logger.error(f"Error in _upsert_stock_price_history for {symbol}: {e}")
             return 0
         finally:
             if own_session:
@@ -983,15 +1403,18 @@ class VnstockService:
         Fetch historical data for given symbols from vnstock API and cache to DB.
         Optimized version using unified upsert helper.
         """
+        from app.core.circuit_breaker import api_circuit_breaker
+
         today = date.today()
         one_year_ago = today - timedelta(days=400)
-        
+
         for symbol in symbols:
+            # Check circuit breaker before each symbol to fail fast if rate limited
+            if not api_circuit_breaker.can_proceed():
+                bg_logger.warning("Circuit breaker open, skipping history fetch for remaining symbols")
+                return
+
             try:
-                # Add slight delay between symbols to avoid aggressive rate limiting
-                if symbols.index(symbol) > 0:
-                    time.sleep(1.0)
-                
                 count = self._upsert_stock_price_history(
                     symbol=symbol,
                     start_date=one_year_ago,
@@ -999,10 +1422,10 @@ class VnstockService:
                     session=session
                 )
                 if count > 0:
-                    print(f"Cached {count} new price records for {symbol}")
-                    
+                    bg_logger.debug(f"Cached {count} new price records for {symbol}")
+
             except Exception as e:
-                print(f"Error syncing history for {symbol}: {e}")
+                bg_logger.error(f"Error syncing history for {symbol}: {e}")
                 continue
     
 
@@ -1020,16 +1443,21 @@ class VnstockService:
             List of income statement records with period data
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_income_statement_sync, symbol, period, lang)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_income_statement_sync, symbol, period, lang)
     
     def _fetch_income_statement_sync(self, symbol: str, period: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch income statement synchronously."""
         from vnstock import Vnstock
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch income statement for {symbol}")
+
         try:
             s = Vnstock().stock(symbol=symbol[:3], source='VCI')
             df = s.finance.income_statement(period=period, lang=lang)
-            
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 # Convert to list of dicts, handling NaN values
@@ -1040,8 +1468,13 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching income statement for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching income statement for {symbol}: {e}")
+            logger.warning(f"Error fetching income statement for {symbol}: {e}")
             return []
     
     async def get_balance_sheet(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
@@ -1057,16 +1490,21 @@ class VnstockService:
             List of balance sheet records with period data
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_balance_sheet_sync, symbol, period, lang)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_balance_sheet_sync, symbol, period, lang)
     
     def _fetch_balance_sheet_sync(self, symbol: str, period: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch balance sheet synchronously."""
         from vnstock import Vnstock
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch balance sheet for {symbol}")
+
         try:
             s = Vnstock().stock(symbol=symbol[:3], source='VCI')
             df = s.finance.balance_sheet(period=period, lang=lang)
-            
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1076,8 +1514,13 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching balance sheet for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching balance sheet for {symbol}: {e}")
+            logger.warning(f"Error fetching balance sheet for {symbol}: {e}")
             return []
     
     async def get_cash_flow(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
@@ -1093,16 +1536,21 @@ class VnstockService:
             List of cash flow records with period data
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_cash_flow_sync, symbol, period, lang)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_cash_flow_sync, symbol, period, lang)
     
     def _fetch_cash_flow_sync(self, symbol: str, period: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch cash flow synchronously."""
         from vnstock import Vnstock
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch cash flow for {symbol}")
+
         try:
             s = Vnstock().stock(symbol=symbol[:3], source='VCI')
             df = s.finance.cash_flow(period=period, lang=lang)
-            
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1112,8 +1560,13 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching cash flow for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching cash flow for {symbol}: {e}")
+            logger.warning(f"Error fetching cash flow for {symbol}: {e}")
             return []
     
     async def get_financial_ratios(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
@@ -1130,16 +1583,21 @@ class VnstockService:
             List of financial ratio records with period data
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_financial_ratios_sync, symbol, period, lang)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_financial_ratios_sync, symbol, period, lang)
     
     def _fetch_financial_ratios_sync(self, symbol: str, period: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch financial ratios synchronously."""
         from vnstock import Vnstock
-        
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch financial ratios for {symbol}")
+
         try:
             s = Vnstock().stock(symbol=symbol[:3], source='VCI')
             df = s.finance.ratio(period=period, lang=lang)
-            
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1149,8 +1607,13 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching financial ratios for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching financial ratios for {symbol}: {e}")
+            logger.warning(f"Error fetching financial ratios for {symbol}: {e}")
             return []
 
 
@@ -1158,38 +1621,84 @@ class VnstockService:
     async def get_company_overview(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch company overview for a given stock symbol."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_company_overview_sync, symbol)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_company_overview_sync, symbol)
 
     def _fetch_company_overview_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch company overview synchronously."""
         from vnstock import Company
-        try:
-            c = Company(symbol=symbol[:3], source='VCI')
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch company overview for {symbol}")
+
+        def _normalize_records(df: Any) -> List[Dict[str, Any]]:
+            if df is None:
+                return []
+            if isinstance(df, dict):
+                df = pd.DataFrame([df])
+            elif isinstance(df, list):
+                df = pd.DataFrame(df)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return []
+            df = self._flatten_columns(df)
+            records = df.to_dict('records')
+            for record in records:
+                for key, value in record.items():
+                    if value is None:
+                        continue
+                    # Avoid ambiguous truth values for list/dict-like objects
+                    if pd.api.types.is_scalar(value) and pd.isna(value):
+                        record[key] = None
+            return records
+
+        def _fetch_from_source(source: str) -> List[Dict[str, Any]]:
+            c = Company(symbol=symbol[:3], source=source)
             df = c.overview()
-            if df is not None and not df.empty:
-                df = self._flatten_columns(df)
-                records = df.to_dict('records')
-                for record in records:
-                    for key, value in record.items():
-                        if pd.isna(value):
-                            record[key] = None
+            api_circuit_breaker.record_success()
+            return _normalize_records(df)
+
+        try:
+            records = _fetch_from_source('VCI')
+            if records:
                 return records
-            return []
-        except Exception as e:
-            print(f"Error fetching company overview for {symbol}: {e}")
+            logger.warning(f"Empty company overview for {symbol} from VCI, trying KBS.")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {e}")
+            logger.warning(f"Error fetching company overview for {symbol} from VCI: {e}")
+
+        try:
+            return _fetch_from_source('KBS')
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {e}")
+            logger.warning(f"Error fetching company overview for {symbol} from KBS: {e}")
             return []
 
     async def get_shareholders(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch shareholders for a given stock symbol."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_shareholders_sync, symbol)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_shareholders_sync, symbol)
 
     def _fetch_shareholders_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch shareholders synchronously."""
         from vnstock import Company
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch shareholders for {symbol}")
+
         try:
             c = Company(symbol=symbol[:3], source='VCI')
             df = c.shareholders()
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1199,21 +1708,33 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching shareholders for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching shareholders for {symbol}: {e}")
+            logger.warning(f"Error fetching shareholders for {symbol}: {e}")
             return []
 
     async def get_officers(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch officers for a given stock symbol."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_officers_sync, symbol)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_officers_sync, symbol)
 
     def _fetch_officers_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch officers synchronously."""
         from vnstock import Company
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch officers for {symbol}")
+
         try:
             c = Company(symbol=symbol[:3], source='VCI')
             df = c.officers()
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1223,21 +1744,33 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching officers for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching officers for {symbol}: {e}")
+            logger.warning(f"Error fetching officers for {symbol}: {e}")
             return []
 
     async def get_subsidiaries(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch subsidiaries for a given stock symbol."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_subsidiaries_sync, symbol)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_subsidiaries_sync, symbol)
 
     def _fetch_subsidiaries_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch subsidiaries synchronously."""
         from vnstock import Company
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch subsidiaries for {symbol}")
+
         try:
             c = Company(symbol=symbol[:3], source='VCI')
             df = c.subsidiaries()
+            api_circuit_breaker.record_success()
+
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
                 records = df.to_dict('records')
@@ -1247,8 +1780,13 @@ class VnstockService:
                             record[key] = None
                 return records
             return []
-        except Exception as e:
-            print(f"Error fetching subsidiaries for {symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching subsidiaries for {symbol}: {e}")
+            logger.warning(f"Error fetching subsidiaries for {symbol}: {e}")
             return []
 
     async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
@@ -1263,7 +1801,7 @@ class VnstockService:
             Dict with symbol, company_name, and data (list of VolumeDataPoint dicts)
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_volume_history_sync, symbol, days)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_volume_history_sync, symbol, days)
 
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
@@ -1323,6 +1861,10 @@ class VnstockService:
                     }
 
                 # Otherwise, fetch from API and cache
+                # Check circuit breaker before making API call
+                if not api_circuit_breaker.can_proceed():
+                    raise CircuitOpenError(f"Circuit breaker open - cannot fetch volume history for {symbol_clean}")
+
                 try:
                     s = Vnstock().stock(symbol=symbol_clean, source='VCI')
                     hist = s.quote.history(
@@ -1330,6 +1872,7 @@ class VnstockService:
                         end=end_date.strftime('%Y-%m-%d'),
                         interval='1D'
                     )
+                    api_circuit_breaker.record_success()
 
                     if hist is not None and not hist.empty:
                         # Cache the data
@@ -1359,7 +1902,7 @@ class VnstockService:
                                     )
                                     session.add(price_record)
                             except Exception as e:
-                                print(f"Error caching price for {symbol_clean} on {row.get('time')}: {e}")
+                                bg_logger.error(f"Error caching price for {symbol_clean} on {row.get('time')}: {e}")
                                 continue
 
                         session.commit()
@@ -1389,8 +1932,11 @@ class VnstockService:
                             'data': data
                         }
 
-                except Exception as e:
-                    print(f"Error fetching volume history for {symbol_clean}: {e}")
+                except (SystemExit, Exception) as e:
+                    if _is_rate_limit_error(e):
+                        _record_rate_limit(reset_seconds=30.0)
+                        raise CircuitOpenError(f"Rate limited fetching volume history for {symbol_clean}: {e}")
+                    logger.warning(f"Error fetching volume history for {symbol_clean}: {e}")
 
                 engine.dispose()
                 return {
@@ -1399,8 +1945,10 @@ class VnstockService:
                     'data': []
                 }
 
+        except CircuitOpenError:
+            raise  # Re-raise circuit breaker errors
         except Exception as e:
-            print(f"Error in volume history fetch: {e}")
+            logger.warning(f"Error in volume history fetch: {e}")
             engine.dispose()
             return {
                 'symbol': symbol_clean,
@@ -1609,7 +2157,7 @@ class VnstockService:
                 if prices:
                     benchmarks[index_symbol] = prices
             except Exception as e:
-                print(f"Error fetching benchmark {index_symbol}: {e}")
+                logger.warning(f"Error fetching benchmark {index_symbol}: {e}")
 
         return benchmarks
 
@@ -1622,6 +2170,10 @@ class VnstockService:
         """Fetch historical index values and aggregate to weekly."""
         from vnstock import Vnstock
 
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch index history for {index_symbol}")
+
         try:
             vs = Vnstock(symbol=index_symbol, source='VCI')
             stock = vs.stock()
@@ -1630,6 +2182,7 @@ class VnstockService:
                 end=end_date.strftime('%Y-%m-%d'),
                 interval='1D'
             )
+            api_circuit_breaker.record_success()
 
             if df is not None and not df.empty:
                 # Convert to proper format
@@ -1649,8 +2202,13 @@ class VnstockService:
                     }
                     for idx, row in weekly_df.iterrows()
                 ]
-        except Exception as e:
-            print(f"Error fetching index history for {index_symbol}: {e}")
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching index history for {index_symbol}: {e}")
+            logger.warning(f"Error fetching index history for {index_symbol}: {e}")
 
         return []
 
@@ -1690,7 +2248,14 @@ class VnstockService:
         Background task to sync price history for given symbols.
         Fetches from vnstock API and stores in database.
         """
-        print(f"Starting background sync for {len(symbols)} symbols...")
+        # Early bail-out if rate limited
+        if sync_status.is_rate_limited:
+            bg_logger.warning("Skipping price history sync due to rate limit")
+            for symbol in symbols:
+                self._weekly_prices_syncing_symbols.discard(symbol)
+            return
+
+        log_background_start("Price History Sync", f"{len(symbols)} symbols")
 
         loop = asyncio.get_event_loop()
 
@@ -1698,12 +2263,21 @@ class VnstockService:
             # Sync in batches to avoid overwhelming the API
             batch_size = 10
             for i in range(0, len(symbols), batch_size):
+                # Check rate limit on each batch
+                if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
+                    bg_logger.warning("Rate limit detected during price sync, stopping early")
+                    break
+
                 batch = symbols[i:i + batch_size]
 
                 for symbol in batch:
+                    # Check rate limit on each symbol for faster exit
+                    if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
+                        bg_logger.warning("Rate limit detected, stopping price sync")
+                        break
                     try:
                         await loop.run_in_executor(
-                            None,
+                            _background_executor,
                             self._fetch_and_store_stock_history,
                             symbol,
                             start_date,
@@ -1712,13 +2286,18 @@ class VnstockService:
                         # Small delay between symbols
                         await asyncio.sleep(0.5)
                     except Exception as e:
-                        print(f"Error syncing {symbol}: {e}")
+                        bg_logger.error(f"Error syncing {symbol}: {e}")
+                        # Check if it's a rate limit error
+                        if _is_rate_limit_error(e):
+                            _record_rate_limit(reset_seconds=30.0)
+                            bg_logger.warning("Rate limit hit, stopping price sync")
+                            break
 
                 # Longer delay between batches
                 if i + batch_size < len(symbols):
                     await asyncio.sleep(2.0)
 
-            print(f"Completed background sync for {len(symbols)} symbols")
+            log_background_complete("Price History Sync", f"{len(symbols)} symbols processed")
         finally:
             # Clear syncing status
             for symbol in symbols:
@@ -1738,9 +2317,9 @@ class VnstockService:
                 end_date=end_date
             )
             if count > 0:
-                print(f"Synced {count} price records for {symbol}")
+                bg_logger.debug(f"Synced {count} price records for {symbol}")
         except Exception as e:
-            print(f"Error in background sync for {symbol}: {e}")
+            bg_logger.error(f"Error in background sync for {symbol}: {e}")
         finally:
             # Clean up connections
             engine = self._get_sync_engine()
@@ -1753,62 +2332,77 @@ class VnstockService:
         cache_key = fund_type or "all"
         if self._is_cache_valid(self._fund_listing_cache, cache_key, self._FUND_LISTING_TTL):
             return self._fund_listing_cache[cache_key][0]
-            
+
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._fetch_fund_listing_sync, fund_type)
-        
+        data = await loop.run_in_executor(_frontend_executor, self._fetch_fund_listing_sync, fund_type)
+
         # Update cache
         if data:
             self._fund_listing_cache[cache_key] = (data, time.time())
         return data
 
-    def _fetch_fund_listing_sync(self, fund_type: str) -> List[Dict[str, Any]]:
+    def _fetch_fund_listing_sync(self, fund_type: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
         """Fetch fund listing synchronously."""
-        from vnstock import Fund
-        
+        records, last_updated = self._get_fund_listing_records_from_db_sync(fund_type or None)
+
+        if records and self._fund_listing_is_fresh(last_updated):
+            return records
+
+        # Fallback to in-memory DF cache if DB cache missing
         df = None
-        # Use DF cache if valid and no fund_type filtering needed at the source level
         if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
-            df = self._fund_listing_df_cache.copy() # Copy to avoid mutating cache
-            print(f"Using cached fund listing DF for endpoint (type={fund_type or 'all'})")
-        else:
+            df = self._fund_listing_df_cache.copy()
+            bg_logger.debug(f"Using in-memory fund listing cache for endpoint (type={fund_type or 'all'})")
+
+        if df is None:
+            # Prevent refresh stampede: only one thread refreshes at a time.
+            acquired = self._fund_listing_refresh_lock.acquire(blocking=False)
+            if not acquired:
+                return records or []
+
             def fetch_listing():
-                fund = Fund()
+                fund = self._get_thread_local_fund_api()
                 return fund.listing()
-            
+
             try:
-                df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
+                df = retry_with_backoff(fetch_listing, max_retries=3)
                 if df is not None and not df.empty:
                     self._fund_listing_df_cache = df
                     self._fund_listing_df_timestamp = time.time()
-                    print("Fetched and cached fresh fund listing from API for endpoint")
+                    bg_logger.debug("Fetched and cached fresh fund listing from API for endpoint")
                     df = df.copy()
             except Exception as e:
-                print(f"Error fetching fund listing from API: {e}")
-                if self._fund_listing_df_cache is not None:
-                    print("Using stale cache as fallback for endpoint")
-                    df = self._fund_listing_df_cache.copy()
-                else:
-                    return []
+                logger.warning(f"Error fetching fund listing from API: {e}")
+                if records:
+                    return records
+                return []
+            finally:
+                if acquired:
+                    self._fund_listing_refresh_lock.release()
 
         if df is not None and not df.empty:
-            # Filter by fund_type if provided
+            df = self._flatten_columns(df)
             if fund_type:
                 df = df[df['fund_type'] == fund_type]
 
-            df = self._flatten_columns(df)
             records = df.to_dict('records')
             for record in records:
                 # Normalize field names for frontend
                 self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
                 self._normalize_fund_field(record, 'name', ['name', 'short_name'])
                 self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
-                    
+
                 for key, value in record.items():
                     if pd.isna(value):
                         record[key] = None
+
+            # Persist refreshed listing
+            if records and not fund_type:
+                self._upsert_fund_listing_db_sync(records)
+
             return records
-        return []
+
+        return records or []
 
     def _normalize_fund_field(self, record: dict, target_key: str, source_keys: List[str]) -> None:
         """
@@ -1864,7 +2458,7 @@ class VnstockService:
             if need_api_sync:
                 loop = asyncio.get_event_loop()
                 api_records = await loop.run_in_executor(
-                    None, 
+                    _background_executor, 
                     self._fetch_fund_nav_from_api_sync, 
                     symbol
                 )
@@ -1887,7 +2481,7 @@ class VnstockService:
                             )
                             session.add(fund_nav)
                         await session.commit()
-                        print(f"Stored {len(new_records)} new NAV records for fund {symbol}")
+                        bg_logger.debug(f"Stored {len(new_records)} new NAV records for fund {symbol}")
                         
                         # Reload from DB to get complete sorted list
                         stmt = select(FundNav).where(FundNav.symbol == symbol).order_by(FundNav.date)
@@ -1916,12 +2510,10 @@ class VnstockService:
             
             return []
 
-    def _fetch_fund_nav_from_api_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    def _fetch_fund_nav_from_api_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
         """Fetch fund NAV data from vnstock API synchronously."""
-        from vnstock import Fund
-
         def fetch_nav():
-            fund = Fund()
+            fund = self._get_thread_local_fund_api()
             df = fund.details.nav_report(symbol=symbol)
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
@@ -1945,17 +2537,18 @@ class VnstockService:
             return []
 
         try:
-            return retry_with_backoff(fetch_nav, max_retries=2, initial_delay=30.0)
+            return retry_with_backoff(fetch_nav, max_retries=2)
         except Exception as e:
-            print(f"Error fetching NAV from API for {symbol}: {e}")
+            bg_logger.error(f"Error fetching NAV from API for {symbol}: {e}")
             return []
 
     def _get_fund_nav_with_sync_db(
-        self, 
-        db_session, 
-        symbol: str, 
+        self,
+        db_session,
+        symbol: str,
         fund_api,
-        skip_api_sync: bool = False
+        skip_api_sync: bool = False,
+        fail_fast: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Sync version of NAV retrieval with database storage.
@@ -1990,11 +2583,26 @@ class VnstockService:
         
         # Step 3: Sync from API if needed
         if need_api_sync:
+            # Check if system is already rate limited before trying
+            if sync_status.is_rate_limited:
+                bg_logger.warning(f"Skipping NAV sync for {symbol} - already rate limited")
+                return [
+                    {'date': record.date.isoformat(), 'nav': record.nav}
+                    for record in db_records
+                ]
+
             try:
+                if fund_api is None:
+                    bg_logger.warning(f"Skipping NAV sync for {symbol} - fund API not available")
+                    return [
+                        {'date': record.date.isoformat(), 'nav': record.nav}
+                        for record in db_records
+                    ]
+
                 def fetch_nav():
                     return fund_api.details.nav_report(symbol=symbol)
                 
-                nav_df = retry_with_backoff(fetch_nav, max_retries=3, initial_delay=30.0)
+                nav_df = retry_with_backoff(fetch_nav, max_retries=3)
                 
                 if nav_df is not None and not nav_df.empty:
                     nav_df = self._flatten_columns(nav_df)
@@ -2027,13 +2635,18 @@ class VnstockService:
                     
                     if new_count > 0:
                         db_session.commit()
-                        print(f"Stored {new_count} new NAV records for fund {symbol}")
-                        
+                        bg_logger.debug(f"Stored {new_count} new NAV records for fund {symbol}")
+
                         # Reload from DB
                         db_records = list(db_session.execute(stmt).scalars().all())
-                        
+
             except Exception as e:
-                print(f"Failed to fetch NAV for fund {symbol} from API: {e}")
+                if _is_rate_limit_error(e):
+                    bg_logger.warning(f"Rate limit hit while syncing NAV for {symbol}")
+                    if fail_fast:
+                        raise CircuitOpenError(f"Rate limited while syncing NAV for {symbol}")
+                else:
+                    bg_logger.error(f"Failed to fetch NAV for fund {symbol} from API: {e}")
         
         # Step 4: Return in frontend format
         return [
@@ -2052,18 +2665,22 @@ class VnstockService:
             return self._fund_top_holding_cache[symbol][0]
 
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._fetch_fund_top_holding_sync, symbol)
+        data = await loop.run_in_executor(_frontend_executor, self._fetch_fund_top_holding_sync, symbol)
         
         if data:
             self._fund_top_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_top_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    def _fetch_fund_top_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
         """Fetch fund top holdings synchronously."""
-        from vnstock import Fund
+        cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "top_holding")
+        if is_fresh:
+            return cached_data
+
+        stale_data = cached_data if cached_data else None
 
         def fetch_top_holding():
-            fund = Fund()
+            fund = self._get_thread_local_fund_api()
             df = fund.details.top_holding(symbol=symbol)
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
@@ -2080,10 +2697,14 @@ class VnstockService:
             return []
 
         try:
-            return retry_with_backoff(fetch_top_holding, max_retries=2, initial_delay=30.0)
+            data = retry_with_backoff(fetch_top_holding, max_retries=2)
+            if data:
+                self._upsert_fund_detail_cache_sync(symbol, "top_holding", data)
+                return data
+            return stale_data or []
         except Exception as e:
-            print(f"Error fetching top holdings for {symbol}: {e}")
-            return []
+            logger.warning(f"Error fetching top holdings for {symbol}: {e}")
+            return stale_data or []
 
     async def get_fund_industry_holding(self, symbol: str) -> List[Dict[str, Any]]:
         """
@@ -2093,18 +2714,22 @@ class VnstockService:
             return self._fund_industry_holding_cache[symbol][0]
 
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._fetch_fund_industry_holding_sync, symbol)
+        data = await loop.run_in_executor(_frontend_executor, self._fetch_fund_industry_holding_sync, symbol)
         
         if data:
             self._fund_industry_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_industry_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    def _fetch_fund_industry_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
         """Fetch fund industry holdings synchronously."""
-        from vnstock import Fund
+        cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "industry_holding")
+        if is_fresh:
+            return cached_data
+
+        stale_data = cached_data if cached_data else None
 
         def fetch_industry():
-            fund = Fund()
+            fund = self._get_thread_local_fund_api()
             df = fund.details.industry_holding(symbol=symbol)
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
@@ -2120,10 +2745,14 @@ class VnstockService:
             return []
 
         try:
-            return retry_with_backoff(fetch_industry, max_retries=2, initial_delay=30.0)
+            data = retry_with_backoff(fetch_industry, max_retries=2)
+            if data:
+                self._upsert_fund_detail_cache_sync(symbol, "industry_holding", data)
+                return data
+            return stale_data or []
         except Exception as e:
-            print(f"Error fetching industry holdings for {symbol}: {e}")
-            return []
+            logger.warning(f"Error fetching industry holdings for {symbol}: {e}")
+            return stale_data or []
 
     async def get_fund_asset_holding(self, symbol: str) -> List[Dict[str, Any]]:
         """
@@ -2133,18 +2762,22 @@ class VnstockService:
             return self._fund_asset_holding_cache[symbol][0]
 
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, self._fetch_fund_asset_holding_sync, symbol)
+        data = await loop.run_in_executor(_frontend_executor, self._fetch_fund_asset_holding_sync, symbol)
         
         if data:
             self._fund_asset_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_asset_holding_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    def _fetch_fund_asset_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
         """Fetch fund asset holdings synchronously."""
-        from vnstock import Fund
+        cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "asset_holding")
+        if is_fresh:
+            return cached_data
+
+        stale_data = cached_data if cached_data else None
 
         def fetch_asset():
-            fund = Fund()
+            fund = self._get_thread_local_fund_api()
             df = fund.details.asset_holding(symbol=symbol)
             if df is not None and not df.empty:
                 df = self._flatten_columns(df)
@@ -2160,10 +2793,14 @@ class VnstockService:
             return []
 
         try:
-            return retry_with_backoff(fetch_asset, max_retries=2, initial_delay=30.0)
+            data = retry_with_backoff(fetch_asset, max_retries=2)
+            if data:
+                self._upsert_fund_detail_cache_sync(symbol, "asset_holding", data)
+                return data
+            return stale_data or []
         except Exception as e:
-            print(f"Error fetching asset holdings for {symbol}: {e}")
-            return []
+            logger.warning(f"Error fetching asset holdings for {symbol}: {e}")
+            return stale_data or []
 
     # Background sync task (no memory cache - DB is the cache)
     _background_sync_task: asyncio.Task | None = None
@@ -2177,38 +2814,56 @@ class VnstockService:
         Background sync runs if any fund data is stale (>3 days old).
         """
         from app.services.sync_status import sync_status
-        
-        try:
-            loop = asyncio.get_event_loop()
-            # Load from DB (with conditional API sync based on data freshness)
-            data = await loop.run_in_executor(
-                None, 
-                lambda: self._compute_fund_performance_sync(skip_api_sync=True)
-            )
-            
-            if data and data.get('funds'):
-                data = data.copy()
-                data['is_stale'] = False
-                data['is_syncing'] = sync_status.fund_performance.is_syncing
-                
-                # Check if we should trigger background sync (done inside _compute)
-                # by checking if any NAV data needs updating
-                self._trigger_background_sync_if_needed()
-                return data
-            else:
-                # No DB data at all, must sync from API (first time ever)
-                sync_status.start_fund_performance_sync()
-                data = await loop.run_in_executor(None, self._compute_fund_performance_sync)
-                if data:
-                    data['is_stale'] = False
-                    data['is_syncing'] = False
-                sync_status.complete_fund_performance_sync(success=True)
-                return data
-        except Exception as e:
-            sync_status.complete_fund_performance_sync(success=False, error=str(e))
-            raise
+
+        loop = asyncio.get_event_loop()
+        # Load from DB only (avoid API calls on request path)
+        data = await loop.run_in_executor(
+            None,
+            lambda: self._compute_fund_performance_sync(skip_api_sync=True)
+        )
+
+        if data and data.get('funds'):
+            data = data.copy()
+            data['is_stale'] = False
+            data['is_syncing'] = sync_status.fund_performance.is_syncing
+            # Fill benchmarks from cache or fetch if missing
+            if not data.get('benchmarks'):
+                cached_benchmarks = self._get_cached_fund_benchmarks()
+                if cached_benchmarks:
+                    data['benchmarks'] = cached_benchmarks
+                elif not sync_status.is_rate_limited and api_circuit_breaker.can_proceed():
+                    try:
+                        benchmarks = await loop.run_in_executor(
+                            _frontend_executor,
+                            self._fetch_fund_benchmarks_sync,
+                            data.get('common_start_date')
+                        )
+                        if benchmarks:
+                            self._set_cached_fund_benchmarks(benchmarks)
+                            data['benchmarks'] = benchmarks
+                    except (CircuitOpenError, RateLimitError) as e:
+                        logger.warning(f"Skipping fund benchmarks fetch due to rate limit: {e}")
+                    except Exception as e:
+                        logger.warning(f"Error fetching fund benchmarks: {e}")
+            # Trigger background sync if needed (non-blocking)
+            self._trigger_background_sync_if_needed()
+            return data
+
+        # No DB data available - kick off background sync and return empty response
+        should_sync = not sync_status.is_rate_limited
+        if should_sync:
+            self._trigger_background_sync_if_needed(force=True)
+
+        return {
+            "funds": [],
+            "benchmarks": {},
+            "common_start_date": None,
+            "last_updated": None,
+            "is_stale": True,
+            "is_syncing": should_sync
+        }
     
-    def _trigger_background_sync_if_needed(self):
+    def _trigger_background_sync_if_needed(self, force: bool = False):
         """Trigger background sync if not already running and data might be stale."""
         from app.services.sync_status import sync_status
         
@@ -2222,7 +2877,7 @@ class VnstockService:
 
         # Check if last sync was successful recently (within 6 hours)
         # This prevents redundant API hits on every page refresh
-        if sync_status.fund_performance.last_sync:
+        if not force and sync_status.fund_performance.last_sync:
             try:
                 last_sync_dt = datetime.fromisoformat(sync_status.fund_performance.last_sync)
                 if (datetime.now() - last_sync_dt).total_seconds() < 6 * 3600:
@@ -2234,30 +2889,309 @@ class VnstockService:
         self._background_sync_task = asyncio.create_task(self._background_sync_coroutine())
     
     async def _background_sync_coroutine(self):
-        """Background coroutine to sync fund NAV data from API to database."""
+        """
+        Background coroutine to sync fund NAV data incrementally.
+
+        Processes funds in batches of 5, checking circuit breaker between batches
+        and using asyncio.sleep for non-blocking delays. This prevents thread pool
+        saturation and keeps the server responsive to frontend requests.
+        """
         from app.services.sync_status import sync_status
-        
+        from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+
+        BATCH_SIZE = 5
+        BATCH_DELAY_SECONDS = 2.0  # Delay between batches to avoid rate limiting
+
         sync_status.start_fund_performance_sync()
+
         try:
+            # Step 1: Get fund listing (fast, usually cached)
             loop = asyncio.get_event_loop()
-            # Run full sync (with API calls) to update DB with fresh data
-            await loop.run_in_executor(None, self._compute_fund_performance_sync)
-            print("Background sync completed: Fund NAV data updated in database")
-            sync_status.complete_fund_performance_sync(success=True)
+            listing_df = await loop.run_in_executor(
+                _background_executor,
+                self._get_fund_listing_for_sync
+            )
+
+            if listing_df is None or listing_df.empty:
+                bg_logger.warning("No funds to sync - empty listing")
+                sync_status.complete_fund_performance_sync(success=True)
+                return
+
+            # Extract fund symbols
+            fund_symbols = []
+            for _, row in listing_df.iterrows():
+                symbol = row.get('short_name') or row.get('fund_code') or row.get('symbol')
+                if symbol:
+                    fund_symbols.append(symbol)
+
+            total_funds = len(fund_symbols)
+            if total_funds == 0:
+                sync_status.complete_fund_performance_sync(success=True)
+                return
+
+            bg_logger.info(f"Starting incremental fund sync: {total_funds} funds in batches of {BATCH_SIZE}")
+
+            # Step 2: Process funds in batches
+            processed = 0
+            errors = 0
+
+            for batch_start in range(0, total_funds, BATCH_SIZE):
+                # Check circuit breaker at batch boundary
+                if not api_circuit_breaker.can_proceed():
+                    wait_time = api_circuit_breaker.time_until_half_open or 30.0
+                    bg_logger.warning(f"Circuit breaker open, pausing sync for {wait_time:.1f}s")
+                    await asyncio.sleep(wait_time)
+                    # Check again after waiting
+                    if not api_circuit_breaker.can_proceed():
+                        bg_logger.error("Circuit breaker still open after wait, aborting sync")
+                        sync_status.complete_fund_performance_sync(
+                            success=False,
+                            error="Rate limit - circuit breaker open"
+                        )
+                        return
+
+                batch_end = min(batch_start + BATCH_SIZE, total_funds)
+                batch_symbols = fund_symbols[batch_start:batch_end]
+
+                bg_logger.debug(f"Processing batch {batch_start//BATCH_SIZE + 1}: funds {batch_start+1}-{batch_end}")
+
+                # Process batch in a single executor call to reuse Fund API + DB session
+                try:
+                    batch_processed, batch_errors = await loop.run_in_executor(
+                        _background_executor,
+                        self._sync_fund_nav_batch_sync,
+                        batch_symbols
+                    )
+                    processed += batch_processed
+                    errors += batch_errors
+                except CircuitOpenError as e:
+                    bg_logger.warning(f"Circuit breaker tripped during fund batch: {e}")
+                    errors += len(batch_symbols)
+                    break  # Exit batch, will check circuit breaker at next batch boundary
+                except Exception as e:
+                    bg_logger.error(f"Error syncing fund batch {batch_start//BATCH_SIZE + 1}: {e}")
+                    errors += len(batch_symbols)
+
+                # Update progress
+                progress = processed / total_funds
+                sync_status.update_fund_performance_progress(progress)
+
+                # Delay between batches (non-blocking)
+                if batch_end < total_funds:
+                    await asyncio.sleep(BATCH_DELAY_SECONDS)
+
+            # Step 3: Mark complete
+            if errors > total_funds * 0.5:  # More than 50% failed
+                sync_status.complete_fund_performance_sync(
+                    success=False,
+                    error=f"Too many errors: {errors}/{total_funds} funds failed"
+                )
+            else:
+                log_background_complete("Fund NAV Sync", f"Synced {processed}/{total_funds} funds")
+                sync_status.complete_fund_performance_sync(success=True)
+
         except Exception as e:
-            print(f"Background sync failed: {e}")
+            log_background_error("Fund NAV Sync", str(e))
             sync_status.complete_fund_performance_sync(success=False, error=str(e))
 
-    def _compute_fund_performance_sync(self, skip_api_sync: bool = False) -> Dict[str, Any]:
+    def _get_fund_listing_for_sync(self):
+        """Get fund listing for background sync, using cache if available."""
+        # Check DB cache first (weekly)
+        db_df, last_updated = self._get_fund_listing_df_from_db_sync()
+        if db_df is not None and self._fund_listing_is_fresh(last_updated):
+            self._fund_listing_df_cache = db_df
+            self._fund_listing_df_timestamp = time.time()
+            return db_df
+
+        # Check in-memory cache
+        if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
+            return self._fund_listing_df_cache
+
+        try:
+            def fetch_listing():
+                fund = self._get_thread_local_fund_api()
+                return fund.listing()
+
+            listing_df = retry_with_backoff(fetch_listing, max_retries=2)
+            if listing_df is not None and not listing_df.empty:
+                listing_df = self._flatten_columns(listing_df)
+                self._fund_listing_df_cache = listing_df
+                self._fund_listing_df_timestamp = time.time()
+                records = listing_df.to_dict('records')
+                for record in records:
+                    self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
+                    self._normalize_fund_field(record, 'name', ['name', 'short_name'])
+                    self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                self._upsert_fund_listing_db_sync(records)
+            return listing_df
+        except Exception as e:
+            bg_logger.warning(f"Failed to fetch fund listing: {e}")
+            # Return stale cache as fallback
+            if self._fund_listing_df_cache is not None:
+                return self._fund_listing_df_cache
+            return db_df
+
+    def _sync_single_fund_nav(self, symbol: str, db_session=None, fund_api=None) -> bool:
+        """
+        Sync NAV data for a single fund from API to database.
+
+        Returns True if sync was successful, False otherwise.
+        Always fails fast on rate limit (raises CircuitOpenError).
+        """
+        from sqlalchemy.orm import Session
+        from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot sync {symbol}")
+
+        own_session = False
+        if db_session is None:
+            engine = self._get_sync_engine()
+            db_session = Session(engine)
+            own_session = True
+
+        if fund_api is None:
+            try:
+                fund_api = self._get_thread_local_fund_api()
+            except CircuitOpenError:
+                raise
+            except Exception as e:
+                bg_logger.error(f"Error initializing fund API for {symbol}: {e}")
+                if own_session:
+                    db_session.close()
+                return False
+
+        try:
+            # Check existing data
+            from sqlalchemy import select as sync_select
+            stmt = sync_select(FundNav).where(FundNav.symbol == symbol).order_by(FundNav.date.desc()).limit(1)
+            latest_record = db_session.execute(stmt).scalar_one_or_none()
+
+            # Skip if data is fresh (within 3 days)
+            if latest_record:
+                days_old = (date.today() - latest_record.date).days
+                if days_old <= 3:
+                    bg_logger.debug(f"Fund {symbol} NAV data is fresh ({days_old} days old), skipping")
+                    return True
+
+            # Fetch from API
+            try:
+                def fetch_nav():
+                    return fund_api.details.nav_report(symbol=symbol)
+
+                nav_df = retry_with_backoff(
+                    fetch_nav,
+                    max_retries=2
+                )
+
+                if nav_df is None or nav_df.empty:
+                    return False
+
+                nav_df = self._flatten_columns(nav_df)
+
+                # Get existing dates for deduplication
+                existing_stmt = sync_select(FundNav.date).where(FundNav.symbol == symbol)
+                existing_dates = {r for r in db_session.execute(existing_stmt).scalars().all()}
+
+                new_count = 0
+                for _, row in nav_df.iterrows():
+                    date_val = row.get('date') or row.get('nav_date')
+                    nav_val = row.get('nav') or row.get('nav_per_unit') or row.get('value')
+
+                    if pd.isna(date_val) or pd.isna(nav_val):
+                        continue
+
+                    try:
+                        parsed_date = pd.to_datetime(date_val).date()
+
+                        if parsed_date not in existing_dates:
+                            fund_nav = FundNav(
+                                symbol=symbol,
+                                date=parsed_date,
+                                nav=float(nav_val)
+                            )
+                            db_session.add(fund_nav)
+                            existing_dates.add(parsed_date)
+                            new_count += 1
+                    except Exception:
+                        continue
+
+                if new_count > 0:
+                    db_session.commit()
+                    bg_logger.debug(f"Stored {new_count} new NAV records for fund {symbol}")
+
+                api_circuit_breaker.record_success()
+                return True
+
+            except Exception as e:
+                error_name = type(e).__name__
+                if error_name in {"RateLimitExceeded", "RateLimitError"} or "rate limit" in str(e).lower():
+                    _record_rate_limit(reset_seconds=60.0)
+                    raise CircuitOpenError(f"Rate limited while syncing {symbol}")
+                bg_logger.error(f"Error syncing fund {symbol}: {e}")
+                return False
+        finally:
+            if own_session:
+                db_session.close()
+
+    def _sync_fund_nav_batch_sync(self, symbols: List[str]) -> tuple[int, int]:
+        """
+        Sync NAV data for a batch of funds in a single thread.
+        Reuses one Fund API instance and DB session to reduce rate-limit pressure.
+        """
+        # Keep under free-tier rate limit (60 req/min) with a small per-symbol delay
+        per_symbol_delay = 1.1
+        from sqlalchemy.orm import Session
+        from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError("Circuit breaker open - cannot sync fund batch")
+
+        try:
+            fund_api = self._get_thread_local_fund_api()
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            raise
+
+        engine = self._get_sync_engine()
+        processed = 0
+        errors = 0
+
+        with Session(engine) as db_session:
+            for symbol in symbols:
+                if not api_circuit_breaker.can_proceed():
+                    raise CircuitOpenError("Circuit breaker open - aborting fund batch")
+                try:
+                    ok = self._sync_single_fund_nav(symbol, db_session=db_session, fund_api=fund_api)
+                    processed += 1
+                    if not ok:
+                        errors += 1
+                    if per_symbol_delay:
+                        time.sleep(per_symbol_delay)
+                except CircuitOpenError:
+                    raise
+                except Exception as e:
+                    errors += 1
+                    bg_logger.error(f"Error syncing fund {symbol}: {e}")
+
+        return processed, errors
+
+    def _compute_fund_performance_sync(self, skip_api_sync: bool = False, fail_fast: bool = True) -> Dict[str, Any]:
         """
         Compute fund performance metrics synchronously.
         Normalizes NAV to base 100, calculates returns and risk metrics.
         
         Args:
             skip_api_sync: If True, only load from DB without API sync (for fast initial load).
+            fail_fast: If True, raise immediately on rate limit. False for background tasks.
         """
-        from vnstock import Fund, Vnstock
         from sqlalchemy.orm import Session
+        from sqlalchemy import select as sync_select
         import numpy as np
 
         # Risk-free rate for Vietnam (government bond yield ~4%)
@@ -2266,36 +3200,79 @@ class VnstockService:
         try:
             # Step 1: Get all funds (with retry and cache)
             listing_df = None
-            
+
             # Check cache first
             if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
                 listing_df = self._fund_listing_df_cache
-                print("Using cached fund listing for performance calculation")
+                bg_logger.debug("Using cached fund listing for performance calculation")
+
+            fund_api = None
+            if skip_api_sync:
+                # Avoid API calls; fall back to DB-derived symbols if cache missing
+                if listing_df is None:
+                    db_df, _ = self._get_fund_listing_df_from_db_sync()
+                    listing_df = db_df
+                if listing_df is None:
+                    engine = self._get_sync_engine()
+                    with Session(engine) as db_session:
+                        symbols = list(
+                            db_session.execute(
+                                sync_select(FundNav.symbol).distinct()
+                            ).scalars().all()
+                        )
+                    if symbols:
+                        listing_df = pd.DataFrame({
+                            "short_name": symbols,
+                            "name": symbols
+                        })
+                if listing_df is None or listing_df.empty:
+                    return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
             else:
-                fund = Fund()
-                def fetch_listing():
-                    return fund.listing()
-                
+                # Bail out early if already rate limited
+                if sync_status.is_rate_limited or api_circuit_breaker.is_open:
+                    return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+
                 try:
-                    listing_df = retry_with_backoff(fetch_listing, max_retries=3, initial_delay=30.0)
-                    if listing_df is not None and not listing_df.empty:
-                        self._fund_listing_df_cache = listing_df
-                        self._fund_listing_df_timestamp = time.time()
-                        print("Fetched and cached fresh fund listing from API")
-                except Exception as e:
-                    print(f"Failed to fetch fund listing after retries: {e}")
-                    # If we have a stale cache, use it as fallback
-                    if self._fund_listing_df_cache is not None:
-                        print("Using stale fund listing cache as fallback")
-                        listing_df = self._fund_listing_df_cache
-                    else:
-                        return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+                    fund_api = self._get_thread_local_fund_api()
+                except CircuitOpenError:
+                    if fail_fast:
+                        raise
+                    return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+                except Exception:
+                    raise
+
+                if listing_df is None:
+                    def fetch_listing():
+                        return fund_api.listing()
+
+                    try:
+                        listing_df = retry_with_backoff(fetch_listing, max_retries=3)
+                        if listing_df is not None and not listing_df.empty:
+                            self._fund_listing_df_cache = listing_df
+                            self._fund_listing_df_timestamp = time.time()
+                            bg_logger.debug("Fetched and cached fresh fund listing from API")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch fund listing after retries: {e}")
+                        # If we have a stale cache, use it as fallback
+                        if self._fund_listing_df_cache is not None:
+                            bg_logger.debug("Using stale fund listing cache as fallback")
+                            listing_df = self._fund_listing_df_cache
+                        else:
+                            return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
             
             if listing_df is None or listing_df.empty:
                 return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
 
             # Prepare for fetching NAVs
-            fund = Fund() # Re-initialize for safety if needed
+            if not skip_api_sync and fund_api is None:
+                try:
+                    fund_api = self._get_thread_local_fund_api()
+                except CircuitOpenError:
+                    if fail_fast:
+                        raise
+                    return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+                except Exception:
+                    raise
 
             funds_data = []
             all_nav_dates = set()
@@ -2306,6 +3283,11 @@ class VnstockService:
             # Step 2: Fetch NAV data for each fund (using DB-backed storage)
             with Session(engine) as db_session:
                 for _, row in listing_df.iterrows():
+                    # Stop early if rate limit is active
+                    if sync_status.is_rate_limited or api_circuit_breaker.is_open:
+                        bg_logger.warning("Rate limit detected - stopping fund performance computation early")
+                        break
+
                     symbol = row.get('short_name') or row.get('fund_code') or row.get('symbol')
                     name = row.get('name') or row.get('fund_name') or symbol
 
@@ -2315,7 +3297,7 @@ class VnstockService:
                     try:
                         # Get NAV data from DB, sync from API if needed
                         nav_records = self._get_fund_nav_with_sync_db(
-                            db_session, symbol, fund, skip_api_sync=skip_api_sync
+                            db_session, symbol, fund_api, skip_api_sync=skip_api_sync, fail_fast=fail_fast
                         )
                         
                         if len(nav_records) < 10:  # Need minimum data points
@@ -2331,8 +3313,11 @@ class VnstockService:
                             'data_start_date': nav_records[0]['date']
                         })
 
+                    except CircuitOpenError as e:
+                        bg_logger.warning(f"Rate limit during fund NAV fetch for {symbol}: {e}")
+                        break
                     except Exception as e:
-                        print(f"Error fetching NAV for fund {symbol}: {e}")
+                        bg_logger.error(f"Error fetching NAV for fund {symbol}: {e}")
                         continue
 
             if not funds_data:
@@ -2444,13 +3429,14 @@ class VnstockService:
 
             # Step 5: Fetch benchmark data (VN-Index and VN30)
             benchmarks = {}
-            for benchmark_symbol in ['VNINDEX', 'VN30']:
-                try:
-                    benchmark_data = self._fetch_benchmark_data_sync(benchmark_symbol, common_start_date)
-                    if benchmark_data:
-                        benchmarks[benchmark_symbol] = benchmark_data
-                except Exception as e:
-                    print(f"Error fetching benchmark {benchmark_symbol}: {e}")
+            if not skip_api_sync and not sync_status.is_rate_limited and api_circuit_breaker.can_proceed():
+                for benchmark_symbol in ['VNINDEX', 'VN30']:
+                    try:
+                        benchmark_data = self._fetch_benchmark_data_sync(benchmark_symbol, common_start_date)
+                        if benchmark_data:
+                            benchmarks[benchmark_symbol] = benchmark_data
+                    except Exception as e:
+                        logger.warning(f"Error fetching benchmark {benchmark_symbol}: {e}")
 
             return {
                 'funds': processed_funds,
@@ -2459,13 +3445,18 @@ class VnstockService:
                 'last_updated': datetime.now().isoformat()
             }
 
+        except SystemExit as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=60.0)
+                return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
+            raise
         except Exception as e:
-            print(f"Error computing fund performance: {e}")
+            logger.error(f"Error computing fund performance: {e}")
             import traceback
-            traceback.print_exc()
+            bg_logger.error(f"Stack trace for fund performance error:\n{traceback.format_exc()}")
             return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
 
-    def _fetch_benchmark_data_sync(self, symbol: str, common_start_date: str) -> Dict[str, Any] | None:
+    def _fetch_benchmark_data_sync(self, symbol: str, common_start_date: str | None) -> Dict[str, Any] | None:
         """
         Fetch and process benchmark (VN-Index or VN30) data.
         """
@@ -2486,9 +3477,9 @@ class VnstockService:
                 return stock.quote.history(start=start_date, end=today.strftime('%Y-%m-%d'))
             
             try:
-                df = retry_with_backoff(fetch_benchmark_history, max_retries=3, initial_delay=30.0)
+                df = retry_with_backoff(fetch_benchmark_history, max_retries=3)
             except Exception as e:
-                print(f"Failed to fetch benchmark {symbol} after retries: {e}")
+                logger.warning(f"Failed to fetch benchmark {symbol} after retries: {e}")
                 return None
 
             if df is None or df.empty:
@@ -2579,8 +3570,23 @@ class VnstockService:
             }
 
         except Exception as e:
-            print(f"Error fetching benchmark data for {symbol}: {e}")
+            logger.warning(f"Error fetching benchmark data for {symbol}: {e}")
             return None
+
+    def _fetch_fund_benchmarks_sync(self, common_start_date: str | None) -> Dict[str, Any]:
+        """Fetch benchmark metrics for fund performance charts."""
+        benchmarks: Dict[str, Any] = {}
+        for benchmark_symbol in ['VNINDEX', 'VN30']:
+            try:
+                benchmark_data = self._fetch_benchmark_data_sync(
+                    benchmark_symbol,
+                    common_start_date
+                )
+                if benchmark_data:
+                    benchmarks[benchmark_symbol] = benchmark_data
+            except Exception as e:
+                logger.warning(f"Error fetching fund benchmark {benchmark_symbol}: {e}")
+        return benchmarks
 
 
 # Singleton instance

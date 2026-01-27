@@ -21,10 +21,12 @@ export const FundsTab: React.FC = () => {
     const [performanceData, setPerformanceData] = useState<FundPerformanceData | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(true);
     const [performanceError, setPerformanceError] = useState<string | null>(null);
+    const [performanceWarning, setPerformanceWarning] = useState<string | null>(null);
     const [chartType, setChartType] = useState<ChartType>('growth');
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
     const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null);
 
     // --- Individual Fund State ---
     const [funds, setFunds] = useState<FundInfo[]>([]);
@@ -42,10 +44,12 @@ export const FundsTab: React.FC = () => {
         const fetchPerformanceData = async () => {
             setLoadingPerformance(true);
             setPerformanceError(null);
+            setPerformanceWarning(null);
             try {
                 const response = await stockApi.getFundPerformance();
                 setPerformanceData(response);
                 setIsSyncing(response.is_syncing || response.is_stale || false);
+                setRateLimitUntil(null);
 
                 if (response.funds.length > 0) {
                     const years = new Set<number>();
@@ -63,8 +67,20 @@ export const FundsTab: React.FC = () => {
                     }
                 }
             } catch (err) {
-                console.error('Error fetching fund performance:', err);
-                setPerformanceError('Failed to load fund performance data.');
+                const anyErr = err as any;
+                const status = anyErr?.response?.status;
+                const retryAfter = anyErr?.response?.data?.retry_after;
+
+                if (status === 429 || status === 503) {
+                    const delayMs = (typeof retryAfter === 'number' ? retryAfter : 30) * 1000;
+                    setPerformanceWarning('Rate limit reached. Retrying automatically...');
+                    setIsSyncing(false);
+                    setRateLimitUntil(Date.now() + delayMs);
+                    setTimeout(fetchPerformanceData, delayMs);
+                } else {
+                    console.error('Error fetching fund performance:', err);
+                    setPerformanceError('Failed to load fund performance data.');
+                }
             } finally {
                 setLoadingPerformance(false);
             }
@@ -78,6 +94,7 @@ export const FundsTab: React.FC = () => {
     // Poll for fresh data when syncing
     useEffect(() => {
         if (!isSyncing) return;
+        if (rateLimitUntil && Date.now() < rateLimitUntil) return;
 
         const pollForFreshData = async () => {
             try {
@@ -93,7 +110,7 @@ export const FundsTab: React.FC = () => {
 
         const interval = setInterval(pollForFreshData, 5000);
         return () => clearInterval(interval);
-    }, [isSyncing]);
+    }, [isSyncing, rateLimitUntil]);
 
     // Performance Memos
     const availableYears = useMemo(() => {
@@ -200,6 +217,11 @@ export const FundsTab: React.FC = () => {
                     </div>
                 ) : (
                     <>
+                        {performanceWarning && (
+                            <div className="alert alert-warning shadow-lg">
+                                <span>{performanceWarning}</span>
+                            </div>
+                        )}
                         {/* Performance Controls */}
                         <div className="card bg-base-100 shadow-md border border-base-300">
                             <div className="card-body p-4">

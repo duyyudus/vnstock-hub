@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index
+from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON
 from datetime import datetime
 from app.db.database import Base
 
@@ -62,3 +62,34 @@ class FundNav(Base):
     )
 
 
+class FundDetailCache(Base):
+    """Cached fund details (top holdings, industry holdings, asset holdings)."""
+    __tablename__ = "fund_detail_cache"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(30), nullable=False)
+    detail_type = Column(String(30), nullable=False)  # top_holding | industry_holding | asset_holding
+    data = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('symbol', 'detail_type', name='uq_fund_detail_symbol_type'),
+        Index('ix_fund_detail_symbol_type', 'symbol', 'detail_type'),
+    )
+
+
+class FundListing(Base):
+    """Cached fund listing (open-end funds)."""
+    __tablename__ = "fund_listings"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(30), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=True)
+    fund_type = Column(String(50), nullable=True)
+    fund_owner = Column(String(255), nullable=True)
+    data = Column(JSON, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_fund_listings_symbol_type', 'symbol', 'fund_type'),
+    )
