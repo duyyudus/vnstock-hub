@@ -269,8 +269,8 @@ export const stockApi = {
     /**
      * Fetch company overview for a specific stock
      */
-    async getCompanyOverview(symbol: string): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/overview`);
+    async getCompanyOverview(symbol: string, source: string = 'vci'): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/overview?source=${encodeURIComponent(source)}`);
         return response.data;
     },
 

@@ -55,6 +55,15 @@ _background_executor = ThreadPoolExecutor(
 _fund_api_local = threading.local()
 
 
+def _ensure_pandas_applymap():
+    """Provide DataFrame.applymap for pandas versions where it was removed."""
+    if hasattr(pd.DataFrame, "applymap"):
+        return
+    def _applymap(self, func):
+        return self.apply(lambda col: col.map(func))
+    pd.DataFrame.applymap = _applymap  # type: ignore[attr-defined]
+
+
 class RateLimitError(Exception):
     """Custom exception raised when API rate limit is hit to prevent SystemExit."""
     pass
@@ -1618,18 +1627,22 @@ class VnstockService:
 
 
 
-    async def get_company_overview(self, symbol: str) -> List[Dict[str, Any]]:
+    async def get_company_overview(self, symbol: str, source: str = "auto") -> List[Dict[str, Any]]:
         """Fetch company overview for a given stock symbol."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_frontend_executor, self._fetch_company_overview_sync, symbol)
+        return await loop.run_in_executor(_frontend_executor, self._fetch_company_overview_sync, symbol, source)
 
-    def _fetch_company_overview_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    def _fetch_company_overview_sync(self, symbol: str, source: str = "auto") -> List[Dict[str, Any]]:
         """Fetch company overview synchronously."""
         from vnstock import Company
 
         # Check circuit breaker before making API call
         if not api_circuit_breaker.can_proceed():
             raise CircuitOpenError(f"Circuit breaker open - cannot fetch company overview for {symbol}")
+
+        source_normalized = (source or "auto").strip().lower()
+        if source_normalized not in {"auto", "vci", "kbs"}:
+            raise ValueError(f"Unsupported company overview source: {source}")
 
         def _normalize_records(df: Any) -> List[Dict[str, Any]]:
             if df is None:
@@ -1652,11 +1665,48 @@ class VnstockService:
             return records
 
         def _fetch_from_source(source: str) -> List[Dict[str, Any]]:
+            _ensure_pandas_applymap()
             c = Company(symbol=symbol[:3], source=source)
             df = c.overview()
             api_circuit_breaker.record_success()
             return _normalize_records(df)
 
+        def _handle_error(source_label: str, err: BaseException) -> None:
+            if _is_rate_limit_error(err):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {err}")
+            # Unwrap tenacity RetryError to reveal the underlying exception
+            try:
+                from tenacity import RetryError
+                if isinstance(err, RetryError) and err.last_attempt:
+                    root = err.last_attempt.exception()
+                    logger.warning(
+                        f"Error fetching company overview for {symbol} from {source_label}: {err}; root={type(root).__name__}: {root}"
+                    )
+                    return
+            except Exception:
+                pass
+            logger.warning(f"Error fetching company overview for {symbol} from {source_label}: {err}")
+
+        if source_normalized == "vci":
+            try:
+                return _fetch_from_source('VCI')
+            except CircuitOpenError:
+                raise
+            except (SystemExit, Exception) as e:
+                _handle_error("VCI", e)
+                return []
+
+        if source_normalized == "kbs":
+            try:
+                return _fetch_from_source('KBS')
+            except CircuitOpenError:
+                raise
+            except (SystemExit, Exception) as e:
+                _handle_error("KBS", e)
+                return []
+
+        # auto: try VCI first, fallback to KBS
         try:
             records = _fetch_from_source('VCI')
             if records:
@@ -1665,20 +1715,14 @@ class VnstockService:
         except CircuitOpenError:
             raise
         except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {e}")
-            logger.warning(f"Error fetching company overview for {symbol} from VCI: {e}")
+            _handle_error("VCI", e)
 
         try:
             return _fetch_from_source('KBS')
         except CircuitOpenError:
             raise
         except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {e}")
-            logger.warning(f"Error fetching company overview for {symbol} from KBS: {e}")
+            _handle_error("KBS", e)
             return []
 
     async def get_shareholders(self, symbol: str) -> List[Dict[str, Any]]:
