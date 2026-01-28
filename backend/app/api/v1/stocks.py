@@ -16,6 +16,7 @@ class StockResponse(BaseModel):
     price: float
     market_cap: float  # In billion VND
     company_name: str
+    exchange: str = ""
     charter_capital: float = 0.0  # In billion VND
     pe_ratio: Optional[float] = None
     accumulated_value: Optional[float] = None  # In billion VND
@@ -194,6 +195,7 @@ async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
                 price=stock.price,
                 market_cap=stock.market_cap,
                 company_name=stock.company_name,
+                exchange=stock.exchange,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
                 accumulated_value=stock.accumulated_value,
@@ -242,6 +244,7 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
                 price=stock.price,
                 market_cap=stock.market_cap,
                 company_name=stock.company_name,
+                exchange=stock.exchange,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
                 accumulated_value=stock.accumulated_value,
@@ -274,6 +277,7 @@ async def get_vn100_stocks():
                 price=stock.price,
                 market_cap=stock.market_cap,
                 company_name=stock.company_name,
+                exchange=stock.exchange,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
                 accumulated_value=stock.accumulated_value,
@@ -305,6 +309,7 @@ async def get_vn30_stocks():
                 price=stock.price,
                 market_cap=stock.market_cap,
                 company_name=stock.company_name,
+                exchange=stock.exchange,
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
                 accumulated_value=stock.accumulated_value,

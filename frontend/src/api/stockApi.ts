@@ -16,6 +16,7 @@ export interface Stock {
     price: number;
     market_cap: number;
     company_name: string;
+    exchange: string;
     charter_capital: number;
     pe_ratio: number | null;
     accumulated_value: number | null;  // In billion VND

@@ -9,6 +9,7 @@ class StockCompany(Base):
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String(10), unique=True, index=True, nullable=False)
     company_name = Column(String(255), nullable=False)
+    exchange = Column(String(20), nullable=True)
     charter_capital = Column(Float, nullable=True)
     pe_ratio = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

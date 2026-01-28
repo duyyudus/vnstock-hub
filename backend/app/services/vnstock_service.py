@@ -250,6 +250,7 @@ class StockInfo:
     price: float
     market_cap: float  # In billion VND (tỷ đồng)
     company_name: str = ""
+    exchange: str = ""
     charter_capital: float = 0.0  # In billion VND
     pe_ratio: float | None = None
     accumulated_value: float | None = None  # In billion VND
@@ -780,7 +781,11 @@ class VnstockService:
             for stock in stocks:
                 if stock.ticker in cached_data:
                     company = cached_data[stock.ticker]
-                    stock.company_name = company.company_name
+                    if not stock.company_name and company.company_name:
+                        stock.company_name = company.company_name
+                    # Don't overwrite exchange if we already have it from the price board
+                    if not stock.exchange and company.exchange:
+                        stock.exchange = company.exchange
                     if stock.charter_capital == 0 and company.charter_capital:
                         stock.charter_capital = company.charter_capital
                     if stock.pe_ratio is None and company.pe_ratio:
@@ -891,12 +896,25 @@ class VnstockService:
             for stock in stocks:
                 if stock.ticker in cached_data:
                     company = cached_data[stock.ticker]
-                    stock.company_name = company.company_name
+                    # Update cache if we have better data from price board
+                    if not company.company_name and stock.company_name:
+                        company.company_name = stock.company_name
+                    # Update exchange if it's currently empty and we have it from price board
+                    if not company.exchange and stock.exchange:
+                        company.exchange = stock.exchange
+                        
+                    if not stock.company_name and company.company_name:
+                        stock.company_name = company.company_name
+                    # Don't overwrite exchange if we already have it from the price board
+                    if not stock.exchange and company.exchange:
+                        stock.exchange = company.exchange
                     # Use cached value if real-time value is missing
                     if stock.charter_capital == 0 and company.charter_capital:
                         stock.charter_capital = company.charter_capital
                     if stock.pe_ratio is None and company.pe_ratio:
                         stock.pe_ratio = company.pe_ratio
+            
+            await session.commit()
                 
         return stocks
 
@@ -1177,9 +1195,19 @@ class VnstockService:
                                 charter_capital = (listed_shares * 10000) / 1e9
 
                             if ticker and price > 0:
+                                # Map exchange codes to full names if needed
+                                exchange = row.get('listing_exchange', '')
+                                if exchange == 'HSX':
+                                    exchange = 'HOSE'
+                                
+                                # Get company name if available
+                                company_name = row.get('listing_organ_name', '')
+                                
                                 stocks_data.append(StockInfo(
                                     ticker=str(ticker),
                                     price=price,
+                                    company_name=company_name,
+                                    exchange=exchange,
                                     market_cap=round(market_cap, 2),
                                     charter_capital=round(charter_capital, 2),
                                     pe_ratio=round(pe_ratio, 2) if pe_ratio is not None else None,

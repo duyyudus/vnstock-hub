@@ -260,18 +260,21 @@ export const StocksTable: React.FC<StocksTableProps> = ({ stocks }) => {
                             const change1w = formatPriceChange(stock.price_change_1w);
                             const change1m = formatPriceChange(stock.price_change_1m);
                             const change1y = formatPriceChange(stock.price_change_1y);
+                            const fullNameWithExchange = stock.exchange 
+                                ? `${stock.exchange} - ${stock.company_name}`
+                                : stock.company_name;
 
                             return (
                                 <tr key={stock.ticker} className="hover">
                                     <td className="text-base-content/60">{index + 1}</td>
                                     <td
                                         className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`}
-                                        title={isCompanyCollapsed ? "" : stock.company_name}
+                                        title={isCompanyCollapsed ? "" : fullNameWithExchange}
                                     >
                                         {!isCompanyCollapsed && stock.company_name}
                                     </td>
                                     <td>
-                                        <div className="tooltip tooltip-right" data-tip={stock.company_name}>
+                                        <div className="tooltip tooltip-right" data-tip={fullNameWithExchange}>
                                             <button
                                                 className="font-bold text-primary uppercase cursor-pointer hover:underline focus:outline-none"
                                                 onClick={() => (window as any).onTickerClick?.(stock.ticker, stock.company_name)}
