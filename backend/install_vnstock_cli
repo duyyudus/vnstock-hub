@@ -1,0 +1,1 @@
+source .venv/bin/activate && python .vnstock_cli/vnstock_cli.py --non-interactive --api-key $VNSTOCK_API_KEY
