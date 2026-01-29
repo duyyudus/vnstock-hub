@@ -35,7 +35,16 @@ The backend follows a layered architecture:
   * `stocks.py`: Endpoints for market indices, industry filtering, and company financial/volume data.
   * `funds.py`: Endpoints for fund listings, NAV performance history, and asset/industry/top holdings.
 * **Service Layer:** `app/services/` - Contains business logic.
-  * `vnstock_service.py`: Core service wrapping the `vnstock` library with caching, retry logic, and background synchronization for historical data.
+  * `vnstock_service/`: Modular package wrapping the `vnstock` library.
+    * `__init__.py`: Facade service exposing unified API.
+    * `core.py`: Shared infrastructure (executors, circuit breakers, logging).
+    * `stocks.py`: Stock listing, index composition, and industry data.
+    * `funds.py`: Mutual fund listings, NAV history, and holdings.
+    * `finance.py`: Financial statements (income, balance sheet, cash flow).
+    * `company.py`: Company overview, officers, shareholders.
+    * `history.py`: Historical price and volume data with background sync.
+    * `indices.py`: Market index values and synchronization.
+    * `stock_metadata.py`: Enrichment service for stock details (P/E, Market Cap).
 * **Database Layer:** `app/db/` - Contains SQLAlchemy models.
   * `models.py`: Defines schemas for `StockCompany`, `StockIndex`, `StockDailyPrice`, and `FundNav`.
 * **Core:** `app/core/` - Configuration settings and dependencies.
