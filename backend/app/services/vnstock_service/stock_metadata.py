@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from app.db.database import async_session
 from app.db.models import StockCompany
 from app.services.sync_status import sync_status
@@ -94,16 +95,28 @@ class StockMetadataService:
                     all_symbols_df = None
 
                 if all_symbols_df is not None and not all_symbols_df.empty:
+                    missing_set = set(tickers_needing_name)
+                    rows_to_insert = []
                     for _, row in all_symbols_df.iterrows():
                         symbol = row['symbol']
-                        name = row['organ_name']
-                        if symbol in tickers_needing_name:
-                            if symbol not in cached_data:
-                                new_company = StockCompany(symbol=symbol, company_name=name)
-                                session.add(new_company)
-                                cached_data[symbol] = new_company
-                            else:
-                                cached_data[symbol].company_name = name
+                        if symbol in missing_set:
+                            rows_to_insert.append({
+                                'symbol': symbol,
+                                'company_name': row['organ_name'],
+                            })
+
+                    if rows_to_insert:
+                        # Idempotent insert to avoid duplicate-key races
+                        stmt = insert(StockCompany).values(rows_to_insert)
+                        stmt = stmt.on_conflict_do_nothing(index_elements=['symbol'])
+                        await session.execute(stmt)
+
+                        # Refresh cache for newly inserted (or concurrently inserted) rows
+                        symbols = [r['symbol'] for r in rows_to_insert]
+                        stmt = select(StockCompany).where(StockCompany.symbol.in_(symbols))
+                        result = await session.execute(stmt)
+                        for company in result.scalars().all():
+                            cached_data[company.symbol] = company
 
             # Fetch missing/stale financial data if needed
             if tickers_needing_finance:

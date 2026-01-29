@@ -114,6 +114,42 @@ class HistoryService:
 
         return stocks
 
+    async def trigger_missing_price_history_sync(self, stocks: List[StockInfo]) -> bool:
+        """
+        Trigger background history sync for symbols missing 1w/1m/1y cache.
+        Returns True if a sync was triggered (or already syncing), False if no missing data.
+        """
+        if not stocks:
+            return False
+
+        today = date.today()
+        target_dates = {
+            '1w': today - timedelta(days=7),
+            '1m': today - timedelta(days=30),
+            '1y': today - timedelta(days=365),
+        }
+
+        symbols = [s.ticker[:3] for s in stocks]
+        engine = get_sync_engine()
+        try:
+            with Session(engine) as session:
+                cached_prices = self._get_cached_prices_sync(session, symbols, target_dates)
+        finally:
+            engine.dispose()
+
+        symbols_needing_fetch = set()
+        for symbol in symbols:
+            for period in ['1w', '1m', '1y']:
+                if (symbol, period) not in cached_prices:
+                    symbols_needing_fetch.add(symbol)
+
+        if not symbols_needing_fetch:
+            return False
+
+        start_date = today - timedelta(days=400)
+        end_date = today
+        return await self._trigger_price_history_sync(list(symbols_needing_fetch), start_date, end_date)
+
     def _get_cached_prices_sync(self, session, symbols: List[str], target_dates: Dict[str, date]) -> Dict[tuple, float]:
         """
         Get cached prices for given symbols at target dates.

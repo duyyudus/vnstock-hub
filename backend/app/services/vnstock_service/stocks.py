@@ -36,6 +36,7 @@ class StocksService:
 
         # Launch background task for enrichment
         asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
+        asyncio.create_task(self._history.trigger_missing_price_history_sync(stocks))
 
         # Apply current cache to the response immediately
         return await self._metadata.apply_cache_to_stocks(stocks)
@@ -61,6 +62,7 @@ class StocksService:
 
         # Launch background task for enrichment
         asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
+        asyncio.create_task(self._history.trigger_missing_price_history_sync(stocks))
 
         # Apply current cache to the response immediately
         return await self._metadata.apply_cache_to_stocks(stocks)
