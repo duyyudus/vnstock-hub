@@ -26,7 +26,7 @@ async def test_sync_indices():
 
     # Patch the method that fetches indices from vnstock
     # We haven't implemented it yet, but we will call it _fetch_all_indices_from_lib
-    with patch.object(vnstock_service, '_fetch_all_indices_from_lib', return_value=mock_data):
+    with patch.object(vnstock_service.indices, '_fetch_all_indices_from_lib', return_value=mock_data):
         await vnstock_service.sync_indices()
 
     # Verify DB

@@ -64,10 +64,10 @@ The API will be available at `http://localhost:8000`. You can access the Interac
 
 ### Stocks
 
-- `GET /api/v1/stocks/vn100`: Returns the top 100 stocks (VN-100) with their ticker, price, and market capitalization.
+- `GET /api/v1/stocks/index/{index_symbol}`: Returns stocks for a given index symbol (e.g. `VN100`, `VN30`) with ticker, price, and market capitalization.
 
 ## 🧪 Features
 
-- **VN-100 Dashboard Data:** Real-time (or cached) fetching of the top 100 stocks in the Vietnamese market.
+- **Index Dashboard Data:** Real-time (or cached) fetching of index constituents in the Vietnamese market.
 - **Market Cap Conversion:** Data is processed to ensure consistent units (VND) for display.
 - **Ticker Formatting:** Standardized 3-character ticker symbols.

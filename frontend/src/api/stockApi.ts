@@ -26,7 +26,7 @@ export interface Stock {
     price_change_1y: number | null;
 }
 
-export interface VN100Response {
+export interface IndexStocksResponse {
     stocks: Stock[];
     count: number;
 }
@@ -197,25 +197,11 @@ export const stockApi = {
     },
 
     /**
-     * Fetch VN-100 stocks data
+     * Fetch stocks for a given index
+     * @param indexSymbol - Index symbol (e.g. 'VN30') to use with the generic endpoint
      */
-    async getVN100Stocks(): Promise<VN100Response> {
-        const response = await apiClient.get<VN100Response>('/stocks/vn100');
-        return response.data;
-    },
-
-    /**
-     * Fetch stocks for a given index by endpoint or generic endpoint
-     * @param indexSymbol - Index symbol (e.g. 'VN30') to use with generic endpoint, OR full endpoint path
-     */
-    async getIndexStocks(indexSymbol: string): Promise<VN100Response> {
-        // If it starts with /, treat as direct endpoint (backward compatibility)
-        if (indexSymbol.startsWith('/')) {
-            const response = await apiClient.get<VN100Response>(indexSymbol);
-            return response.data;
-        }
-        // Otherwise use the generic endpoint
-        const response = await apiClient.get<VN100Response>(`/stocks/index/${indexSymbol}`);
+    async getIndexStocks(indexSymbol: string): Promise<IndexStocksResponse> {
+        const response = await apiClient.get<IndexStocksResponse>(`/stocks/index/${indexSymbol}`);
         return response.data;
     },
 

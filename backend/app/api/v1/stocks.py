@@ -26,18 +26,6 @@ class StockResponse(BaseModel):
     price_change_1y: Optional[float] = None  # Percentage
 
 
-class VN100Response(BaseModel):
-    """Response model for VN-100 stocks list."""
-    stocks: List[StockResponse]
-    count: int
-
-
-class VN30Response(BaseModel):
-    """Response model for VN-30 stocks list."""
-    stocks: List[StockResponse]
-    count: int
-
-
 class IndexStocksResponse(BaseModel):
     """Response model for stocks list of a specific index."""
     stocks: List[StockResponse]
@@ -257,70 +245,6 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
         ],
         count=len(stocks),
         industry_name=industry_name
-    )
-
-
-@router.get("/vn100", response_model=VN100Response)
-async def get_vn100_stocks():
-    """
-    Get VN-100 stocks (top 100 stocks by market cap).
-    
-    Returns:
-        List of stocks with ticker, price, and market cap data.
-    """
-    stocks = await vnstock_service.get_vn100_stocks()
-    
-    return VN100Response(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
-            )
-            for stock in stocks
-        ],
-        count=len(stocks)
-    )
-
-
-@router.get("/vn30", response_model=VN30Response)
-async def get_vn30_stocks():
-    """
-    Get VN-30 stocks (top 30 stocks by market cap and liquidity).
-    
-    Returns:
-        List of stocks with ticker, price, and market cap data.
-    """
-    stocks = await vnstock_service.get_vn30_stocks()
-    
-    return VN30Response(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
-            )
-            for stock in stocks
-        ],
-        count=len(stocks)
     )
 
 
