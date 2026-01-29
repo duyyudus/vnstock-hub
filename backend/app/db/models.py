@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON
+from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON, Boolean
 from datetime import datetime
 from app.db.database import Base
 
@@ -94,3 +94,16 @@ class FundListing(Base):
     __table_args__ = (
         Index('ix_fund_listings_symbol_type', 'symbol', 'fund_type'),
     )
+
+
+class User(Base):
+    """Application user account."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)

@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     
     # vnstock API
     vnstock_api_key: str | None = None
+
+    # Auth/JWT
+    jwt_secret_key: str = "change-me"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
     
     @property
     def cors_origins_list(self) -> List[str]:

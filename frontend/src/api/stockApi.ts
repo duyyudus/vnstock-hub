@@ -1,5 +1,8 @@
 import axios from 'axios';
 
+const AUTH_TOKEN_KEY = 'vnstock_auth_token';
+const AUTH_USER_KEY = 'vnstock_auth_user';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // Create axios instance with base configuration
@@ -8,6 +11,73 @@ const apiClient = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+const getStoredToken = () => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    return window.localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+export const authStorage = {
+    getToken() {
+        return getStoredToken();
+    },
+    setToken(token: string) {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    },
+    clearToken() {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    },
+    getUser() {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+        const raw = window.localStorage.getItem(AUTH_USER_KEY);
+        if (!raw) {
+            return null;
+        }
+        try {
+            return JSON.parse(raw) as AuthUser;
+        } catch {
+            return null;
+        }
+    },
+    setUser(user: AuthUser) {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    },
+    clearUser() {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.removeItem(AUTH_USER_KEY);
+    },
+    clearAll() {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.removeItem(AUTH_TOKEN_KEY);
+        window.localStorage.removeItem(AUTH_USER_KEY);
+    }
+};
+
+apiClient.interceptors.request.use((config) => {
+    const token = getStoredToken();
+    if (token) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
 });
 
 // Stock data types
@@ -164,6 +234,32 @@ export interface FundPerformanceData {
     is_syncing?: boolean;
 }
 
+// Auth types
+export interface AuthUser {
+    id: number;
+    email: string;
+    is_active: boolean;
+    created_at: string;
+    last_login: string | null;
+}
+
+export interface AuthResponse {
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+    user: AuthUser;
+}
+
+export interface RegisterRequest {
+    email: string;
+    password: string;
+}
+
+export interface LoginRequest {
+    email: string;
+    password: string;
+}
+
 // Sync Status Types
 export interface SyncStatusItem {
     is_syncing: boolean;
@@ -185,6 +281,16 @@ export const stockApi = {
      */
     async getIndexValues(): Promise<IndexValuesResponse> {
         const response = await apiClient.get<IndexValuesResponse>('/stocks/index-values');
+        return response.data;
+    },
+
+    async register(payload: RegisterRequest): Promise<AuthResponse> {
+        const response = await apiClient.post<AuthResponse>('/auth/register', payload);
+        return response.data;
+    },
+
+    async login(payload: LoginRequest): Promise<AuthResponse> {
+        const response = await apiClient.post<AuthResponse>('/auth/login', payload);
         return response.data;
     },
 

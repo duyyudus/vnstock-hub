@@ -15,6 +15,7 @@ logger = get_main_logger()
 from app.api.v1.stocks import router as stocks_router
 from app.api.v1.funds import router as funds_router
 from app.api.v1.sync import router as sync_router
+from app.api.v1.auth import router as auth_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
 from app.services.vnstock_service import vnstock_service
@@ -57,6 +58,7 @@ app.add_middleware(
 app.include_router(stocks_router, prefix=settings.api_v1_prefix)
 app.include_router(funds_router, prefix=settings.api_v1_prefix)
 app.include_router(sync_router, prefix=settings.api_v1_prefix)
+app.include_router(auth_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")

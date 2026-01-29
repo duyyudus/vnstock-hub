@@ -5,6 +5,7 @@ import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
 import { FundsTab } from './funds/FundsTab';
+import { AuthWidget } from '../auth/AuthWidget';
 
 // Tab definitions
 const DASHBOARD_TABS = [
@@ -181,6 +182,7 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">
+                        <AuthWidget />
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle">
                                 <svg
@@ -255,4 +257,3 @@ export const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
-
