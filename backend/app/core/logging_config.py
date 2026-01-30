@@ -14,6 +14,7 @@ from pathlib import Path
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 LOG_FILE = LOG_DIR / "background_tasks.log"
 MAIN_LOG_FILE = LOG_DIR / "backend.log"
+SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -33,7 +34,7 @@ def setup_logging():
     LOG_DIR.mkdir(exist_ok=True)
 
     # Truncate log files on startup to ensure fresh logs
-    for log_path in [LOG_FILE, MAIN_LOG_FILE]:
+    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE]:
         try:
             with open(log_path, 'w') as f:
                 f.truncate(0)
@@ -89,6 +90,29 @@ def setup_logging():
     console_error_handler.setLevel(logging.WARNING)
     console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
     _background_logger.addHandler(console_error_handler)
+
+    # === SQLAlchemy Logger (file only) ===
+    sqlalchemy_logger = logging.getLogger("sqlalchemy.engine")
+    sqlalchemy_logger.setLevel(logging.INFO)
+    sqlalchemy_logger.propagate = False
+    sqlalchemy_logger.handlers.clear()
+
+    sqlalchemy_file_handler = RotatingFileHandler(
+        SQL_LOG_FILE,
+        maxBytes=10 * 1024 * 1024,  # 10 MB per file
+        backupCount=5,
+        encoding="utf-8"
+    )
+    sqlalchemy_file_handler.setLevel(logging.INFO)
+    sqlalchemy_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    sqlalchemy_logger.addHandler(sqlalchemy_file_handler)
+
+    # Optional: keep pool noise out of console by routing to the same file
+    sqlalchemy_pool_logger = logging.getLogger("sqlalchemy.pool")
+    sqlalchemy_pool_logger.setLevel(logging.WARNING)
+    sqlalchemy_pool_logger.propagate = False
+    sqlalchemy_pool_logger.handlers.clear()
+    sqlalchemy_pool_logger.addHandler(sqlalchemy_file_handler)
 
     return _main_logger, _background_logger
 
