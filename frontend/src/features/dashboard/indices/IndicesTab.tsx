@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { stockApi } from '../../../api/stockApi';
-import type { Stock, IndustryInfo } from '../../../api/stockApi';
+import type { Stock, IndustryInfo, BookmarkGroup } from '../../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
+import { BookmarkSelector } from './BookmarkSelector';
 import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
+import { useAuthUser } from '../../auth/useAuthUser';
 
 interface IndicesTabProps {
     /** List of available indices */
@@ -19,6 +21,8 @@ type ViewMode = 'table' | 'growth';
  * Manages state for selection, fetching, and view switching.
  */
 export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
+    const user = useAuthUser();
+
     // --- Selection State ---
     // Default to VN30 if available, otherwise first index
     const [selectedIndex, setSelectedIndex] = useState<IndexConfig | null>(() => {
@@ -26,10 +30,14 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         return indices.find(idx => idx.id === 'VN30') || indices[0];
     });
     const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
+    const [selectedBookmarkGroupId, setSelectedBookmarkGroupId] = useState<number | null>(null);
+    const [bookmarkRefreshKey, setBookmarkRefreshKey] = useState(0);
 
     // --- Data State ---
     const [stocks, setStocks] = useState<Stock[]>([]);
     const [industries, setIndustries] = useState<IndustryInfo[]>([]);
+    const [bookmarkGroups, setBookmarkGroups] = useState<BookmarkGroup[]>([]);
+    const [bookmarkLoading, setBookmarkLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +68,39 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         fetchIndustries();
     }, []);
 
+    const refreshBookmarkGroups = useCallback(async () => {
+        if (!user) {
+            setBookmarkGroups([]);
+            setBookmarkLoading(false);
+            return;
+        }
+        try {
+            setBookmarkLoading(true);
+            const response = await stockApi.getBookmarkGroups();
+            setBookmarkGroups(response.groups);
+        } catch (err) {
+            console.error('Failed to fetch bookmark groups:', err);
+        } finally {
+            setBookmarkLoading(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) {
+            setBookmarkGroups([]);
+            setSelectedBookmarkGroupId(null);
+            setBookmarkLoading(false);
+            return;
+        }
+        refreshBookmarkGroups();
+    }, [user, refreshBookmarkGroups]);
+
+    useEffect(() => {
+        if (selectedBookmarkGroupId && !bookmarkGroups.some(group => group.id === selectedBookmarkGroupId)) {
+            setSelectedBookmarkGroupId(null);
+        }
+    }, [bookmarkGroups, selectedBookmarkGroupId]);
+
     // Fetch Stocks Data
     useEffect(() => {
         const fetchData = async () => {
@@ -67,7 +108,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 setLoading(true);
                 setError(null);
 
-                if (selectedIndustryName) {
+                if (selectedBookmarkGroupId) {
+                    const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId);
+                    setStocks(response.stocks);
+                } else if (selectedIndustryName) {
                     const response = await stockApi.getIndustryStocks(selectedIndustryName);
                     setStocks(response.stocks);
                 } else if (selectedIndex) {
@@ -75,7 +119,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     setStocks(response.stocks);
                 }
             } catch (err: any) {
-                const label = selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks');
+                const label = selectedBookmarkGroup?.name || selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks');
 
                 // If it's a rate limit error (429) or if we can check global status
                 try {
@@ -99,17 +143,33 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
 
         fetchData();
-    }, [selectedIndex, selectedIndustryName]);
+    }, [selectedIndex, selectedIndustryName, selectedBookmarkGroupId, bookmarkRefreshKey]);
 
     // --- Handlers ---
 
     const handleIndexChange = (newIndex: IndexConfig) => {
         setSelectedIndex(newIndex);
         setSelectedIndustryName(null); // Clear industry when index selected
+        setSelectedBookmarkGroupId(null);
     };
 
     const handleIndustryChange = (industryName: string | null) => {
         setSelectedIndustryName(industryName);
+        setSelectedBookmarkGroupId(null);
+    };
+
+    const handleBookmarkGroupChange = (groupId: number | null) => {
+        setSelectedBookmarkGroupId(groupId);
+        if (groupId) {
+            setSelectedIndustryName(null);
+        }
+    };
+
+    const handleBookmarksUpdated = async (groupId?: number) => {
+        await refreshBookmarkGroups();
+        if (selectedBookmarkGroupId && (!groupId || groupId === selectedBookmarkGroupId)) {
+            setBookmarkRefreshKey((prev) => prev + 1);
+        }
     };
 
     // --- Filtering ---
@@ -121,6 +181,11 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             stock.ticker.toLowerCase().includes(query)
         );
     }, [stocks, searchQuery]);
+
+    const selectedBookmarkGroup = useMemo(() => {
+        if (!selectedBookmarkGroupId) return null;
+        return bookmarkGroups.find(group => group.id === selectedBookmarkGroupId) || null;
+    }, [bookmarkGroups, selectedBookmarkGroupId]);
 
     // --- Render ---
 
@@ -135,7 +200,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <h2 className="text-2xl font-bold text-base-content">
-                            {selectedIndustryName || selectedIndex.title}
+                            {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.title}
                         </h2>
                     </div>
 
@@ -181,6 +246,14 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                             </svg>
                         </div>
+                        {user ? (
+                            <BookmarkSelector
+                                groups={bookmarkGroups}
+                                selectedGroupId={selectedBookmarkGroupId}
+                                onGroupChange={handleBookmarkGroupChange}
+                                disabled={bookmarkLoading}
+                            />
+                        ) : null}
                         <IndustrySelector
                             industries={industries}
                             selectedIndustryName={selectedIndustryName}
@@ -199,7 +272,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             {loading ? (
                 <div className="flex flex-col items-center justify-center h-64 gap-4 card bg-base-100 shadow-md border border-base-300">
                     <span className="loading loading-spinner loading-lg text-primary"></span>
-                    <p className="text-base-content/70">Loading {selectedIndustryName || selectedIndex.label} stocks...</p>
+                    <p className="text-base-content/70">Loading {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.label} stocks...</p>
                 </div>
             ) : error ? (
                 <div className="alert alert-error shadow-lg">
@@ -217,7 +290,11 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 stocks={filteredStocks}
                             />
                         ) : (
-                            <StocksTable stocks={filteredStocks} />
+                            <StocksTable
+                                stocks={filteredStocks}
+                                bookmarkGroups={bookmarkGroups}
+                                onBookmarksUpdated={handleBookmarksUpdated}
+                            />
                         )}
                     </div>
                 </div>

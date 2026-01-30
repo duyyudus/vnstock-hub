@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON, Boolean
+from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON, Boolean, ForeignKey
 from datetime import datetime
 from app.db.database import Base
 
@@ -107,3 +107,33 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+
+
+class BookmarkGroup(Base):
+    """User-defined group for favorite stocks."""
+    __tablename__ = "bookmark_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_bookmark_group_user_name"),
+    )
+
+
+class BookmarkStock(Base):
+    """Stock membership inside a bookmark group."""
+    __tablename__ = "bookmark_stocks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("bookmark_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticker = Column(String(10), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "ticker", name="uq_bookmark_group_ticker"),
+        Index("ix_bookmark_group_ticker", "group_id", "ticker"),
+    )

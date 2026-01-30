@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const AUTH_TOKEN_KEY = 'vnstock_auth_token';
 const AUTH_USER_KEY = 'vnstock_auth_user';
+export const AUTH_EVENT = 'vnstock:auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -20,6 +21,13 @@ const getStoredToken = () => {
     return window.localStorage.getItem(AUTH_TOKEN_KEY);
 };
 
+const notifyAuthChange = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    window.dispatchEvent(new CustomEvent(AUTH_EVENT));
+};
+
 export const authStorage = {
     getToken() {
         return getStoredToken();
@@ -29,12 +37,14 @@ export const authStorage = {
             return;
         }
         window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+        notifyAuthChange();
     },
     clearToken() {
         if (typeof window === 'undefined') {
             return;
         }
         window.localStorage.removeItem(AUTH_TOKEN_KEY);
+        notifyAuthChange();
     },
     getUser() {
         if (typeof window === 'undefined') {
@@ -55,12 +65,14 @@ export const authStorage = {
             return;
         }
         window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        notifyAuthChange();
     },
     clearUser() {
         if (typeof window === 'undefined') {
             return;
         }
         window.localStorage.removeItem(AUTH_USER_KEY);
+        notifyAuthChange();
     },
     clearAll() {
         if (typeof window === 'undefined') {
@@ -68,6 +80,7 @@ export const authStorage = {
         }
         window.localStorage.removeItem(AUTH_TOKEN_KEY);
         window.localStorage.removeItem(AUTH_USER_KEY);
+        notifyAuthChange();
     }
 };
 
@@ -94,6 +107,34 @@ export interface Stock {
     price_change_1w: number | null;
     price_change_1m: number | null;
     price_change_1y: number | null;
+}
+
+export interface BookmarkGroup {
+    id: number;
+    name: string;
+    tickers: string[];
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface BookmarkGroupsResponse {
+    groups: BookmarkGroup[];
+    count: number;
+}
+
+export interface BookmarkGroupCreateRequest {
+    name: string;
+}
+
+export interface BookmarkGroupUpdateRequest {
+    name: string;
+}
+
+export interface BookmarkGroupStocksResponse {
+    stocks: Stock[];
+    count: number;
+    group_id: number;
+    group_name: string;
 }
 
 export interface IndexStocksResponse {
@@ -480,6 +521,43 @@ export const stockApi = {
      */
     async getSyncStatus(): Promise<SyncStatusResponse> {
         const response = await apiClient.get<SyncStatusResponse>('/sync/status');
+        return response.data;
+    },
+
+    // Bookmark groups
+    async getBookmarkGroups(): Promise<BookmarkGroupsResponse> {
+        const response = await apiClient.get<BookmarkGroupsResponse>('/bookmarks/groups');
+        return response.data;
+    },
+
+    async createBookmarkGroup(payload: BookmarkGroupCreateRequest): Promise<BookmarkGroup> {
+        const response = await apiClient.post<BookmarkGroup>('/bookmarks/groups', payload);
+        return response.data;
+    },
+
+    async updateBookmarkGroup(groupId: number, payload: BookmarkGroupUpdateRequest): Promise<BookmarkGroup> {
+        const response = await apiClient.patch<BookmarkGroup>(`/bookmarks/groups/${groupId}`, payload);
+        return response.data;
+    },
+
+    async deleteBookmarkGroup(groupId: number): Promise<void> {
+        await apiClient.delete(`/bookmarks/groups/${groupId}`);
+    },
+
+    async addBookmarkStock(groupId: number, ticker: string): Promise<BookmarkGroup> {
+        const response = await apiClient.post<BookmarkGroup>(`/bookmarks/groups/${groupId}/stocks`, {
+            ticker
+        });
+        return response.data;
+    },
+
+    async removeBookmarkStock(groupId: number, ticker: string): Promise<BookmarkGroup> {
+        const response = await apiClient.delete<BookmarkGroup>(`/bookmarks/groups/${groupId}/stocks/${encodeURIComponent(ticker)}`);
+        return response.data;
+    },
+
+    async getBookmarkGroupStocks(groupId: number): Promise<BookmarkGroupStocksResponse> {
+        const response = await apiClient.get<BookmarkGroupStocksResponse>(`/bookmarks/groups/${groupId}/stocks`);
         return response.data;
     },
 };

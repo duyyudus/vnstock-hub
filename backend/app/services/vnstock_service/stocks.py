@@ -67,6 +67,25 @@ class StocksService:
         # Apply current cache to the response immediately
         return await self._metadata.apply_cache_to_stocks(stocks)
 
+    async def get_symbol_stocks(self, symbols: List[str], limit: int = 100) -> List[StockInfo]:
+        """
+        Fetch stocks for a list of symbols.
+        """
+        cleaned_symbols = [symbol.strip().upper() for symbol in symbols if symbol and symbol.strip()]
+        if not cleaned_symbols:
+            return []
+        unique_symbols = list(dict.fromkeys(cleaned_symbols))
+
+        loop = asyncio.get_event_loop()
+        stocks = await loop.run_in_executor(frontend_executor, self._fetch_symbols_data, unique_symbols, limit)
+
+        # Launch background task for enrichment
+        asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
+        asyncio.create_task(self._history.trigger_missing_price_history_sync(stocks))
+
+        # Apply current cache to the response immediately
+        return await self._metadata.apply_cache_to_stocks(stocks)
+
     def _fetch_industries_sync(self) -> pd.DataFrame:
         """Fetch industries synchronously."""
         from vnstock import Listing

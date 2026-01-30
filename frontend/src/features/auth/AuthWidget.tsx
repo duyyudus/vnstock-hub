@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { authStorage, stockApi } from '../../api/stockApi';
-import type { AuthUser } from '../../api/stockApi';
+import { useAuthUser } from './useAuthUser';
 
 type AuthMode = 'login' | 'register';
 
@@ -25,11 +25,7 @@ export const AuthWidget: React.FC = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [user, setUser] = useState<AuthUser | null>(null);
-
-    useEffect(() => {
-        setUser(authStorage.getUser());
-    }, []);
+    const user = useAuthUser();
 
     const openModal = (nextMode: AuthMode) => {
         setMode(nextMode);
@@ -59,7 +55,6 @@ export const AuthWidget: React.FC = () => {
                 : await stockApi.register({ email, password });
             authStorage.setToken(response.access_token);
             authStorage.setUser(response.user);
-            setUser(response.user);
             closeModal();
         } catch (err) {
             setError(getErrorMessage(err));
@@ -70,7 +65,6 @@ export const AuthWidget: React.FC = () => {
 
     const logout = () => {
         authStorage.clearAll();
-        setUser(null);
     };
 
     return (

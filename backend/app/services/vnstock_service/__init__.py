@@ -60,6 +60,9 @@ class VnstockService:
     async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
         return await self.stocks.get_industry_stocks(industry_name, limit)
 
+    async def get_symbol_stocks(self, symbols: List[str], limit: int = 100) -> List[StockInfo]:
+        return await self.stocks.get_symbol_stocks(symbols, limit)
+
     # Finance
     async def get_income_statement(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
         return await self.finance.get_income_statement(symbol, period=period, lang=lang)
