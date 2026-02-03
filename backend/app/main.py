@@ -17,6 +17,7 @@ from app.api.v1.funds import router as funds_router
 from app.api.v1.sync import router as sync_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.bookmarks import router as bookmarks_router
+from app.api.v1.portfolio import router as portfolio_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
 from app.services.vnstock_service import vnstock_service
@@ -61,6 +62,7 @@ app.include_router(funds_router, prefix=settings.api_v1_prefix)
 app.include_router(sync_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(bookmarks_router, prefix=settings.api_v1_prefix)
+app.include_router(portfolio_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")

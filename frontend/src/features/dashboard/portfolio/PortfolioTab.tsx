@@ -1,0 +1,545 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { stockApi, type PortfolioPosition, type Stock } from '../../../api/stockApi';
+import { useAuthUser } from '../../auth/useAuthUser';
+
+interface FormState {
+    ticker: string;
+    quantity: string;
+    averageCost: string;
+    purchaseDate: string;
+}
+
+const emptyFormState: FormState = {
+    ticker: '',
+    quantity: '',
+    averageCost: '',
+    purchaseDate: '',
+};
+
+const getErrorMessage = (error: unknown) => {
+    if (typeof error === 'object' && error && 'response' in error) {
+        const response = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
+        if (response?.status === 409) {
+            return 'You already have a position for this ticker.';
+        }
+        if (response?.data?.detail) {
+            return response.data.detail;
+        }
+    }
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return 'Unable to complete the request.';
+};
+
+export const PortfolioTab: React.FC = () => {
+    const user = useAuthUser();
+    const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+    const [quotes, setQuotes] = useState<Record<string, Stock>>({});
+    const [loading, setLoading] = useState(true);
+    const [quoteLoading, setQuoteLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [addFormError, setAddFormError] = useState<string | null>(null);
+    const [addFormLoading, setAddFormLoading] = useState(false);
+    const [addFormState, setAddFormState] = useState<FormState>(emptyFormState);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editFormError, setEditFormError] = useState<string | null>(null);
+    const [editFormLoading, setEditFormLoading] = useState(false);
+    const [editFormState, setEditFormState] = useState<FormState>(emptyFormState);
+
+    const formatNumber = useMemo(() => {
+        return (value: number, options?: Intl.NumberFormatOptions) =>
+            new Intl.NumberFormat('en-US', options).format(value);
+    }, []);
+
+    const formatPercent = useMemo(() => {
+        return (value: number) => {
+            const formatted = new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }).format(value);
+            const prefix = value > 0 ? '+' : '';
+            return `${prefix}${formatted}%`;
+        };
+    }, []);
+
+    const resetAddForm = () => {
+        setAddFormState(emptyFormState);
+        setAddFormError(null);
+    };
+
+    const resetEditForm = () => {
+        setEditingId(null);
+        setEditFormState(emptyFormState);
+        setEditFormError(null);
+    };
+
+    const fetchPositions = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await stockApi.getPortfolioPositions();
+            setPositions(response.positions);
+        } catch (err) {
+            setError(getErrorMessage(err));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!user) {
+            setPositions([]);
+            setQuotes({});
+            setLoading(false);
+            return;
+        }
+        fetchPositions();
+    }, [user]);
+
+    useEffect(() => {
+        const tickers = positions.map((position) => position.ticker.toUpperCase());
+        if (tickers.length === 0) {
+            setQuotes({});
+            return;
+        }
+
+        let isMounted = true;
+        setQuoteLoading(true);
+        stockApi.getStockQuotes(tickers)
+            .then((response) => {
+                if (!isMounted) return;
+                const map: Record<string, Stock> = {};
+                response.stocks.forEach((stock) => {
+                    map[stock.ticker.toUpperCase()] = stock;
+                });
+                setQuotes(map);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+            })
+            .finally(() => {
+                if (!isMounted) return;
+                setQuoteLoading(false);
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [positions]);
+
+    const handleAddInputChange = (field: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) => {
+        setAddFormState((prev) => ({
+            ...prev,
+            [field]: event.target.value,
+        }));
+    };
+
+    const handleEditInputChange = (field: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) => {
+        setEditFormState((prev) => ({
+            ...prev,
+            [field]: event.target.value,
+        }));
+    };
+
+    const handleAddSubmit = async () => {
+        if (addFormLoading) return;
+
+        setAddFormError(null);
+
+        const ticker = addFormState.ticker.trim().toUpperCase();
+        const quantity = Number(addFormState.quantity);
+        const averageCost = Number(addFormState.averageCost);
+        const purchaseDate = addFormState.purchaseDate.trim();
+
+        if (!ticker) {
+            setAddFormError('Ticker is required.');
+            return;
+        }
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            setAddFormError('Quantity must be greater than zero.');
+            return;
+        }
+        if (!Number.isFinite(averageCost) || averageCost <= 0) {
+            setAddFormError('Average cost must be greater than zero.');
+            return;
+        }
+        setAddFormLoading(true);
+        try {
+            await stockApi.createPortfolioPosition({
+                ticker,
+                quantity,
+                average_cost: averageCost,
+                purchase_date: purchaseDate || null,
+            });
+            await fetchPositions();
+            resetAddForm();
+        } catch (err) {
+            setAddFormError(getErrorMessage(err));
+        } finally {
+            setAddFormLoading(false);
+        }
+    };
+
+    const startEdit = (position: PortfolioPosition) => {
+        setEditingId(position.id);
+        setEditFormError(null);
+        setEditFormState({
+            ticker: position.ticker,
+            quantity: String(position.quantity),
+            averageCost: String(position.average_cost),
+            purchaseDate: position.purchase_date ? position.purchase_date.slice(0, 10) : '',
+        });
+    };
+
+    const handleEditSubmit = async (position: PortfolioPosition) => {
+        if (editFormLoading) return;
+        setEditFormError(null);
+
+        const quantity = Number(editFormState.quantity);
+        const averageCost = Number(editFormState.averageCost);
+        const purchaseDate = editFormState.purchaseDate.trim();
+
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            setEditFormError('Quantity must be greater than zero.');
+            return;
+        }
+        if (!Number.isFinite(averageCost) || averageCost <= 0) {
+            setEditFormError('Average cost must be greater than zero.');
+            return;
+        }
+
+        setEditFormLoading(true);
+        try {
+            await stockApi.updatePortfolioPosition(position.id, {
+                quantity,
+                average_cost: averageCost,
+                purchase_date: purchaseDate || null,
+            });
+            await fetchPositions();
+            resetEditForm();
+        } catch (err) {
+            setEditFormError(getErrorMessage(err));
+        } finally {
+            setEditFormLoading(false);
+        }
+    };
+
+    const handleEditKeyDown = (
+        event: React.KeyboardEvent<HTMLInputElement>,
+        position: PortfolioPosition,
+    ) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void handleEditSubmit(position);
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            resetEditForm();
+        }
+    };
+
+    const handleAddKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void handleAddSubmit();
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            resetAddForm();
+        }
+    };
+
+    const handleDelete = async (position: PortfolioPosition) => {
+        if (!window.confirm(`Remove ${position.ticker} from your portfolio?`)) {
+            return;
+        }
+        setError(null);
+        try {
+            await stockApi.deletePortfolioPosition(position.id);
+            if (editingId === position.id) {
+                resetEditForm();
+            }
+            await fetchPositions();
+        } catch (err) {
+            setError(getErrorMessage(err));
+        }
+    };
+
+    if (!user) {
+        return (
+            <div className="p-4">
+                <div className="alert alert-info shadow-lg">
+                    <span>Sign in to manage your portfolio positions.</span>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 p-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                    <h2 className="text-2xl font-bold text-base-content">Portfolio</h2>
+                    <p className="text-sm text-base-content/60">Track your positions and performance.</p>
+                </div>
+                <div className="text-sm text-base-content/60">
+                    {positions.length} position{positions.length === 1 ? '' : 's'}
+                </div>
+            </div>
+
+            <div className="card bg-base-100 shadow-md border border-base-300">
+                <div className="card-body p-4 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-3">
+                            <h3 className="card-title text-base">Positions</h3>
+                            {quoteLoading && (
+                                <span className="text-xs text-base-content/50 flex items-center gap-2">
+                                    <span className="loading loading-spinner loading-xs"></span>
+                                    Updating prices...
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center h-52 gap-3">
+                            <span className="loading loading-spinner loading-lg text-primary"></span>
+                            <p className="text-base-content/70">Loading portfolio positions...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="alert alert-error text-sm">
+                            <span>{error}</span>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {positions.length === 0 && (
+                                <div className="text-sm text-base-content/60">
+                                    No positions yet. Add your first ticker to start tracking performance.
+                                </div>
+                            )}
+                            <div className="overflow-x-auto">
+                                <table className="table table-zebra table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Quantity</th>
+                                        <th>Avg Cost</th>
+                                        <th>Purchase Date</th>
+                                        <th>Current Price</th>
+                                        <th>Market Value</th>
+                                        <th>P&amp;L</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {positions.map((position) => {
+                                        const isEditing = editingId === position.id;
+                                        const parsedQuantity = Number(editFormState.quantity);
+                                        const parsedAverageCost = Number(editFormState.averageCost);
+                                        const quantity = isEditing && Number.isFinite(parsedQuantity) && parsedQuantity > 0
+                                            ? parsedQuantity
+                                            : position.quantity;
+                                        const averageCost = isEditing && Number.isFinite(parsedAverageCost) && parsedAverageCost > 0
+                                            ? parsedAverageCost
+                                            : position.average_cost;
+                                        const quote = quotes[position.ticker.toUpperCase()];
+                                        const price = quote?.price ?? null;
+                                        const costBasis = quantity * averageCost;
+                                        const marketValue = price !== null ? quantity * price : null;
+                                        const pnl = price !== null ? marketValue! - costBasis : null;
+                                        const pnlPercent = pnl !== null && costBasis > 0 ? (pnl / costBasis) * 100 : null;
+                                        const pnlClassName = pnl === null
+                                            ? 'text-base-content/50'
+                                            : pnl > 0
+                                                ? 'text-success'
+                                                : pnl < 0
+                                                    ? 'text-error'
+                                                    : 'text-base-content';
+
+                                        return (
+                                            <tr key={position.id}>
+                                                <td className="font-semibold">{position.ticker}</td>
+                                                <td>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            step="1"
+                                                            className="input input-bordered input-xs w-24"
+                                                            value={editFormState.quantity}
+                                                            onChange={handleEditInputChange('quantity')}
+                                                            onKeyDown={(event) => handleEditKeyDown(event, position)}
+                                                        />
+                                                    ) : (
+                                                        formatNumber(position.quantity, { maximumFractionDigits: 2 })
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="number"
+                                                            min="0.01"
+                                                            step="0.01"
+                                                            className="input input-bordered input-xs w-28"
+                                                            value={editFormState.averageCost}
+                                                            onChange={handleEditInputChange('averageCost')}
+                                                            onKeyDown={(event) => handleEditKeyDown(event, position)}
+                                                        />
+                                                    ) : (
+                                                        formatNumber(position.average_cost, { maximumFractionDigits: 2 })
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="date"
+                                                            className="input input-bordered input-xs"
+                                                            value={editFormState.purchaseDate}
+                                                            onChange={handleEditInputChange('purchaseDate')}
+                                                            onKeyDown={(event) => handleEditKeyDown(event, position)}
+                                                        />
+                                                    ) : (
+                                                        position.purchase_date || '--'
+                                                    )}
+                                                </td>
+                                                <td>{price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}</td>
+                                                <td>{marketValue !== null ? formatNumber(marketValue, { maximumFractionDigits: 2 }) : '--'}</td>
+                                                <td className={pnlClassName}>
+                                                    {pnl !== null ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{formatNumber(pnl, { maximumFractionDigits: 2 })}</span>
+                                                            {pnlPercent !== null && (
+                                                                <span className="text-xs">
+                                                                    {formatPercent(pnlPercent)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ) : '--'}
+                                                </td>
+                                                <td>
+                                                    {isEditing ? (
+                                                        <div className="flex flex-col gap-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-xs btn-primary"
+                                                                    onClick={() => handleEditSubmit(position)}
+                                                                    disabled={editFormLoading}
+                                                                >
+                                                                    {editFormLoading ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-xs btn-ghost"
+                                                                    onClick={resetEditForm}
+                                                                    disabled={editFormLoading}
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                            {editFormError && (
+                                                                <span className="text-xs text-error">{editFormError}</span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-xs btn-ghost"
+                                                                onClick={() => startEdit(position)}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-xs btn-ghost text-error"
+                                                                onClick={() => handleDelete(position)}
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td>
+                                            <input
+                                                type="text"
+                                                className="input input-bordered input-xs w-24"
+                                                placeholder="Ticker"
+                                                value={addFormState.ticker}
+                                                onChange={handleAddInputChange('ticker')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                className="input input-bordered input-xs w-24"
+                                                placeholder="Qty"
+                                                value={addFormState.quantity}
+                                                onChange={handleAddInputChange('quantity')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="0.01"
+                                                step="0.01"
+                                                className="input input-bordered input-xs w-28"
+                                                placeholder="Avg"
+                                                value={addFormState.averageCost}
+                                                onChange={handleAddInputChange('averageCost')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="date"
+                                                className="input input-bordered input-xs"
+                                                value={addFormState.purchaseDate}
+                                                onChange={handleAddInputChange('purchaseDate')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>--</td>
+                                        <td>--</td>
+                                        <td className="text-base-content/50">--</td>
+                                        <td>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-xs btn-primary"
+                                                    onClick={() => handleAddSubmit()}
+                                                    disabled={addFormLoading}
+                                                >
+                                                    {addFormLoading ? 'Adding...' : 'Add'}
+                                                </button>
+                                                {addFormError && (
+                                                    <span className="text-xs text-error">{addFormError}</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default PortfolioTab;

@@ -84,5 +84,24 @@ async def test_get_volume_history(client):
         response = await client.get("/api/v1/stocks/history/TCB/volume")
         assert response.status_code == 200
         data = response.json()
-        assert data["symbol"] == "TCB"
-        assert data["data"][0]["volume"] == 1000
+    assert data["symbol"] == "TCB"
+    assert data["data"][0]["volume"] == 1000
+
+@pytest.mark.asyncio
+async def test_get_stock_quotes(client):
+    mock_stocks = [
+        StockInfo(ticker="TCB", price=50000, market_cap=100000, company_name="Techcombank"),
+        StockInfo(ticker="VCB", price=90000, market_cap=200000, company_name="Vietcombank")
+    ]
+
+    with patch.object(vnstock_service, 'get_symbol_stocks', return_value=mock_stocks):
+        response = await client.post(
+            "/api/v1/stocks/quotes",
+            json={"symbols": ["TCB", "VCB"]}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 2
+        tickers = [stock["ticker"] for stock in data["stocks"]]
+        assert "TCB" in tickers
+        assert "VCB" in tickers

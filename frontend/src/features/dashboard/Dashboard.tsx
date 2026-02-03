@@ -6,11 +6,14 @@ import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
+import { useAuthUser } from '../auth/useAuthUser';
+import { PortfolioTab } from './portfolio/PortfolioTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
     { id: 'funds', label: 'Funds' },
+    { id: 'portfolio', label: 'Portfolio' },
 ];
 
 import { CompanyFinancialPopup } from './components/CompanyFinancialPopup';
@@ -35,12 +38,22 @@ interface OpenVolumePopup {
  */
 export const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState('indices');
+    const user = useAuthUser();
     const [indices, setIndices] = useState<IndexConfig[]>([]);
     const [loadingIndices, setLoadingIndices] = useState(true);
     const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
     const [openVolumePopups, setOpenVolumePopups] = useState<OpenVolumePopup[]>([]);
     const [maxZIndex, setMaxZIndex] = useState(100);
 
+    const availableTabs = user
+        ? DASHBOARD_TABS
+        : DASHBOARD_TABS.filter((tab) => tab.id !== 'portfolio');
+
+    useEffect(() => {
+        if (!user && activeTab === 'portfolio') {
+            setActiveTab('indices');
+        }
+    }, [user, activeTab]);
 
 
     useEffect(() => {
@@ -162,6 +175,8 @@ export const Dashboard: React.FC = () => {
                 return <IndicesTab indices={indices} />;
             case 'funds':
                 return <FundsTab />;
+            case 'portfolio':
+                return <PortfolioTab />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">
@@ -214,7 +229,7 @@ export const Dashboard: React.FC = () => {
                     {/* Left sidebar - Tab navigation */}
                     <aside className="shrink-0">
                         <TabNavigation
-                            tabs={DASHBOARD_TABS}
+                            tabs={availableTabs}
                             activeTab={activeTab}
                             onTabChange={setActiveTab}
                         />

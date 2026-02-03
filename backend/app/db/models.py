@@ -137,3 +137,21 @@ class BookmarkStock(Base):
         UniqueConstraint("group_id", "ticker", name="uq_bookmark_group_ticker"),
         Index("ix_bookmark_group_ticker", "group_id", "ticker"),
     )
+
+
+class PortfolioPosition(Base):
+    """User portfolio position."""
+    __tablename__ = "portfolio_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticker = Column(String(10), nullable=False)
+    quantity = Column(Float, nullable=False)
+    average_cost = Column(Float, nullable=False)
+    purchase_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "ticker", name="uq_portfolio_position_user_ticker"),
+    )

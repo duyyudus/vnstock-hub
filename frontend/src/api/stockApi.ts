@@ -301,6 +301,40 @@ export interface LoginRequest {
     password: string;
 }
 
+// Portfolio types
+export interface PortfolioPosition {
+    id: number;
+    ticker: string;
+    quantity: number;
+    average_cost: number;
+    purchase_date: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface PortfolioPositionsResponse {
+    positions: PortfolioPosition[];
+    count: number;
+}
+
+export interface PortfolioPositionCreateRequest {
+    ticker: string;
+    quantity: number;
+    average_cost: number;
+    purchase_date?: string | null;
+}
+
+export interface PortfolioPositionUpdateRequest {
+    quantity?: number;
+    average_cost?: number;
+    purchase_date?: string | null;
+}
+
+export interface StockQuotesResponse {
+    stocks: Stock[];
+    count: number;
+}
+
 // Sync Status Types
 export interface SyncStatusItem {
     is_syncing: boolean;
@@ -521,6 +555,31 @@ export const stockApi = {
      */
     async getSyncStatus(): Promise<SyncStatusResponse> {
         const response = await apiClient.get<SyncStatusResponse>('/sync/status');
+        return response.data;
+    },
+
+    // Portfolio positions
+    async getPortfolioPositions(): Promise<PortfolioPositionsResponse> {
+        const response = await apiClient.get<PortfolioPositionsResponse>('/portfolio/positions');
+        return response.data;
+    },
+
+    async createPortfolioPosition(payload: PortfolioPositionCreateRequest): Promise<PortfolioPosition> {
+        const response = await apiClient.post<PortfolioPosition>('/portfolio/positions', payload);
+        return response.data;
+    },
+
+    async updatePortfolioPosition(positionId: number, payload: PortfolioPositionUpdateRequest): Promise<PortfolioPosition> {
+        const response = await apiClient.patch<PortfolioPosition>(`/portfolio/positions/${positionId}`, payload);
+        return response.data;
+    },
+
+    async deletePortfolioPosition(positionId: number): Promise<void> {
+        await apiClient.delete(`/portfolio/positions/${positionId}`);
+    },
+
+    async getStockQuotes(symbols: string[]): Promise<StockQuotesResponse> {
+        const response = await apiClient.post<StockQuotesResponse>('/stocks/quotes', { symbols });
         return response.data;
     },
 

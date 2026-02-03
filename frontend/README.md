@@ -8,23 +8,27 @@ This is the frontend component of the VNStock Hub, a modern web dashboard for tr
 - **Build Tool:** [Vite](https://vitejs.dev/)
 - **Language:** [TypeScript](https://www.typescriptlang.org/)
 - **Styling:** [TailwindCSS](https://tailwindcss.com/) & [DaisyUI](https://daisyui.com/)
+- **Charts:** [Recharts](https://recharts.org/)
 - **API Client:** [Axios](https://axios-http.com/)
-- **Icons:** [Lucide React](https://lucide.dev/) (implied/used in components)
+- **State/Auth:** Custom hooks and context for JWT authentication.
 
 ## 📦 Project Structure
 
 ```text
 frontend/
 ├── src/
-│   ├── api/            # API client and service definitions
-│   ├── components/     # Reusable UI components (Navigation, Layouts)
-│   ├── features/       # Feature-based modules (Dashboard, Stocks)
-│   ├── assets/         # Static assets (images, fonts)
-│   ├── App.tsx         # Root component
-│   ├── main.tsx        # Application entry point
-│   └── index.css       # Global styles and Tailwind directives
-├── public/             # Static public assets
-├── tailwind.config.js  # Tailwind CSS configuration
+│   ├── api/            # Centralized API client (stockApi.ts)
+│   ├── components/     # Shared UI components (Navigation, SyncIndicator)
+│   ├── features/       # Feature-based modules
+│   │   ├── auth/       # Login/Register widgets and user hooks
+│   │   ├── dashboard/  # Main hub: Indices, Funds, Portfolio tabs
+│   │   │   ├── banner/ # Index market banners
+│   │   │   ├── funds/  # Fund analysis charts and selectors
+│   │   │   ├── indices/# Stock tables, growth charts, industry filters
+│   │   │   └── portfolio/ # Portfolio tracking and management
+│   ├── App.tsx         # Root layout and routing
+│   └── main.tsx        # Application entry point
+├── tailwind.config.js  # Tailwind CSS & DaisyUI configuration
 └── package.json        # Project dependencies and scripts
 ```
 
@@ -33,24 +37,19 @@ frontend/
 ### Prerequisites
 
 - Node.js (v18 or higher)
-- npm or yarn
+- npm
 
 ### Installation
 
 1. Navigate to the frontend directory:
-
    ```bash
    cd frontend
    ```
-
 2. Install dependencies:
-
    ```bash
    npm install
    ```
-
-3. Create a `.env` file with the following variable:
-
+3. Create a `.env` file:
    ```env
    VITE_API_URL=http://localhost:8000/api/v1
    ```
@@ -58,24 +57,21 @@ frontend/
 ### Running the Application
 
 Start the development server:
-
 ```bash
 npm run dev
 ```
-
-The application will be available at `http://localhost:5173`.
+Access at: `http://localhost:5173`
 
 ## ✨ Key Features
 
-- **VN-100 Table:** A real-time dashboard displaying the top 100 stocks in the Vietnam market.
-- **Dynamic Navigation:** A clean tab-based navigation system to switch between different market views.
-- **Premium Design:** Modern, responsive UI with dark mode support and glassmorphism elements.
-- **Data Formatting:** Automatically formats market capitalization and ticker symbols for clarity.
+- **Indices Dashboard:** Dynamic index selection (VN30, VN100, etc.), industry-based filtering, and stock bookmarking.
+- **Mutual Fund Explorer:** Visual analysis of fund NAV performance, risk-return profiles, and detailed holding allocations.
+- **Portfolio Tracking:** Manage your stock positions and view real-time performance summaries.
+- **Interactive Visualizations:** Responsive growth charts, volume history, and financial performance popups.
+- **Secure Authentication:** User registration and login to persist bookmarks and portfolio data.
 
 ## 🎨 Design System
 
-The project uses a custom design system based on:
-
-- **Primary Palette:** Professional blues and greens for financial data.
-- **Typography:** Modern sans-serif fonts (Inter/system-default).
-- **Responsive Layout:** Mobile-first approach ensuring accessibility across all devices.
+- **Modern UI:** Clean, glassmorphic design using DaisyUI components.
+- **Dark Mode:** Fully optimized for professional dark theme environments.
+- **Responsive:** Mobile-friendly layouts for market tracking on the go.

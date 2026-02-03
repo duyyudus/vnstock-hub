@@ -128,6 +128,17 @@ class StocksWeeklyPricesResponse(BaseModel):
     is_syncing: bool = False
 
 
+class StockQuotesRequest(BaseModel):
+    """Request model for fetching quotes for multiple stocks."""
+    symbols: List[str]
+
+
+class StockQuotesResponse(BaseModel):
+    """Response model for stock quotes."""
+    stocks: List[StockResponse]
+    count: int
+
+
 @router.get("/index-values", response_model=IndexValuesResponse)
 async def get_index_values():
     """
@@ -245,6 +256,38 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
         ],
         count=len(stocks),
         industry_name=industry_name
+    )
+
+
+@router.post("/quotes", response_model=StockQuotesResponse)
+async def get_stock_quotes(request: StockQuotesRequest):
+    """
+    Get latest quotes for multiple stock symbols.
+    """
+    symbols = [symbol.strip().upper() for symbol in request.symbols if symbol and symbol.strip()]
+    if not symbols:
+        return StockQuotesResponse(stocks=[], count=0)
+    unique_symbols = list(dict.fromkeys(symbols))
+    stocks = await vnstock_service.get_symbol_stocks(unique_symbols)
+    return StockQuotesResponse(
+        stocks=[
+            StockResponse(
+                ticker=stock.ticker,
+                price=stock.price,
+                market_cap=stock.market_cap,
+                company_name=stock.company_name,
+                exchange=stock.exchange,
+                charter_capital=stock.charter_capital,
+                pe_ratio=stock.pe_ratio,
+                accumulated_value=stock.accumulated_value,
+                price_change_24h=stock.price_change_24h,
+                price_change_1w=stock.price_change_1w,
+                price_change_1m=stock.price_change_1m,
+                price_change_1y=stock.price_change_1y
+            )
+            for stock in stocks
+        ],
+        count=len(stocks)
     )
 
 
