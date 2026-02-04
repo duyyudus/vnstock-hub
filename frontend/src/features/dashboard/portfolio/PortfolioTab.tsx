@@ -63,6 +63,22 @@ export const PortfolioTab: React.FC = () => {
         };
     }, []);
 
+    const totalMarketValue = useMemo(() => {
+        let total = 0;
+        let pricedCount = 0;
+
+        positions.forEach((position) => {
+            const quote = quotes[position.ticker.toUpperCase()];
+            const price = quote?.price;
+            if (typeof price === 'number' && Number.isFinite(price)) {
+                total += position.quantity * price;
+                pricedCount += 1;
+            }
+        });
+
+        return { total, pricedCount };
+    }, [positions, quotes]);
+
     const resetAddForm = () => {
         setAddFormState(emptyFormState);
         setAddFormError(null);
@@ -303,6 +319,14 @@ export const PortfolioTab: React.FC = () => {
                                     Updating prices...
                                 </span>
                             )}
+                        </div>
+                        <div className="text-right">
+                            <div className="text-xs text-base-content/60">Total Market Value</div>
+                            <div className="text-lg font-semibold text-base-content">
+                                {totalMarketValue.pricedCount > 0
+                                    ? `${formatNumber(totalMarketValue.total, { maximumFractionDigits: 2 })} VND`
+                                    : '--'}
+                            </div>
                         </div>
                     </div>
 
