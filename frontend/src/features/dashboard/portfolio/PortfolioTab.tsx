@@ -149,7 +149,8 @@ export const PortfolioTab: React.FC = () => {
 
         const ticker = addFormState.ticker.trim().toUpperCase();
         const quantity = Number(addFormState.quantity);
-        const averageCost = Number(addFormState.averageCost);
+        const averageCostValue = addFormState.averageCost.trim();
+        const averageCost = averageCostValue ? Number(averageCostValue) : null;
         const purchaseDate = addFormState.purchaseDate.trim();
 
         if (!ticker) {
@@ -160,8 +161,8 @@ export const PortfolioTab: React.FC = () => {
             setAddFormError('Quantity must be greater than zero.');
             return;
         }
-        if (!Number.isFinite(averageCost) || averageCost <= 0) {
-            setAddFormError('Average cost must be greater than zero.');
+        if (averageCostValue && (!Number.isFinite(averageCost) || averageCost <= 0)) {
+            setAddFormError('Average cost must be greater than zero when provided.');
             return;
         }
         setAddFormLoading(true);
@@ -187,7 +188,7 @@ export const PortfolioTab: React.FC = () => {
         setEditFormState({
             ticker: position.ticker,
             quantity: String(position.quantity),
-            averageCost: String(position.average_cost),
+            averageCost: position.average_cost !== null ? String(position.average_cost) : '',
             purchaseDate: position.purchase_date ? position.purchase_date.slice(0, 10) : '',
         });
     };
@@ -197,15 +198,16 @@ export const PortfolioTab: React.FC = () => {
         setEditFormError(null);
 
         const quantity = Number(editFormState.quantity);
-        const averageCost = Number(editFormState.averageCost);
+        const averageCostValue = editFormState.averageCost.trim();
+        const averageCost = averageCostValue ? Number(averageCostValue) : null;
         const purchaseDate = editFormState.purchaseDate.trim();
 
         if (!Number.isFinite(quantity) || quantity <= 0) {
             setEditFormError('Quantity must be greater than zero.');
             return;
         }
-        if (!Number.isFinite(averageCost) || averageCost <= 0) {
-            setEditFormError('Average cost must be greater than zero.');
+        if (averageCostValue && (!Number.isFinite(averageCost) || averageCost <= 0)) {
+            setEditFormError('Average cost must be greater than zero when provided.');
             return;
         }
 
@@ -342,14 +344,18 @@ export const PortfolioTab: React.FC = () => {
                                         const quantity = isEditing && Number.isFinite(parsedQuantity) && parsedQuantity > 0
                                             ? parsedQuantity
                                             : position.quantity;
-                                        const averageCost = isEditing && Number.isFinite(parsedAverageCost) && parsedAverageCost > 0
-                                            ? parsedAverageCost
-                                            : position.average_cost;
+                                        const averageCost = isEditing
+                                            ? (editFormState.averageCost.trim() === ''
+                                                ? null
+                                                : (Number.isFinite(parsedAverageCost) && parsedAverageCost > 0 ? parsedAverageCost : null))
+                                            : (typeof position.average_cost === 'number' && Number.isFinite(position.average_cost) && position.average_cost > 0
+                                                ? position.average_cost
+                                                : null);
                                         const quote = quotes[position.ticker.toUpperCase()];
                                         const price = quote?.price ?? null;
-                                        const costBasis = quantity * averageCost;
+                                        const costBasis = averageCost !== null ? quantity * averageCost : null;
                                         const marketValue = price !== null ? quantity * price : null;
-                                        const pnl = price !== null ? marketValue! - costBasis : null;
+                                        const pnl = price !== null && costBasis !== null ? marketValue! - costBasis : null;
                                         const pnlPercent = pnl !== null && costBasis > 0 ? (pnl / costBasis) * 100 : null;
                                         const pnlClassName = pnl === null
                                             ? 'text-base-content/50'
@@ -389,7 +395,9 @@ export const PortfolioTab: React.FC = () => {
                                                             onKeyDown={(event) => handleEditKeyDown(event, position)}
                                                         />
                                                     ) : (
-                                                        formatNumber(position.average_cost, { maximumFractionDigits: 2 })
+                                                        position.average_cost !== null
+                                                            ? formatNumber(position.average_cost, { maximumFractionDigits: 2 })
+                                                            : '--'
                                                     )}
                                                 </td>
                                                 <td>

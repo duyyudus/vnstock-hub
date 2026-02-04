@@ -147,7 +147,7 @@ class PortfolioPosition(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     ticker = Column(String(10), nullable=False)
     quantity = Column(Float, nullable=False)
-    average_cost = Column(Float, nullable=False)
+    average_cost = Column(Float, nullable=True)
     purchase_date = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

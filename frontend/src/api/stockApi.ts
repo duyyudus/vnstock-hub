@@ -437,7 +437,7 @@ export interface PortfolioPosition {
     id: number;
     ticker: string;
     quantity: number;
-    average_cost: number;
+    average_cost: number | null;
     purchase_date: string | null;
     created_at: string | null;
     updated_at: string | null;
@@ -451,13 +451,13 @@ export interface PortfolioPositionsResponse {
 export interface PortfolioPositionCreateRequest {
     ticker: string;
     quantity: number;
-    average_cost: number;
+    average_cost?: number | null;
     purchase_date?: string | null;
 }
 
 export interface PortfolioPositionUpdateRequest {
     quantity?: number;
-    average_cost?: number;
+    average_cost?: number | null;
     purchase_date?: string | null;
 }
 

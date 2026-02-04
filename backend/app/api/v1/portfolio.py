@@ -18,7 +18,7 @@ class PortfolioPositionResponse(BaseModel):
     id: int
     ticker: str
     quantity: float
-    average_cost: float
+    average_cost: Optional[float] = None
     purchase_date: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -32,7 +32,7 @@ class PortfolioPositionsResponse(BaseModel):
 class PortfolioPositionCreateRequest(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=10)
     quantity: float = Field(..., gt=0)
-    average_cost: float = Field(..., gt=0)
+    average_cost: Optional[float] = Field(None, gt=0)
     purchase_date: Optional[date] = None
 
 
@@ -132,8 +132,6 @@ async def update_position(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
         position.quantity = payload.quantity
     if 'average_cost' in payload.__fields_set__:
-        if payload.average_cost is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Average cost must be greater than zero")
         position.average_cost = payload.average_cost
     if 'purchase_date' in payload.__fields_set__:
         position.purchase_date = payload.purchase_date
