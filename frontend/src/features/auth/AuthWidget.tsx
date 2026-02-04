@@ -53,8 +53,7 @@ export const AuthWidget: React.FC = () => {
             const response = mode === 'login'
                 ? await stockApi.login({ email, password })
                 : await stockApi.register({ email, password });
-            authStorage.setToken(response.access_token);
-            authStorage.setUser(response.user);
+            authStorage.setSession(response.access_token, response.user, response.expires_in);
             closeModal();
         } catch (err) {
             setError(getErrorMessage(err));

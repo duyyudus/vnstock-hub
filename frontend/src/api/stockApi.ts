@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const AUTH_TOKEN_KEY = 'vnstock_auth_token';
 const AUTH_USER_KEY = 'vnstock_auth_user';
+const AUTH_EXPIRES_AT_KEY = 'vnstock_auth_expires_at';
 export const AUTH_EVENT = 'vnstock:auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -21,6 +22,84 @@ const getStoredToken = () => {
     return window.localStorage.getItem(AUTH_TOKEN_KEY);
 };
 
+const decodeBase64Url = (value: string) => {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = normalized.length % 4;
+    const padded = padding ? `${normalized}${'='.repeat(4 - padding)}` : normalized;
+    return window.atob(padded);
+};
+
+const parseJwtPayload = (token: string) => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const parts = token.split('.');
+    if (parts.length < 2) {
+        return null;
+    }
+    try {
+        return JSON.parse(decodeBase64Url(parts[1])) as { exp?: number };
+    } catch {
+        return null;
+    }
+};
+
+const getAuthExpiresAtMs = () => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const raw = window.localStorage.getItem(AUTH_EXPIRES_AT_KEY);
+    if (raw) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    const token = getStoredToken();
+    if (!token) {
+        return null;
+    }
+    const payload = parseJwtPayload(token);
+    if (payload?.exp) {
+        const expiresAt = payload.exp * 1000;
+        if (Number.isFinite(expiresAt)) {
+            window.localStorage.setItem(AUTH_EXPIRES_AT_KEY, String(expiresAt));
+            return expiresAt;
+        }
+    }
+    return null;
+};
+
+let logoutTimerId: number | null = null;
+
+const clearLogoutTimer = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    if (logoutTimerId !== null) {
+        window.clearTimeout(logoutTimerId);
+        logoutTimerId = null;
+    }
+};
+
+const scheduleLogout = (expiresAtMs: number | null) => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    clearLogoutTimer();
+    if (!expiresAtMs) {
+        return;
+    }
+    const remainingMs = expiresAtMs - Date.now();
+    if (remainingMs <= 0) {
+        authStorage.clearAll();
+        return;
+    }
+    logoutTimerId = window.setTimeout(() => {
+        authStorage.clearAll();
+    }, remainingMs);
+};
+
 const notifyAuthChange = () => {
     if (typeof window === 'undefined') {
         return;
@@ -32,11 +111,28 @@ export const authStorage = {
     getToken() {
         return getStoredToken();
     },
+    getExpiresAt() {
+        return getAuthExpiresAtMs();
+    },
     setToken(token: string) {
         if (typeof window === 'undefined') {
             return;
         }
         window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+        window.localStorage.removeItem(AUTH_EXPIRES_AT_KEY);
+        const expiresAt = getAuthExpiresAtMs();
+        scheduleLogout(expiresAt);
+        notifyAuthChange();
+    },
+    setSession(token: string, user: AuthUser, expiresInSeconds: number) {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        const expiresAt = Date.now() + expiresInSeconds * 1000;
+        window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        window.localStorage.setItem(AUTH_EXPIRES_AT_KEY, String(expiresAt));
+        scheduleLogout(expiresAt);
         notifyAuthChange();
     },
     clearToken() {
@@ -44,6 +140,8 @@ export const authStorage = {
             return;
         }
         window.localStorage.removeItem(AUTH_TOKEN_KEY);
+        window.localStorage.removeItem(AUTH_EXPIRES_AT_KEY);
+        clearLogoutTimer();
         notifyAuthChange();
     },
     getUser() {
@@ -80,6 +178,8 @@ export const authStorage = {
         }
         window.localStorage.removeItem(AUTH_TOKEN_KEY);
         window.localStorage.removeItem(AUTH_USER_KEY);
+        window.localStorage.removeItem(AUTH_EXPIRES_AT_KEY);
+        clearLogoutTimer();
         notifyAuthChange();
     }
 };
@@ -92,6 +192,37 @@ apiClient.interceptors.request.use((config) => {
     }
     return config;
 });
+
+apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error?.response?.status === 401) {
+            authStorage.clearAll();
+        }
+        return Promise.reject(error);
+    }
+);
+
+const primeAuthSession = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    const token = getStoredToken();
+    if (!token) {
+        return;
+    }
+    const expiresAt = getAuthExpiresAtMs();
+    if (!expiresAt) {
+        return;
+    }
+    if (expiresAt <= Date.now()) {
+        authStorage.clearAll();
+        return;
+    }
+    scheduleLogout(expiresAt);
+};
+
+primeAuthSession();
 
 // Stock data types
 export interface Stock {
