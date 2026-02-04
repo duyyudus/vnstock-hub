@@ -10,7 +10,7 @@ from fastapi import UploadFile
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 
-from app.services.portfolio_import.llm_client import LLMProvider, PositionItem, extract_positions
+from app.services.llm.llm_client import LLMProvider, PositionItem, extract_positions
 
 CELL_REF_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)?$")
 
@@ -168,7 +168,12 @@ async def extract_positions_from_rows(
         for item in provider_settings
     ]
 
-    positions = await extract_positions(rows, providers, timeout_seconds)
+    positions = await extract_positions(
+        rows,
+        providers,
+        timeout_seconds,
+        caller="portfolio_import",
+    )
     return [
         PositionItem(
             ticker=position.ticker.strip().upper(),

@@ -78,11 +78,13 @@ async def extract_positions(
     rows: List[List[str]],
     providers: List[LLMProvider],
     timeout_seconds: int,
+    caller: Optional[str] = None,
 ) -> List[PositionItem]:
     if not providers:
         raise ValueError("No LLM providers configured")
 
-    logger = logging.getLogger("vnstock_hub.portfolio_import")
+    logger = logging.getLogger("vnstock_hub.llm")
+    caller_name = caller or "unknown"
     prompt_rows = json.dumps(rows, ensure_ascii=True)
     system_prompt = (
         "You are a data extraction engine. You must return strict JSON only."
@@ -108,7 +110,12 @@ async def extract_positions(
                 raise ValueError(f"Missing API key for provider {provider.name}")
 
             url = _build_chat_url(provider.base_url)
-            logger.info("portfolio_import_llm_call provider=%s model=%s", provider.name, provider.model)
+            logger.info(
+                "llm_call provider=%s model=%s caller=%s",
+                provider.name,
+                provider.model,
+                caller_name,
+            )
             payload = {
                 "model": provider.model,
                 "messages": messages,
@@ -139,15 +146,21 @@ async def extract_positions(
             extraction = ExtractionResult.model_validate(raw_payload)
             positions = _coalesce_positions(extraction)
             logger.info(
-                "portfolio_import_llm_success provider=%s positions=%s trades=%s",
+                "llm_success provider=%s positions=%s trades=%s caller=%s",
                 provider.name,
                 len(extraction.positions),
                 len(extraction.trades),
+                caller_name,
             )
             return positions
         except (httpx.HTTPError, ValidationError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc
-            logger.warning("portfolio_import_llm_failure provider=%s error=%s", provider.name, exc)
+            logger.warning(
+                "llm_failure provider=%s error=%s caller=%s",
+                provider.name,
+                exc,
+                caller_name,
+            )
             continue
 
     if last_error:

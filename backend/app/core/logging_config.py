@@ -16,6 +16,7 @@ LOG_FILE = LOG_DIR / "background_tasks.log"
 MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
+LLM_LOG_FILE = LOG_DIR / "llm.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -26,17 +27,18 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _main_logger = None
 _background_logger = None
 _portfolio_import_logger = None
+_llm_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger, _portfolio_import_logger
+    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
 
     # Truncate log files on startup to ensure fresh logs
-    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE, PORTFOLIO_IMPORT_LOG_FILE]:
+    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE, PORTFOLIO_IMPORT_LOG_FILE, LLM_LOG_FILE]:
         try:
             with open(log_path, 'w') as f:
                 f.truncate(0)
@@ -132,6 +134,22 @@ def setup_logging():
     import_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
     _portfolio_import_logger.addHandler(import_file_handler)
 
+    # === LLM Logger (file only) ===
+    _llm_logger = logging.getLogger("vnstock_hub.llm")
+    _llm_logger.setLevel(logging.DEBUG)
+    _llm_logger.propagate = False
+    _llm_logger.handlers.clear()
+
+    llm_file_handler = RotatingFileHandler(
+        LLM_LOG_FILE,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    llm_file_handler.setLevel(logging.DEBUG)
+    llm_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _llm_logger.addHandler(llm_file_handler)
+
     return _main_logger, _background_logger
 
 
@@ -157,6 +175,14 @@ def get_portfolio_import_logger() -> logging.Logger:
     if _portfolio_import_logger is None:
         setup_logging()
     return _portfolio_import_logger
+
+
+def get_llm_logger() -> logging.Logger:
+    """Get the LLM logger."""
+    global _llm_logger
+    if _llm_logger is None:
+        setup_logging()
+    return _llm_logger
 
 
 def log_background_start(task_name: str, details: str = ""):
