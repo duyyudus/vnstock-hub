@@ -53,6 +53,29 @@ backend/
    uv run alembic upgrade head
    ```
 
+### settings.yaml (Non-environmental config)
+
+Broker import profiles live in `backend/settings.yaml`:
+```yaml
+brokers:
+  - id: vpbanks
+    name: VPBank Securities
+    sheet: Sheet1
+    top_left: A9
+    bottom_right: E
+```
+
+### LLM Provider Configuration (Portfolio Import)
+
+Set `LLM_PROVIDERS` in `.env` as a JSON array (ordered fallback):
+```bash
+LLM_PROVIDERS='[
+  {"name":"gemini","base_url":"https://generativelanguage.googleapis.com/v1beta/openai","api_key":"YOUR_KEY","model":"gpt-4o-mini"},
+  {"name":"openrouter","base_url":"https://openrouter.ai/api/v1","api_key":"YOUR_KEY","model":"openai/gpt-4o-mini"}
+]'
+LLM_REQUEST_TIMEOUT_SECONDS=30
+```
+
 ### Running the Application
 
 Start the development server:

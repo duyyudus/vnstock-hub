@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import json
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -18,6 +19,13 @@ class Settings(BaseSettings):
     # vnstock API
     vnstock_api_key: str | None = None
 
+    # LLM providers (OpenAI-compatible) in JSON list format
+    llm_providers: str = "[]"
+    llm_request_timeout_seconds: int = 30
+
+    # Non-environmental config (YAML)
+    settings_yaml_path: str = str(Path(__file__).resolve().parents[2] / "settings.yaml")
+
     # Auth/JWT
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
@@ -27,6 +35,13 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from JSON string."""
         return json.loads(self.cors_origins)
+
+    @property
+    def llm_providers_list(self) -> List[dict]:
+        """Parse LLM providers from JSON string."""
+        if not self.llm_providers:
+            return []
+        return json.loads(self.llm_providers)
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

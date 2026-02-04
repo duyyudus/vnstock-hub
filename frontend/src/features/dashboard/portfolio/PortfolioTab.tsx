@@ -1,5 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { stockApi, type PortfolioPosition, type Stock } from '../../../api/stockApi';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    stockApi,
+    type PortfolioImportBroker,
+    type PortfolioImportResponse,
+    type PortfolioPosition,
+    type Stock
+} from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
 
 interface FormState {
@@ -46,6 +52,17 @@ export const PortfolioTab: React.FC = () => {
     const [editFormError, setEditFormError] = useState<string | null>(null);
     const [editFormLoading, setEditFormLoading] = useState(false);
     const [editFormState, setEditFormState] = useState<FormState>(emptyFormState);
+    const importDialogRef = useRef<HTMLDialogElement>(null);
+    const [importBrokers, setImportBrokers] = useState<PortfolioImportBroker[]>([]);
+    const [importBrokersLoading, setImportBrokersLoading] = useState(false);
+    const [importBrokerId, setImportBrokerId] = useState('');
+    const [importSheet, setImportSheet] = useState('');
+    const [importTopLeft, setImportTopLeft] = useState('');
+    const [importBottomRight, setImportBottomRight] = useState('');
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importResult, setImportResult] = useState<PortfolioImportResponse | null>(null);
 
     const formatNumber = useMemo(() => {
         return (value: number, options?: Intl.NumberFormatOptions) =>
@@ -88,6 +105,49 @@ export const PortfolioTab: React.FC = () => {
         setEditingId(null);
         setEditFormState(emptyFormState);
         setEditFormError(null);
+    };
+
+    const applyBrokerDefaults = (broker: PortfolioImportBroker) => {
+        setImportBrokerId(broker.id);
+        setImportSheet(broker.sheet ?? '');
+        setImportTopLeft(broker.top_left);
+        setImportBottomRight(broker.bottom_right);
+    };
+
+    const resetImportForm = () => {
+        setImportFile(null);
+        setImportError(null);
+        setImportResult(null);
+    };
+
+    const loadImportBrokers = async () => {
+        if (importBrokersLoading) return;
+        setImportBrokersLoading(true);
+        setImportError(null);
+        try {
+            const response = await stockApi.getPortfolioImportBrokers();
+            setImportBrokers(response);
+            if (response.length > 0) {
+                applyBrokerDefaults(response[0]);
+            }
+        } catch (err) {
+            setImportError(getErrorMessage(err));
+        } finally {
+            setImportBrokersLoading(false);
+        }
+    };
+
+    const openImportDialog = async () => {
+        resetImportForm();
+        if (importBrokers.length === 0) {
+            await loadImportBrokers();
+        }
+        importDialogRef.current?.showModal();
+    };
+
+    const closeImportDialog = () => {
+        importDialogRef.current?.close();
+        resetImportForm();
     };
 
     const fetchPositions = async () => {
@@ -156,6 +216,54 @@ export const PortfolioTab: React.FC = () => {
             ...prev,
             [field]: event.target.value,
         }));
+    };
+
+    const handleImportBrokerChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const value = event.target.value;
+        setImportBrokerId(value);
+        const broker = importBrokers.find((item) => item.id === value);
+        if (broker) {
+            applyBrokerDefaults(broker);
+        }
+    };
+
+    const handleImportSubmit = async () => {
+        if (importLoading) return;
+        setImportError(null);
+        setImportResult(null);
+
+        if (!importFile) {
+            setImportError('Please select a CSV or XLSX file.');
+            return;
+        }
+        if (!importBrokerId) {
+            setImportError('Please select a broker.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', importFile);
+        formData.append('broker_id', importBrokerId);
+        if (importSheet.trim()) {
+            formData.append('sheet', importSheet.trim());
+        }
+        if (importTopLeft.trim()) {
+            formData.append('top_left', importTopLeft.trim());
+        }
+        if (importBottomRight.trim()) {
+            formData.append('bottom_right', importBottomRight.trim());
+        }
+
+        setImportLoading(true);
+        try {
+            const response = await stockApi.importPortfolioPositions(formData);
+            setImportResult(response);
+            await fetchPositions();
+        } catch (err) {
+            setImportError(getErrorMessage(err));
+        } finally {
+            setImportLoading(false);
+        }
     };
 
     const handleAddSubmit = async () => {
@@ -319,6 +427,13 @@ export const PortfolioTab: React.FC = () => {
                                     Updating prices...
                                 </span>
                             )}
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-outline"
+                                onClick={() => openImportDialog()}
+                            >
+                                Import
+                            </button>
                         </div>
                         <div className="text-right">
                             <div className="text-xs text-base-content/60">Total Market Value</div>
@@ -570,6 +685,138 @@ export const PortfolioTab: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            <dialog ref={importDialogRef} className="modal">
+                <div className="modal-box">
+                    <h3 className="font-bold text-lg">Import portfolio positions</h3>
+                    <p className="text-sm text-base-content/70 mt-1">
+                        Upload a broker export and select the crop range to extract trades or positions.
+                    </p>
+
+                    <div className="mt-4 space-y-4">
+                        {importBrokersLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-base-content/60">
+                                <span className="loading loading-spinner loading-sm"></span>
+                                Loading broker profiles...
+                            </div>
+                        ) : (
+                            <>
+                                <label className="form-control w-full">
+                                    <div className="label">
+                                        <span className="label-text">Broker</span>
+                                    </div>
+                                    <select
+                                        className="select select-bordered w-full"
+                                        value={importBrokerId}
+                                        onChange={handleImportBrokerChange}
+                                    >
+                                        <option value="" disabled>Select a broker</option>
+                                        {importBrokers.map((broker) => (
+                                            <option key={broker.id} value={broker.id}>
+                                                {broker.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                <label className="form-control w-full">
+                                    <div className="label">
+                                        <span className="label-text">File</span>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        accept=".csv,.xlsx"
+                                        className="file-input file-input-bordered w-full"
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0] ?? null;
+                                            setImportFile(file);
+                                        }}
+                                    />
+                                </label>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <label className="form-control w-full">
+                                        <div className="label">
+                                            <span className="label-text">Sheet</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered w-full"
+                                            placeholder="Sheet1"
+                                            value={importSheet}
+                                            onChange={(event) => setImportSheet(event.target.value)}
+                                        />
+                                    </label>
+                                    <label className="form-control w-full">
+                                        <div className="label">
+                                            <span className="label-text">Top-left</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered w-full"
+                                            placeholder="A9"
+                                            value={importTopLeft}
+                                            onChange={(event) => setImportTopLeft(event.target.value)}
+                                        />
+                                    </label>
+                                    <label className="form-control w-full">
+                                        <div className="label">
+                                            <span className="label-text">Bottom-right</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered w-full"
+                                            placeholder="E"
+                                            value={importBottomRight}
+                                            onChange={(event) => setImportBottomRight(event.target.value)}
+                                        />
+                                    </label>
+                                </div>
+                                <p className="text-xs text-base-content/60">
+                                    Use column only (e.g., <span className="font-mono">E</span>) for open-ended rows.
+                                </p>
+                            </>
+                        )}
+
+                        {importResult ? (
+                            <div className="alert alert-success text-sm">
+                                <div className="space-y-1">
+                                    <div>
+                                        Imported {importResult.imported_positions.length} ticker
+                                        {importResult.imported_positions.length === 1 ? '' : 's'}.
+                                    </div>
+                                    <div>
+                                        Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {importError ? (
+                            <div className="alert alert-error text-sm">
+                                <span>{importError}</span>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <div className="modal-action">
+                        <button type="button" className="btn btn-ghost" onClick={closeImportDialog}>
+                            Close
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => handleImportSubmit()}
+                            disabled={importLoading || importBrokersLoading}
+                        >
+                            {importLoading ? 'Importing...' : 'Import'}
+                        </button>
+                    </div>
+                </div>
+                <form method="dialog" className="modal-backdrop">
+                    <button onClick={closeImportDialog}>close</button>
+                </form>
+            </dialog>
         </div>
     );
 };

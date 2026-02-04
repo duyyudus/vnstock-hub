@@ -461,6 +461,27 @@ export interface PortfolioPositionUpdateRequest {
     purchase_date?: string | null;
 }
 
+export interface PortfolioImportBroker {
+    id: string;
+    name: string;
+    sheet: string | null;
+    top_left: string;
+    bottom_right: string;
+}
+
+export interface PortfolioImportPosition {
+    ticker: string;
+    quantity: number;
+}
+
+export interface PortfolioImportResponse {
+    imported_positions: PortfolioImportPosition[];
+    created_count: number;
+    updated_count: number;
+    skipped_count: number;
+    positions: PortfolioPosition[];
+}
+
 export interface StockQuotesResponse {
     stocks: Stock[];
     count: number;
@@ -707,6 +728,20 @@ export const stockApi = {
 
     async deletePortfolioPosition(positionId: number): Promise<void> {
         await apiClient.delete(`/portfolio/positions/${positionId}`);
+    },
+
+    async getPortfolioImportBrokers(): Promise<PortfolioImportBroker[]> {
+        const response = await apiClient.get<PortfolioImportBroker[]>('/portfolio/import/brokers');
+        return response.data;
+    },
+
+    async importPortfolioPositions(formData: FormData): Promise<PortfolioImportResponse> {
+        const response = await apiClient.post<PortfolioImportResponse>('/portfolio/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
     },
 
     async getStockQuotes(symbols: string[]): Promise<StockQuotesResponse> {

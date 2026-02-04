@@ -1,5 +1,8 @@
 import pytest
 from httpx import AsyncClient
+import csv
+import io
+import json
 
 
 @pytest.fixture
@@ -138,3 +141,71 @@ async def test_update_and_delete_position(client: AsyncClient, auth_headers):
     list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_portfolio_import_brokers_returns_defaults(client: AsyncClient, auth_headers):
+    response = await client.get("/api/v1/portfolio/import/brokers", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) >= 1
+    assert data[0]["id"] == "vpbanks"
+    assert data[0]["top_left"] == "A9"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_import_missing_inputs(client: AsyncClient, auth_headers):
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers
+    )
+    assert response.status_code == 400
+
+    content = "header1,header2\nvalue1,value2"
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files={"file": ("test.csv", content, "text/csv")},
+        headers=auth_headers
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_portfolio_import_upserts_positions(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import portfolio as portfolio_api
+    from app.services.portfolio_import import import_service
+
+    async def fake_extract_positions_from_rows(rows, providers, timeout_seconds):
+        return [
+            import_service.PositionItem(ticker="TCB", quantity=100),
+            import_service.PositionItem(ticker="VCB", quantity=50),
+        ]
+
+    monkeypatch.setattr(portfolio_api, "extract_positions_from_rows", fake_extract_positions_from_rows)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+
+    rows = [["" for _ in range(5)] for _ in range(8)]
+    rows.append(["TCB", "buy", "100", "2024-01-01", ""])
+    rows.append(["VCB", "buy", "50", "2024-01-02", ""])
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerows(rows)
+
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files={"file": ("import.csv", buffer.getvalue(), "text/csv")},
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 2
+    assert data["updated_count"] == 0
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] == 2

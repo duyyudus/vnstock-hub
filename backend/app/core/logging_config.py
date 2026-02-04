@@ -15,6 +15,7 @@ LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 LOG_FILE = LOG_DIR / "background_tasks.log"
 MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
+PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -24,17 +25,18 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Module-level logger references
 _main_logger = None
 _background_logger = None
+_portfolio_import_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger
+    global _main_logger, _background_logger, _portfolio_import_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
 
     # Truncate log files on startup to ensure fresh logs
-    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE]:
+    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE, PORTFOLIO_IMPORT_LOG_FILE]:
         try:
             with open(log_path, 'w') as f:
                 f.truncate(0)
@@ -114,6 +116,22 @@ def setup_logging():
     sqlalchemy_pool_logger.handlers.clear()
     sqlalchemy_pool_logger.addHandler(sqlalchemy_file_handler)
 
+    # === Portfolio Import Logger (file only) ===
+    _portfolio_import_logger = logging.getLogger("vnstock_hub.portfolio_import")
+    _portfolio_import_logger.setLevel(logging.DEBUG)
+    _portfolio_import_logger.propagate = False
+    _portfolio_import_logger.handlers.clear()
+
+    import_file_handler = RotatingFileHandler(
+        PORTFOLIO_IMPORT_LOG_FILE,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    import_file_handler.setLevel(logging.DEBUG)
+    import_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _portfolio_import_logger.addHandler(import_file_handler)
+
     return _main_logger, _background_logger
 
 
@@ -131,6 +149,14 @@ def get_background_logger() -> logging.Logger:
     if _background_logger is None:
         setup_logging()
     return _background_logger
+
+
+def get_portfolio_import_logger() -> logging.Logger:
+    """Get the portfolio import logger."""
+    global _portfolio_import_logger
+    if _portfolio_import_logger is None:
+        setup_logging()
+    return _portfolio_import_logger
 
 
 def log_background_start(task_name: str, details: str = ""):
