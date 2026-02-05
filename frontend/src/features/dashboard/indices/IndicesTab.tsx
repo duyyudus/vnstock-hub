@@ -40,6 +40,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [bookmarkLoading, setBookmarkLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [portfolioTickers, setPortfolioTickers] = useState<string[]>([]);
 
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -94,6 +95,30 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
         refreshBookmarkGroups();
     }, [user, refreshBookmarkGroups]);
+
+    useEffect(() => {
+        if (!user) {
+            setPortfolioTickers([]);
+            return;
+        }
+        let isMounted = true;
+        stockApi.getPortfolioPositions()
+            .then((response) => {
+                if (!isMounted) return;
+                const uniqueTickers = Array.from(
+                    new Set(response.positions.map((position) => position.ticker.toUpperCase()))
+                );
+                setPortfolioTickers(uniqueTickers);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+                setPortfolioTickers([]);
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [user]);
 
     useEffect(() => {
         if (selectedBookmarkGroupId && !bookmarkGroups.some(group => group.id === selectedBookmarkGroupId)) {
@@ -293,6 +318,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             <StocksTable
                                 stocks={filteredStocks}
                                 bookmarkGroups={bookmarkGroups}
+                                portfolioTickers={portfolioTickers}
                                 onBookmarksUpdated={handleBookmarksUpdated}
                             />
                         )}

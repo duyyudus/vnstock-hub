@@ -8,6 +8,8 @@ interface StocksTableProps {
     stocks: Stock[];
     /** Bookmark groups for the logged-in user */
     bookmarkGroups?: BookmarkGroup[];
+    /** Tickers in the user's portfolio */
+    portfolioTickers?: string[];
     /** Notify parent to refresh bookmark data */
     onBookmarksUpdated?: (groupId?: number) => void;
 }
@@ -23,6 +25,7 @@ interface SortConfig {
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     bookmarkGroups = [],
+    portfolioTickers = [],
     onBookmarksUpdated,
 }) => {
     const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -55,6 +58,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         });
         return tickers;
     }, [bookmarkGroups]);
+
+    const portfolioTickerSet = useMemo(() => {
+        return new Set(portfolioTickers.map((ticker) => ticker.toUpperCase()));
+    }, [portfolioTickers]);
 
     // Formatters
     const formatPrice = (price: number): string => {
@@ -437,7 +444,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const fullNameWithExchange = stock.exchange 
                                 ? `${stock.exchange} - ${stock.company_name}`
                                 : stock.company_name;
-                            const isBookmarked = isLoggedIn && bookmarkedTickers.has(stock.ticker.toUpperCase());
+                            const normalizedTicker = stock.ticker.toUpperCase();
+                            const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
+                            const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
 
                             return (
                                 <tr key={stock.ticker} className="hover">
@@ -464,7 +473,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     <td className="w-16">
                                         <div className="tooltip tooltip-right" data-tip={fullNameWithExchange}>
                                             <button
-                                                className="font-bold text-primary uppercase cursor-pointer hover:underline focus:outline-none"
+                                                className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
+                                                    isInPortfolio ? 'text-accent' : 'text-primary'
+                                                }`}
                                                 onClick={() => (window as any).onTickerClick?.(stock.ticker, stock.company_name)}
                                                 title={`View financial details for ${stock.ticker}`}
                                             >
