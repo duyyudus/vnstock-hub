@@ -15,6 +15,9 @@ interface FormState {
     purchaseDate: string;
 }
 
+type SortKey = 'ticker' | 'quantity' | 'averageCost' | 'purchaseDate' | 'currentPrice' | 'marketValue' | 'pnl';
+type SortDirection = 'asc' | 'desc';
+
 const emptyFormState: FormState = {
     ticker: '',
     quantity: '',
@@ -63,6 +66,8 @@ export const PortfolioTab: React.FC = () => {
     const [importLoading, setImportLoading] = useState(false);
     const [importError, setImportError] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<PortfolioImportResponse | null>(null);
+    const [sortKey, setSortKey] = useState<SortKey | null>(null);
+    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
     const formatNumber = useMemo(() => {
         return (value: number, options?: Intl.NumberFormatOptions) =>
@@ -95,6 +100,93 @@ export const PortfolioTab: React.FC = () => {
 
         return { total, pricedCount };
     }, [positions, quotes]);
+
+    const handleSort = (key: SortKey) => {
+        const isSameColumn = sortKey === key;
+        const nextDirection: SortDirection = isSameColumn
+            ? (sortDirection === 'asc' ? 'desc' : 'asc')
+            : 'asc';
+
+        setSortKey(key);
+        setSortDirection(nextDirection);
+    };
+
+    const sortedPositions = useMemo(() => {
+        if (!sortKey) {
+            return positions;
+        }
+
+        const getAverageCost = (position: PortfolioPosition) => {
+            if (typeof position.average_cost === 'number' && Number.isFinite(position.average_cost) && position.average_cost > 0) {
+                return position.average_cost;
+            }
+            return null;
+        };
+
+        const getSortValue = (position: PortfolioPosition) => {
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
+            const price = typeof quote?.price === 'number' && Number.isFinite(quote.price) ? quote.price : null;
+            const averageCost = getAverageCost(position);
+            const costBasis = averageCost !== null ? position.quantity * averageCost : null;
+            const marketValue = price !== null ? position.quantity * price : null;
+
+            switch (sortKey) {
+                case 'ticker':
+                    return ticker;
+                case 'quantity':
+                    return position.quantity;
+                case 'averageCost':
+                    return averageCost;
+                case 'purchaseDate':
+                    return position.purchase_date ? position.purchase_date : null;
+                case 'currentPrice':
+                    return price;
+                case 'marketValue':
+                    return marketValue;
+                case 'pnl':
+                    return price !== null && costBasis !== null ? marketValue! - costBasis : null;
+                default:
+                    return null;
+            }
+        };
+
+        const direction = sortDirection === 'asc' ? 1 : -1;
+
+        return [...positions].sort((a, b) => {
+            const aValue = getSortValue(a);
+            const bValue = getSortValue(b);
+
+            if (aValue === null && bValue === null) return 0;
+            if (aValue === null) return 1;
+            if (bValue === null) return -1;
+
+            if (typeof aValue === 'string' && typeof bValue === 'string') {
+                return aValue.localeCompare(bValue) * direction;
+            }
+
+            return (Number(aValue) - Number(bValue)) * direction;
+        });
+    }, [positions, quotes, sortDirection, sortKey]);
+
+    const renderSortHeader = (label: string, key: SortKey) => {
+        const isActive = sortKey === key;
+
+        return (
+            <button
+                type="button"
+                className="flex items-center gap-1 text-left"
+                onClick={() => handleSort(key)}
+            >
+                <span>{label}</span>
+                {isActive && (
+                    <span className="text-[10px] text-base-content/60">
+                        {sortDirection === 'asc' ? '▲' : '▼'}
+                    </span>
+                )}
+            </button>
+        );
+    };
 
     const resetAddForm = () => {
         setAddFormState(emptyFormState);
@@ -485,18 +577,18 @@ export const PortfolioTab: React.FC = () => {
                                 <table className="table table-zebra table-sm">
                                 <thead>
                                     <tr>
-                                        <th>Ticker</th>
-                                        <th>Quantity</th>
-                                        <th>Avg Cost</th>
-                                        <th>Purchase Date</th>
-                                        <th>Current Price</th>
-                                        <th>Market Value</th>
-                                        <th>P&amp;L</th>
+                                        <th>{renderSortHeader('Ticker', 'ticker')}</th>
+                                        <th>{renderSortHeader('Quantity', 'quantity')}</th>
+                                        <th>{renderSortHeader('Avg Cost', 'averageCost')}</th>
+                                        <th>{renderSortHeader('Purchase Date', 'purchaseDate')}</th>
+                                        <th>{renderSortHeader('Current Price', 'currentPrice')}</th>
+                                        <th>{renderSortHeader('Market Value', 'marketValue')}</th>
+                                        <th>{renderSortHeader('P&L', 'pnl')}</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {positions.map((position) => {
+                                    {sortedPositions.map((position) => {
                                         const isEditing = editingId === position.id;
                                         const parsedQuantity = Number(editFormState.quantity);
                                         const parsedAverageCost = Number(editFormState.averageCost);
