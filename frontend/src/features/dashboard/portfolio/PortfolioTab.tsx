@@ -85,6 +85,14 @@ export const PortfolioTab: React.FC = () => {
         };
     }, []);
 
+    const formatSignedNumber = useMemo(() => {
+        return (value: number, options?: Intl.NumberFormatOptions) => {
+            const formatted = formatNumber(Math.abs(value), options);
+            const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+            return `${prefix}${formatted}`;
+        };
+    }, [formatNumber]);
+
     const totalMarketValue = useMemo(() => {
         let total = 0;
         let pricedCount = 0;
@@ -100,6 +108,35 @@ export const PortfolioTab: React.FC = () => {
 
         return { total, pricedCount };
     }, [positions, quotes]);
+
+    const totalNetPnl = useMemo(() => {
+        let total = 0;
+        let pricedCount = 0;
+
+        positions.forEach((position) => {
+            const quote = quotes[position.ticker.toUpperCase()];
+            const price = quote?.price;
+            const averageCost = typeof position.average_cost === 'number'
+                && Number.isFinite(position.average_cost)
+                && position.average_cost > 0
+                ? position.average_cost
+                : null;
+            if (typeof price === 'number' && Number.isFinite(price) && averageCost !== null) {
+                total += position.quantity * (price - averageCost);
+                pricedCount += 1;
+            }
+        });
+
+        return { total, pricedCount };
+    }, [positions, quotes]);
+
+    const totalNetPnlClassName = totalNetPnl.pricedCount === 0
+        ? 'text-base-content/50'
+        : totalNetPnl.total > 0
+            ? 'text-success'
+            : totalNetPnl.total < 0
+                ? 'text-error'
+                : 'text-base-content';
 
     const handleSort = (key: SortKey) => {
         const isSameColumn = sortKey === key;
@@ -549,10 +586,17 @@ export const PortfolioTab: React.FC = () => {
                         </div>
                         <div className="text-right">
                             <div className="text-xs text-base-content/60">Total Market Value</div>
-                            <div className="text-lg font-semibold text-base-content">
-                                {totalMarketValue.pricedCount > 0
-                                    ? `${formatNumber(totalMarketValue.total, { maximumFractionDigits: 2 })} VND`
-                                    : '--'}
+                            <div className="flex items-baseline justify-end gap-3">
+                                <div className={`text-sm font-semibold ${totalNetPnlClassName}`}>
+                                    {totalNetPnl.pricedCount > 0
+                                        ? `Net P&L ${formatSignedNumber(totalNetPnl.total, { maximumFractionDigits: 2 })} VND`
+                                        : 'Net P&L --'}
+                                </div>
+                                <div className="text-lg font-semibold text-base-content">
+                                    {totalMarketValue.pricedCount > 0
+                                        ? `${formatNumber(totalMarketValue.total, { maximumFractionDigits: 2 })} VND`
+                                        : '--'}
+                                </div>
                             </div>
                         </div>
                     </div>
