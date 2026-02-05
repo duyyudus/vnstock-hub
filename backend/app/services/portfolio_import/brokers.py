@@ -14,6 +14,7 @@ class BrokerProfile:
     sheet: Optional[str]
     top_left: str
     bottom_right: str
+    average_cost_multiplier: float
 
 
 def _load_settings_yaml() -> dict:
@@ -45,9 +46,16 @@ def list_brokers() -> List[BrokerProfile]:
         bottom_right = str(item.get("bottom_right", "")).strip()
         sheet = item.get("sheet")
         sheet_value = str(sheet).strip() if sheet is not None else None
+        multiplier_raw = item.get("average_cost_multiplier", 1)
 
         if not broker_id or not name or not top_left or not bottom_right:
             raise ValueError("Broker entries require id, name, top_left, bottom_right")
+        try:
+            average_cost_multiplier = float(multiplier_raw)
+        except (TypeError, ValueError):
+            raise ValueError("average_cost_multiplier must be a number") from None
+        if average_cost_multiplier <= 0:
+            raise ValueError("average_cost_multiplier must be greater than zero")
 
         brokers.append(BrokerProfile(
             id=broker_id,
@@ -55,6 +63,7 @@ def list_brokers() -> List[BrokerProfile]:
             sheet=sheet_value,
             top_left=top_left,
             bottom_right=bottom_right,
+            average_cost_multiplier=average_cost_multiplier,
         ))
 
     return brokers

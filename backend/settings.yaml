@@ -4,3 +4,4 @@ brokers:
     sheet: Sheet1
     top_left: A9
     bottom_right: E
+    average_cost_multiplier: 1000

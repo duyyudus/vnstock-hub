@@ -14,10 +14,13 @@ from app.db.database import get_db
 from app.db.models import PortfolioPosition
 from app.services.portfolio_import import (
     CropSettings,
+    extract_positions_from_image,
     extract_positions_from_rows,
     get_broker,
+    is_image_file,
     list_brokers,
     load_cropped_rows,
+    merge_image_positions,
 )
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -58,11 +61,13 @@ class BrokerProfileResponse(BaseModel):
     sheet: Optional[str]
     top_left: str
     bottom_right: str
+    average_cost_multiplier: float
 
 
 class PortfolioImportPosition(BaseModel):
     ticker: str
-    quantity: float
+    quantity: Optional[float] = None
+    average_cost: Optional[float] = None
 
 
 class PortfolioImportResponse(BaseModel):
@@ -211,6 +216,7 @@ async def list_import_brokers(
             sheet=broker.sheet,
             top_left=broker.top_left,
             bottom_right=broker.bottom_right,
+            average_cost_multiplier=broker.average_cost_multiplier,
         )
         for broker in brokers
     ]
@@ -218,7 +224,7 @@ async def list_import_brokers(
 
 @router.post("/import", response_model=PortfolioImportResponse)
 async def import_portfolio_positions(
-    file: UploadFile | None = File(None),
+    file: List[UploadFile] | None = File(None),
     broker_id: str | None = Form(None),
     sheet: str | None = Form(None),
     top_left: str | None = Form(None),
@@ -243,38 +249,31 @@ async def import_portfolio_positions(
     if not broker:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown broker")
 
+    files = file
+    if len(files) > 1:
+        non_images = [
+            upload for upload in files
+            if not is_image_file(upload.filename, upload.content_type)
+        ]
+        if non_images:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Multiple files are only supported for image uploads",
+            )
+    is_image = is_image_file(files[0].filename, files[0].content_type)
     crop_settings = CropSettings(
         sheet=sheet or broker.sheet,
         top_left=top_left or broker.top_left,
         bottom_right=bottom_right or broker.bottom_right,
     )
     import_logger.info(
-        "portfolio_import_start user_id=%s broker=%s filename=%s sheet=%s top_left=%s bottom_right=%s",
+        "portfolio_import_start user_id=%s broker=%s files=%s sheet=%s top_left=%s bottom_right=%s",
         current_user.id,
         broker.id,
-        file.filename,
+        [upload.filename for upload in files],
         crop_settings.sheet,
         crop_settings.top_left,
         crop_settings.bottom_right,
-    )
-
-    try:
-        rows = await load_cropped_rows(file, crop_settings)
-    except ValueError as exc:
-        import_logger.error("portfolio_import_crop_error user_id=%s error=%s", current_user.id, exc)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    if not rows:
-        import_logger.warning("portfolio_import_no_rows user_id=%s", current_user.id)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No data found in the cropped range",
-        )
-    import_logger.info(
-        "portfolio_import_rows_loaded user_id=%s rows=%s cols=%s",
-        current_user.id,
-        len(rows),
-        len(rows[0]) if rows else 0,
     )
 
     try:
@@ -292,66 +291,192 @@ async def import_portfolio_positions(
             detail="LLM providers are not configured",
         )
 
-    try:
-        extracted_positions = await extract_positions_from_rows(
-            rows,
-            providers,
-            settings.llm_request_timeout_seconds,
-        )
-    except Exception as exc:
-        import_logger.error("portfolio_import_llm_error user_id=%s error=%s", current_user.id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unable to extract positions: {exc}",
-        ) from exc
-
-    if not extracted_positions:
-        import_logger.warning("portfolio_import_llm_empty user_id=%s", current_user.id)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="LLM did not return any positions",
-        )
-    import_logger.info(
-        "portfolio_import_llm_positions user_id=%s positions=%s",
-        current_user.id,
-        len(extracted_positions),
-    )
-
-    tickers = [position.ticker.strip().upper() for position in extracted_positions]
-    existing_result = await db.execute(
-        select(PortfolioPosition).where(
-            PortfolioPosition.user_id == current_user.id,
-            PortfolioPosition.ticker.in_(tickers)
-        )
-    )
-    existing_positions = {position.ticker.upper(): position for position in existing_result.scalars().all()}
-
     created_count = 0
     updated_count = 0
     skipped_count = 0
     imported_positions: List[PortfolioImportPosition] = []
 
-    for position in extracted_positions:
-        ticker = position.ticker.strip().upper()
-        quantity = float(position.quantity)
-        if not ticker or quantity <= 0:
-            skipped_count += 1
-            continue
-        imported_positions.append(PortfolioImportPosition(ticker=ticker, quantity=quantity))
+    if is_image:
+        aggregated_positions = []
+        for upload in files:
+            try:
+                extracted_positions = await extract_positions_from_image(
+                    upload,
+                    providers,
+                    settings.llm_request_timeout_seconds,
+                )
+            except Exception as exc:
+                import_logger.error(
+                    "portfolio_import_llm_error user_id=%s error=%s filename=%s",
+                    current_user.id,
+                    exc,
+                    upload.filename,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Unable to extract positions: {exc}",
+                ) from exc
 
-        existing = existing_positions.get(ticker)
-        if existing:
-            existing.quantity = quantity
-            updated_count += 1
-        else:
-            db.add(PortfolioPosition(
-                user_id=current_user.id,
-                ticker=ticker,
-                quantity=quantity,
-                average_cost=None,
-                purchase_date=None,
-            ))
-            created_count += 1
+            if not extracted_positions:
+                import_logger.warning(
+                    "portfolio_import_llm_empty user_id=%s filename=%s",
+                    current_user.id,
+                    upload.filename,
+                )
+                continue
+            aggregated_positions.extend(extracted_positions)
+
+        if not aggregated_positions:
+            import_logger.warning("portfolio_import_llm_empty user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="LLM did not return any positions",
+            )
+
+        scaled_positions = [
+            position.__class__(
+                ticker=position.ticker,
+                average_cost=position.average_cost * broker.average_cost_multiplier,
+                quantity=position.quantity,
+            )
+            for position in aggregated_positions
+        ]
+        merged_positions, conflict_count = merge_image_positions(scaled_positions)
+        if conflict_count:
+            skipped_count += conflict_count
+
+        if not merged_positions:
+            import_logger.warning("portfolio_import_llm_empty user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="LLM did not return any positions",
+            )
+
+        import_logger.info(
+            "portfolio_import_llm_positions user_id=%s positions=%s mode=image files=%s",
+            current_user.id,
+            len(merged_positions),
+            len(files),
+        )
+
+        tickers = [position.ticker.strip().upper() for position in merged_positions]
+        existing_result = await db.execute(
+            select(PortfolioPosition).where(
+                PortfolioPosition.user_id == current_user.id,
+                PortfolioPosition.ticker.in_(tickers)
+            )
+        )
+        existing_positions = {position.ticker.upper(): position for position in existing_result.scalars().all()}
+
+        for position in merged_positions:
+            ticker = position.ticker.strip().upper()
+            average_cost = float(position.average_cost)
+            quantity = float(position.quantity) if position.quantity is not None else None
+            if not ticker or average_cost <= 0:
+                skipped_count += 1
+                continue
+
+            imported_positions.append(
+                PortfolioImportPosition(
+                    ticker=ticker,
+                    quantity=quantity,
+                    average_cost=average_cost,
+                )
+            )
+
+            existing = existing_positions.get(ticker)
+            if existing:
+                existing.average_cost = average_cost
+                if quantity is not None and quantity > 0:
+                    existing.quantity = quantity
+                updated_count += 1
+            else:
+                if quantity is None or quantity <= 0:
+                    skipped_count += 1
+                    continue
+                db.add(PortfolioPosition(
+                    user_id=current_user.id,
+                    ticker=ticker,
+                    quantity=quantity,
+                    average_cost=average_cost,
+                    purchase_date=None,
+                ))
+                created_count += 1
+    else:
+        try:
+            rows = await load_cropped_rows(files[0], crop_settings)
+        except ValueError as exc:
+            import_logger.error("portfolio_import_crop_error user_id=%s error=%s", current_user.id, exc)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        if not rows:
+            import_logger.warning("portfolio_import_no_rows user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No data found in the cropped range",
+            )
+        import_logger.info(
+            "portfolio_import_rows_loaded user_id=%s rows=%s cols=%s",
+            current_user.id,
+            len(rows),
+            len(rows[0]) if rows else 0,
+        )
+
+        try:
+            extracted_positions = await extract_positions_from_rows(
+                rows,
+                providers,
+                settings.llm_request_timeout_seconds,
+            )
+        except Exception as exc:
+            import_logger.error("portfolio_import_llm_error user_id=%s error=%s", current_user.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unable to extract positions: {exc}",
+            ) from exc
+
+        if not extracted_positions:
+            import_logger.warning("portfolio_import_llm_empty user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="LLM did not return any positions",
+            )
+        import_logger.info(
+            "portfolio_import_llm_positions user_id=%s positions=%s",
+            current_user.id,
+            len(extracted_positions),
+        )
+
+        tickers = [position.ticker.strip().upper() for position in extracted_positions]
+        existing_result = await db.execute(
+            select(PortfolioPosition).where(
+                PortfolioPosition.user_id == current_user.id,
+                PortfolioPosition.ticker.in_(tickers)
+            )
+        )
+        existing_positions = {position.ticker.upper(): position for position in existing_result.scalars().all()}
+
+        for position in extracted_positions:
+            ticker = position.ticker.strip().upper()
+            quantity = float(position.quantity)
+            if not ticker or quantity <= 0:
+                skipped_count += 1
+                continue
+            imported_positions.append(PortfolioImportPosition(ticker=ticker, quantity=quantity))
+
+            existing = existing_positions.get(ticker)
+            if existing:
+                existing.quantity = quantity
+                updated_count += 1
+            else:
+                db.add(PortfolioPosition(
+                    user_id=current_user.id,
+                    ticker=ticker,
+                    quantity=quantity,
+                    average_cost=None,
+                    purchase_date=None,
+                ))
+                created_count += 1
 
     await db.commit()
 

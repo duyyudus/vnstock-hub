@@ -59,7 +59,7 @@ export const PortfolioTab: React.FC = () => {
     const [importSheet, setImportSheet] = useState('');
     const [importTopLeft, setImportTopLeft] = useState('');
     const [importBottomRight, setImportBottomRight] = useState('');
-    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importFiles, setImportFiles] = useState<File[]>([]);
     const [importLoading, setImportLoading] = useState(false);
     const [importError, setImportError] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<PortfolioImportResponse | null>(null);
@@ -115,7 +115,7 @@ export const PortfolioTab: React.FC = () => {
     };
 
     const resetImportForm = () => {
-        setImportFile(null);
+        setImportFiles([]);
         setImportError(null);
         setImportResult(null);
     };
@@ -232,9 +232,27 @@ export const PortfolioTab: React.FC = () => {
         setImportError(null);
         setImportResult(null);
 
-        if (!importFile) {
-            setImportError('Please select a CSV or XLSX file.');
+        if (importFiles.length === 0) {
+            setImportError('Please select a CSV, XLSX, or image file.');
             return;
+        }
+        const isImageFile = (candidate: File) => {
+            if (candidate.type.startsWith('image/')) return true;
+            return /\.(png|jpe?g|webp)$/i.test(candidate.name);
+        };
+        const isSpreadsheetFile = (candidate: File) => /\.(csv|xlsx)$/i.test(candidate.name);
+        if (importFiles.length > 1) {
+            const nonImages = importFiles.filter((candidate) => !isImageFile(candidate));
+            if (nonImages.length > 0) {
+                setImportError('When selecting multiple files, all must be images.');
+                return;
+            }
+        } else if (importFiles.length === 1) {
+            const single = importFiles[0];
+            if (!isImageFile(single) && !isSpreadsheetFile(single)) {
+                setImportError('Please select a CSV, XLSX, or image file.');
+                return;
+            }
         }
         if (!importBrokerId) {
             setImportError('Please select a broker.');
@@ -242,7 +260,9 @@ export const PortfolioTab: React.FC = () => {
         }
 
         const formData = new FormData();
-        formData.append('file', importFile);
+        importFiles.forEach((upload) => {
+            formData.append('file', upload);
+        });
         formData.append('broker_id', importBrokerId);
         if (importSheet.trim()) {
             formData.append('sheet', importSheet.trim());
@@ -690,7 +710,7 @@ export const PortfolioTab: React.FC = () => {
                 <div className="modal-box">
                     <h3 className="font-bold text-lg">Import portfolio positions</h3>
                     <p className="text-sm text-base-content/70 mt-1">
-                        Upload a broker export and select the crop range to extract trades or positions.
+                        Upload a broker export or one or more screenshots; crop fields are ignored for images.
                     </p>
 
                     <div className="mt-4 space-y-4">
@@ -725,11 +745,12 @@ export const PortfolioTab: React.FC = () => {
                                     </div>
                                     <input
                                         type="file"
-                                        accept=".csv,.xlsx"
+                                        accept=".csv,.xlsx,.png,.jpg,.jpeg,.webp"
+                                        multiple
                                         className="file-input file-input-bordered w-full"
                                         onChange={(event) => {
-                                            const file = event.target.files?.[0] ?? null;
-                                            setImportFile(file);
+                                            const files = Array.from(event.target.files ?? []);
+                                            setImportFiles(files);
                                         }}
                                     />
                                 </label>

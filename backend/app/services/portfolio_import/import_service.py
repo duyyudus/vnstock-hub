@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 from datetime import date, datetime
 from typing import List, Optional, Tuple
@@ -10,9 +11,16 @@ from fastapi import UploadFile
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 
-from app.services.llm.llm_client import LLMProvider, PositionItem, extract_positions
+from app.services.llm.llm_client import (
+    ImagePositionItem,
+    LLMProvider,
+    PositionItem,
+    extract_positions,
+    extract_positions_from_image as llm_extract_positions_from_image,
+)
 
 CELL_REF_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)?$")
+SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 class CropSettings(BaseModel):
@@ -134,6 +142,36 @@ def _read_xlsx_bytes(data: bytes, sheet: Optional[str]) -> List[List[str]]:
     return rows
 
 
+def is_image_file(filename: Optional[str], content_type: Optional[str] = None) -> bool:
+    if content_type and content_type.startswith("image/"):
+        return True
+    if not filename:
+        return False
+    extension = os.path.splitext(filename)[1].lower()
+    return extension in SUPPORTED_IMAGE_EXTENSIONS
+
+
+def _infer_image_mime_type(filename: Optional[str]) -> str:
+    if not filename:
+        return "image/png"
+    extension = os.path.splitext(filename)[1].lower()
+    if extension in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if extension == ".webp":
+        return "image/webp"
+    return "image/png"
+
+
+async def load_image_bytes(file: UploadFile) -> tuple[bytes, str]:
+    data = await file.read()
+    mime_type = ""
+    if file.content_type and file.content_type.startswith("image/"):
+        mime_type = file.content_type
+    if not mime_type:
+        mime_type = _infer_image_mime_type(file.filename)
+    return data, mime_type
+
+
 async def load_cropped_rows(
     file: UploadFile,
     crop: CropSettings,
@@ -153,12 +191,8 @@ async def load_cropped_rows(
     return _crop_rows(rows, crop.top_left, crop.bottom_right)
 
 
-async def extract_positions_from_rows(
-    rows: List[List[str]],
-    provider_settings: List[dict],
-    timeout_seconds: int,
-) -> List[PositionItem]:
-    providers = [
+def _build_providers(provider_settings: List[dict]) -> List[LLMProvider]:
+    return [
         LLMProvider(
             name=item.get("name", "provider"),
             base_url=item.get("base_url", ""),
@@ -167,6 +201,69 @@ async def extract_positions_from_rows(
         )
         for item in provider_settings
     ]
+
+
+def merge_image_positions(
+    positions: List[ImagePositionItem],
+) -> tuple[List[ImagePositionItem], int]:
+    normalized: dict[str, ImagePositionItem] = {}
+    conflicted: set[str] = set()
+
+    for item in positions:
+        ticker = item.ticker.strip().upper()
+        if not ticker:
+            continue
+        try:
+            average_cost = float(item.average_cost)
+        except (TypeError, ValueError):
+            continue
+        if average_cost <= 0:
+            continue
+        quantity: Optional[float] = None
+        if item.quantity is not None:
+            try:
+                quantity = float(item.quantity)
+            except (TypeError, ValueError):
+                quantity = None
+            if quantity is not None and quantity <= 0:
+                quantity = None
+
+        average_cost = round(average_cost, 4)
+        if quantity is not None:
+            quantity = round(quantity, 4)
+
+        existing = normalized.get(ticker)
+        if existing:
+            if existing.average_cost != average_cost:
+                conflicted.add(ticker)
+                continue
+            if existing.quantity is not None and quantity is not None and existing.quantity != quantity:
+                conflicted.add(ticker)
+                continue
+            if existing.quantity is None and quantity is not None:
+                existing.quantity = quantity
+            continue
+
+        normalized[ticker] = ImagePositionItem(
+            ticker=ticker,
+            average_cost=average_cost,
+            quantity=quantity,
+        )
+
+    for ticker in conflicted:
+        normalized.pop(ticker, None)
+
+    result = list(normalized.values())
+    result.sort(key=lambda item: item.ticker)
+    return result, len(conflicted)
+
+
+async def extract_positions_from_rows(
+    rows: List[List[str]],
+    provider_settings: List[dict],
+    timeout_seconds: int,
+) -> List[PositionItem]:
+    providers = _build_providers(provider_settings)
 
     positions = await extract_positions(
         rows,
@@ -181,3 +278,19 @@ async def extract_positions_from_rows(
         )
         for position in positions
     ]
+
+
+async def extract_positions_from_image(
+    file: UploadFile,
+    provider_settings: List[dict],
+    timeout_seconds: int,
+) -> List[ImagePositionItem]:
+    providers = _build_providers(provider_settings)
+    image_bytes, mime_type = await load_image_bytes(file)
+    return await llm_extract_positions_from_image(
+        image_bytes,
+        mime_type,
+        providers,
+        timeout_seconds,
+        caller="portfolio_import",
+    )

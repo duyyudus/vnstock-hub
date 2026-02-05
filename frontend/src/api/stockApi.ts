@@ -467,11 +467,13 @@ export interface PortfolioImportBroker {
     sheet: string | null;
     top_left: string;
     bottom_right: string;
+    average_cost_multiplier?: number;
 }
 
 export interface PortfolioImportPosition {
     ticker: string;
-    quantity: number;
+    quantity?: number | null;
+    average_cost?: number | null;
 }
 
 export interface PortfolioImportResponse {
