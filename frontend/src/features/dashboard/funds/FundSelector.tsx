@@ -18,14 +18,27 @@ interface FundSelectorProps {
     loading?: boolean;
 }
 
-/**
- * Dropdown selector for choosing which fund to display.
- */
-export const FundSelector: React.FC<FundSelectorProps> = ({
+const GROUP_ORDER = ['Quỹ cổ phiếu', 'Quỹ trái phiếu', 'Quỹ cân bằng'] as const;
+
+const GROUP_LABELS: Record<string, string> = {
+    'Quỹ cổ phiếu': 'Stock Funds',
+    'Quỹ trái phiếu': 'Bond Funds',
+    'Quỹ cân bằng': 'Balanced Funds',
+    OTHER: 'Other Funds',
+};
+
+interface FundGroupSelectorProps {
+    label: string;
+    funds: FundInfo[];
+    selectedFund: string | null;
+    onFundChange: (symbol: string) => void;
+}
+
+const FundGroupSelector: React.FC<FundGroupSelectorProps> = ({
+    label,
     funds,
     selectedFund,
     onFundChange,
-    loading = false,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isFocused, setIsFocused] = useState(false);
@@ -46,12 +59,6 @@ export const FundSelector: React.FC<FundSelectorProps> = ({
         return funds.find(f => f.symbol === selectedFund);
     }, [funds, selectedFund]);
 
-    // Reset active index when filtered list changes
-    useEffect(() => {
-        setActiveIndex(-1);
-    }, [filteredFunds]);
-
-    // Scroll active item into view
     useEffect(() => {
         if (activeIndex >= 0 && listRef.current) {
             const activeItem = listRef.current.querySelector(`[data-index="${activeIndex}"]`);
@@ -67,6 +74,7 @@ export const FundSelector: React.FC<FundSelectorProps> = ({
     const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(event.target.value);
         setIsFocused(true);
+        setActiveIndex(-1);
     };
 
     const handleSelect = (symbol: string) => {
@@ -93,7 +101,6 @@ export const FundSelector: React.FC<FundSelectorProps> = ({
                 if (activeIndex >= 0) {
                     handleSelect(filteredFunds[activeIndex].symbol);
                 } else if (filteredFunds.length > 0) {
-                    // If no index is focused but we hit enter, select the first one
                     handleSelect(filteredFunds[0].symbol);
                 }
                 break;
@@ -104,42 +111,34 @@ export const FundSelector: React.FC<FundSelectorProps> = ({
         }
     };
 
-    if (loading) {
-        return (
-            <div className="flex items-center gap-2">
-                <span className="loading loading-spinner loading-sm"></span>
-                <span className="text-sm">Loading funds...</span>
-            </div>
-        );
-    }
-
     return (
-        <div className="flex flex-col gap-3">
-            <div className="relative w-full max-w-md">
-                {/* Search Input */}
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-xs font-semibold text-base-content/60 uppercase tracking-wide px-1">
+                {label} ({funds.length})
+            </span>
+            <div className="relative w-full">
                 <div className="relative">
                     <input
                         type="text"
-                        placeholder={selectedFund ? `Current: ${selectedFund}` : "Search fund name or symbol..."}
-                        className="input input-bordered w-full pr-10 focus:input-primary"
+                        placeholder={selectedFundInfo ? `Current: ${selectedFundInfo.symbol}` : `Search ${label.toLowerCase()}...`}
+                        className="input input-bordered input-sm w-full pr-8 focus:input-primary"
                         value={searchTerm}
                         onChange={handleSearchChange}
                         onKeyDown={handleKeyDown}
                         onFocus={() => setIsFocused(true)}
                         onBlur={() => setTimeout(() => setIsFocused(false), 200)}
                     />
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-base-content/50">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-base-content/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                         </svg>
                     </div>
                 </div>
 
-                {/* Dropdown Results */}
                 {(isFocused && (searchTerm || isFocused)) && (
                     <div
                         ref={listRef}
-                        className="absolute z-[100] w-full mt-1 bg-base-100 border border-base-300 rounded-box shadow-xl max-h-80 overflow-y-auto"
+                        className="absolute z-[100] w-full mt-1 bg-base-100 border border-base-300 rounded-box shadow-xl max-h-60 overflow-y-auto"
                     >
                         <ul className="menu menu-compact p-2">
                             {filteredFunds.length === 0 ? (
@@ -171,13 +170,67 @@ export const FundSelector: React.FC<FundSelectorProps> = ({
                 )}
             </div>
 
-            {/* Selection indicator if not focused */}
             {!isFocused && selectedFundInfo && (
                 <div className="flex items-center gap-2 text-xs text-base-content/70 px-1">
                     <span className="badge badge-sm badge-outline badge-primary">{selectedFundInfo.symbol}</span>
                     <span className="truncate">{selectedFundInfo.name}</span>
                 </div>
             )}
+        </div>
+    );
+};
+
+/**
+ * Dropdown selector for choosing which fund to display,
+ * grouped by fund type (Stock, Bond, Balanced).
+ */
+export const FundSelector: React.FC<FundSelectorProps> = ({
+    funds,
+    selectedFund,
+    onFundChange,
+    loading = false,
+}) => {
+    const groupedFunds = useMemo(() => {
+        const groups: Record<string, FundInfo[]> = {};
+        for (const fund of funds) {
+            const key = (fund.fund_type && GROUP_ORDER.includes(fund.fund_type as typeof GROUP_ORDER[number]))
+                ? fund.fund_type
+                : 'OTHER';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(fund);
+        }
+        return groups;
+    }, [funds]);
+
+    const orderedKeys = useMemo(() => {
+        const keys: string[] = [];
+        for (const key of GROUP_ORDER) {
+            if (groupedFunds[key]?.length) keys.push(key);
+        }
+        if (groupedFunds['OTHER']?.length) keys.push('OTHER');
+        return keys;
+    }, [groupedFunds]);
+
+    if (loading) {
+        return (
+            <div className="flex items-center gap-2">
+                <span className="loading loading-spinner loading-sm"></span>
+                <span className="text-sm">Loading funds...</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-row gap-4 w-full">
+            {orderedKeys.map((key) => (
+                <FundGroupSelector
+                    key={key}
+                    label={GROUP_LABELS[key] || key}
+                    funds={groupedFunds[key]}
+                    selectedFund={selectedFund}
+                    onFundChange={onFundChange}
+                />
+            ))}
         </div>
     );
 };
