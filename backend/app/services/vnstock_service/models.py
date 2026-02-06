@@ -27,4 +27,7 @@ class StockInfo:
     price_change_24h: float | None = None  # Percentage
     price_change_1w: float | None = None  # Percentage
     price_change_1m: float | None = None  # Percentage
+    price_change_6m: float | None = None  # Percentage
     price_change_1y: float | None = None  # Percentage
+    price_change_2y: float | None = None  # Percentage
+    price_change_3y: float | None = None  # Percentage

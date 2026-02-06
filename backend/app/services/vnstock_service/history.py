@@ -38,7 +38,7 @@ class HistoryService:
 
     def enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
-        Enrich stock data with historical price changes (1w, 1m, 1y).
+        Enrich stock data with historical price changes (1w, 1m, 6m, 1y, 2y, 3y).
         """
         return self.enrich_with_price_changes_sync(stocks)
 
@@ -56,7 +56,10 @@ class HistoryService:
         target_dates = {
             '1w': today - timedelta(days=7),
             '1m': today - timedelta(days=30),
+            '6m': today - timedelta(days=182),
             '1y': today - timedelta(days=365),
+            '2y': today - timedelta(days=730),
+            '3y': today - timedelta(days=1095),
         }
 
         # Use sync connection for DB lookup
@@ -71,7 +74,7 @@ class HistoryService:
             # Find symbols missing cache data
             symbols_needing_fetch = set()
             for symbol in symbols:
-                for period in ['1w', '1m', '1y']:
+                for period in target_dates.keys():
                     if (symbol, period) not in cached_prices:
                         symbols_needing_fetch.add(symbol)
 
@@ -107,16 +110,31 @@ class HistoryService:
                 month_price = cached_prices[(symbol, '1m')]
                 stock.price_change_1m = round(((current_price_unit - month_price) / month_price) * 100, 2)
 
+            # 6 month change
+            if (symbol, '6m') in cached_prices and cached_prices[(symbol, '6m')] > 0:
+                six_month_price = cached_prices[(symbol, '6m')]
+                stock.price_change_6m = round(((current_price_unit - six_month_price) / six_month_price) * 100, 2)
+
             # 1 year change
             if (symbol, '1y') in cached_prices and cached_prices[(symbol, '1y')] > 0:
                 year_price = cached_prices[(symbol, '1y')]
                 stock.price_change_1y = round(((current_price_unit - year_price) / year_price) * 100, 2)
 
+            # 2 year change
+            if (symbol, '2y') in cached_prices and cached_prices[(symbol, '2y')] > 0:
+                two_year_price = cached_prices[(symbol, '2y')]
+                stock.price_change_2y = round(((current_price_unit - two_year_price) / two_year_price) * 100, 2)
+
+            # 3 year change
+            if (symbol, '3y') in cached_prices and cached_prices[(symbol, '3y')] > 0:
+                three_year_price = cached_prices[(symbol, '3y')]
+                stock.price_change_3y = round(((current_price_unit - three_year_price) / three_year_price) * 100, 2)
+
         return stocks
 
     async def trigger_missing_price_history_sync(self, stocks: List[StockInfo]) -> bool:
         """
-        Trigger background history sync for symbols missing 1w/1m/1y cache.
+        Trigger background history sync for symbols missing 1w/1m/6m/1y/2y/3y cache.
         Returns True if a sync was triggered (or already syncing), False if no missing data.
         """
         if not stocks:
@@ -126,7 +144,10 @@ class HistoryService:
         target_dates = {
             '1w': today - timedelta(days=7),
             '1m': today - timedelta(days=30),
+            '6m': today - timedelta(days=182),
             '1y': today - timedelta(days=365),
+            '2y': today - timedelta(days=730),
+            '3y': today - timedelta(days=1095),
         }
 
         symbols = [s.ticker[:3] for s in stocks]
@@ -139,14 +160,15 @@ class HistoryService:
 
         symbols_needing_fetch = set()
         for symbol in symbols:
-            for period in ['1w', '1m', '1y']:
+            for period in target_dates.keys():
                 if (symbol, period) not in cached_prices:
                     symbols_needing_fetch.add(symbol)
 
         if not symbols_needing_fetch:
             return False
 
-        start_date = today - timedelta(days=400)
+        # Fetch a bit more than 3 years to handle weekends/holidays and coverage checks.
+        start_date = today - timedelta(days=1130)
         end_date = today
         return await self._trigger_price_history_sync(list(symbols_needing_fetch), start_date, end_date)
 
@@ -265,7 +287,7 @@ class HistoryService:
         Optimized version using unified upsert helper.
         """
         today = date.today()
-        one_year_ago = today - timedelta(days=400)
+        three_years_ago = today - timedelta(days=1130)
 
         for symbol in symbols:
             # Check circuit breaker before each symbol to fail fast if rate limited
@@ -276,7 +298,7 @@ class HistoryService:
             try:
                 count = self._upsert_stock_price_history(
                     symbol=symbol,
-                    start_date=one_year_ago,
+                    start_date=three_years_ago,
                     end_date=today,
                     session=session
                 )

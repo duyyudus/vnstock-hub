@@ -23,7 +23,10 @@ class StockResponse(BaseModel):
     price_change_24h: Optional[float] = None  # Percentage
     price_change_1w: Optional[float] = None  # Percentage
     price_change_1m: Optional[float] = None  # Percentage
+    price_change_6m: Optional[float] = None  # Percentage
     price_change_1y: Optional[float] = None  # Percentage
+    price_change_2y: Optional[float] = None  # Percentage
+    price_change_3y: Optional[float] = None  # Percentage
 
 
 class IndexStocksResponse(BaseModel):
@@ -201,7 +204,10 @@ async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
+                price_change_6m=stock.price_change_6m,
+                price_change_1y=stock.price_change_1y,
+                price_change_2y=stock.price_change_2y,
+                price_change_3y=stock.price_change_3y
             )
             for stock in stocks
         ],
@@ -250,7 +256,10 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
+                price_change_6m=stock.price_change_6m,
+                price_change_1y=stock.price_change_1y,
+                price_change_2y=stock.price_change_2y,
+                price_change_3y=stock.price_change_3y
             )
             for stock in stocks
         ],
@@ -283,7 +292,10 @@ async def get_stock_quotes(request: StockQuotesRequest):
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
+                price_change_6m=stock.price_change_6m,
+                price_change_1y=stock.price_change_1y,
+                price_change_2y=stock.price_change_2y,
+                price_change_3y=stock.price_change_3y
             )
             for stock in stocks
         ],

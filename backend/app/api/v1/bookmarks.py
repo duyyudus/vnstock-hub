@@ -268,7 +268,10 @@ async def get_group_stocks(
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,
-                price_change_1y=stock.price_change_1y
+                price_change_6m=stock.price_change_6m,
+                price_change_1y=stock.price_change_1y,
+                price_change_2y=stock.price_change_2y,
+                price_change_3y=stock.price_change_3y
             )
             for stock in stocks
         ],

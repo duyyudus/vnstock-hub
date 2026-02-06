@@ -237,7 +237,10 @@ export interface Stock {
     price_change_24h: number | null;
     price_change_1w: number | null;
     price_change_1m: number | null;
+    price_change_6m?: number | null;
     price_change_1y: number | null;
+    price_change_2y?: number | null;
+    price_change_3y?: number | null;
 }
 
 export interface BookmarkGroup {

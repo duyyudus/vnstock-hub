@@ -102,8 +102,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         if (change === null) return { text: '-', className: 'text-base-content/50' };
         const prefix = change > 0 ? '+' : '';
         const formattedValue = new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
         }).format(change);
         const text = `${prefix}${formattedValue}%`;
         const className = change > 0 ? 'text-success' : change < 0 ? 'text-error' : 'text-base-content';
@@ -223,7 +223,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         if (bookmarkLoading) {
             return;
         }
-        const confirmed = window.confirm(`Delete the \"${groupName}\" group? This cannot be undone.`);
+        const confirmed = window.confirm(`Delete the "${groupName}" group? This cannot be undone.`);
         if (!confirmed) {
             return;
         }
@@ -261,8 +261,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                 const aValue = a[sortConfig.key];
                 const bValue = b[sortConfig.key];
 
-                if (aValue === null) return 1;
-                if (bValue === null) return -1;
+                if (aValue == null) return 1;
+                if (bValue == null) return -1;
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'asc' ? -1 : 1;
@@ -295,7 +295,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         );
     };
 
-    const totalColumns = isLoggedIn ? 13 : 12;
+    const totalColumns = isLoggedIn ? 16 : 15;
 
     return (
         <div className="overflow-x-auto rounded-xl">
@@ -418,11 +418,38 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         </th>
                         <th
                             className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                            onClick={() => handleSort('price_change_6m')}
+                        >
+                            <div className="flex items-center justify-end">
+                                6M
+                                {renderSortIcon('price_change_6m')}
+                            </div>
+                        </th>
+                        <th
+                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
                             onClick={() => handleSort('price_change_1y')}
                         >
                             <div className="flex items-center justify-end">
                                 1Y
                                 {renderSortIcon('price_change_1y')}
+                            </div>
+                        </th>
+                        <th
+                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                            onClick={() => handleSort('price_change_2y')}
+                        >
+                            <div className="flex items-center justify-end">
+                                2Y
+                                {renderSortIcon('price_change_2y')}
+                            </div>
+                        </th>
+                        <th
+                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                            onClick={() => handleSort('price_change_3y')}
+                        >
+                            <div className="flex items-center justify-end">
+                                3Y
+                                {renderSortIcon('price_change_3y')}
                             </div>
                         </th>
                     </tr>
@@ -440,7 +467,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const change24h = formatPriceChange(stock.price_change_24h);
                             const change1w = formatPriceChange(stock.price_change_1w);
                             const change1m = formatPriceChange(stock.price_change_1m);
+                            const change6m = formatPriceChange(stock.price_change_6m ?? null);
                             const change1y = formatPriceChange(stock.price_change_1y);
+                            const change2y = formatPriceChange(stock.price_change_2y ?? null);
+                            const change3y = formatPriceChange(stock.price_change_3y ?? null);
                             const fullNameWithExchange = stock.exchange 
                                 ? `${stock.exchange} - ${stock.company_name}`
                                 : stock.company_name;
@@ -476,7 +506,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                                 className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
                                                     isInPortfolio ? 'text-accent' : 'text-primary'
                                                 }`}
-                                                onClick={() => (window as any).onTickerClick?.(stock.ticker, stock.company_name)}
+                                                onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
                                                 title={`View financial details for ${stock.ticker}`}
                                             >
                                                 {stock.ticker.slice(0, 3)}
@@ -498,7 +528,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     <td className="text-right font-mono text-base-content">
                                         <button
                                             className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
-                                            onClick={() => (window as any).onVolumeClick?.(stock.ticker, stock.company_name)}
+                                            onClick={() => (window as Window & { onVolumeClick?: (ticker: string, companyName: string) => void }).onVolumeClick?.(stock.ticker, stock.company_name)}
                                             title={`View 30-day volume chart for ${stock.ticker}`}
                                         >
                                             {formatAccumulatedValue(stock.accumulated_value)}
@@ -513,8 +543,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     <td className={`text-right font-mono ${change1m.className}`}>
                                         {change1m.text}
                                     </td>
+                                    <td className={`text-right font-mono ${change6m.className}`}>
+                                        {change6m.text}
+                                    </td>
                                     <td className={`text-right font-mono ${change1y.className}`}>
                                         {change1y.text}
+                                    </td>
+                                    <td className={`text-right font-mono ${change2y.className}`}>
+                                        {change2y.text}
+                                    </td>
+                                    <td className={`text-right font-mono ${change3y.className}`}>
+                                        {change3y.text}
                                     </td>
                                 </tr>
                             );
