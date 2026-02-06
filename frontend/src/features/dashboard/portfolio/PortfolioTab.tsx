@@ -647,6 +647,11 @@ export const PortfolioTab: React.FC = () => {
                                                 ? position.average_cost
                                                 : null);
                                         const quote = quotes[position.ticker.toUpperCase()];
+                                        const companyName = quote?.company_name?.trim() ?? '';
+                                        const exchangeName = quote?.exchange?.trim() ?? '';
+                                        const fullNameWithExchange = companyName
+                                            ? (exchangeName ? `${exchangeName} - ${companyName}` : companyName)
+                                            : exchangeName;
                                         const price = quote?.price ?? null;
                                         const costBasis = averageCost !== null ? quantity * averageCost : null;
                                         const marketValue = price !== null ? quantity * price : null;
@@ -662,7 +667,17 @@ export const PortfolioTab: React.FC = () => {
 
                                         return (
                                             <tr key={position.id}>
-                                                <td className="font-semibold">{position.ticker}</td>
+                                                <td className="font-semibold">
+                                                    {fullNameWithExchange ? (
+                                                        <div className="tooltip tooltip-right" data-tip={fullNameWithExchange}>
+                                                            <span className="cursor-help">
+                                                                {position.ticker}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        position.ticker
+                                                    )}
+                                                </td>
                                                 <td>
                                                     {isEditing ? (
                                                         <input
