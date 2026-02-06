@@ -33,8 +33,18 @@ async def lifespan(app: FastAPI):
         await vnstock_service.sync_indices()
     except Exception as e:
         logger.error(f"Error syncing indices on startup: {e}")
+
+    try:
+        await vnstock_service.start_background_tasks()
+    except Exception as e:
+        logger.error(f"Error starting background workers: {e}")
         
     yield
+
+    try:
+        await vnstock_service.stop_background_tasks()
+    except Exception as e:
+        logger.error(f"Error stopping background workers: {e}")
 
 # Create FastAPI app
 app = FastAPI(

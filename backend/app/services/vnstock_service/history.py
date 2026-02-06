@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Dict, Any
 import asyncio
 from datetime import datetime, date, timedelta
 import pandas as pd
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
 
 from app.db.database import async_session
-from app.db.models import StockDailyPrice, StockCompany
+from app.db.models import StockDailyPrice, StockCompany, StockHistoryBackfillState
 from app.services.sync_status import sync_status
 from app.core.logging_config import log_background_start, log_background_complete
 
@@ -28,6 +29,25 @@ from .core import (
 from .models import StockInfo
 
 
+@dataclass(frozen=True)
+class BackfillJob:
+    symbol: str
+    reason: str
+
+
+# Completeness backfill defaults
+BACKFILL_DEFAULT_START_DATE = date(2010, 1, 1)
+BACKFILL_RETRY_COOLDOWN = timedelta(hours=24)
+BACKFILL_EXHAUSTED_RETRY_COOLDOWN = timedelta(days=7)
+BACKFILL_NO_PROGRESS_LIMIT = 3
+BACKFILL_CHUNK_DAYS = 730
+BACKFILL_SCHEDULER_INTERVAL_SECONDS = 24 * 3600
+BACKFILL_ACTIVITY_WINDOW_DAYS = 14
+BACKFILL_LONG_TAIL_BATCH_SIZE = 30
+BACKFILL_COVERAGE_TOLERANCE_DAYS = 30
+BACKFILL_CORE_GROUPS = ("VN30", "VN100")
+
+
 class HistoryService:
     """Historical price and volume data operations."""
 
@@ -35,8 +55,485 @@ class HistoryService:
         # Track background sync task for weekly prices
         self._weekly_prices_sync_task: asyncio.Task | None = None
         self._weekly_prices_syncing_symbols = set()
-        self._weekly_prices_last_attempt_at: Dict[str, datetime] = {}
         self._weekly_prices_retry_cooldown = timedelta(minutes=10)
+
+        # Track completeness backfill tasks
+        self._backfill_worker_task: asyncio.Task | None = None
+        self._backfill_scheduler_task: asyncio.Task | None = None
+        self._backfill_queue: asyncio.Queue[BackfillJob] = asyncio.Queue()
+        self._backfill_queued_symbols = set()
+        self._backfill_start_lock: asyncio.Lock | None = None
+
+    async def start_background_workers(self) -> None:
+        """Start completeness backfill worker/scheduler tasks."""
+        await self._ensure_backfill_workers()
+
+    async def stop_background_workers(self) -> None:
+        """Stop completeness backfill worker/scheduler tasks."""
+        tasks = [self._backfill_worker_task, self._backfill_scheduler_task]
+        for task in tasks:
+            if task and not task.done():
+                task.cancel()
+
+        for task in tasks:
+            if task:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.warning(f"Error stopping backfill task: {e}")
+
+        self._backfill_worker_task = None
+        self._backfill_scheduler_task = None
+        self._backfill_queued_symbols.clear()
+
+        # Drain pending items
+        while not self._backfill_queue.empty():
+            try:
+                self._backfill_queue.get_nowait()
+                self._backfill_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    async def schedule_completeness_backfill(
+        self,
+        symbols: List[str],
+        target_start_date: date | None = None,
+        reason: str = "request",
+        mark_seen: bool = True
+    ) -> None:
+        """
+        Register symbols for completeness backfill and enqueue eligible jobs.
+        """
+        clean_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
+        if not clean_symbols:
+            return
+
+        await self._ensure_backfill_workers()
+        desired_start = target_start_date or BACKFILL_DEFAULT_START_DATE
+        await self._enqueue_backfill_symbols(
+            clean_symbols,
+            desired_start,
+            reason=reason,
+            mark_seen=mark_seen
+        )
+
+    async def _schedule_completeness_backfill_safe(
+        self,
+        symbols: List[str],
+        target_start_date: date,
+        reason: str,
+        mark_seen: bool
+    ) -> None:
+        try:
+            await self.schedule_completeness_backfill(
+                symbols=symbols,
+                target_start_date=target_start_date,
+                reason=reason,
+                mark_seen=mark_seen
+            )
+        except Exception as e:
+            logger.warning(f"Error scheduling completeness backfill ({reason}): {e}")
+
+    async def _ensure_backfill_workers(self) -> None:
+        if (
+            self._backfill_worker_task
+            and not self._backfill_worker_task.done()
+            and self._backfill_scheduler_task
+            and not self._backfill_scheduler_task.done()
+        ):
+            return
+
+        if self._backfill_start_lock is None:
+            self._backfill_start_lock = asyncio.Lock()
+
+        async with self._backfill_start_lock:
+            if not self._backfill_worker_task or self._backfill_worker_task.done():
+                self._backfill_worker_task = asyncio.create_task(self._backfill_worker_loop())
+            if not self._backfill_scheduler_task or self._backfill_scheduler_task.done():
+                self._backfill_scheduler_task = asyncio.create_task(self._backfill_scheduler_loop())
+
+    async def _backfill_worker_loop(self) -> None:
+        while True:
+            job = await self._backfill_queue.get()
+            try:
+                await self._process_backfill_job(job)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                bg_logger.error(f"Error in backfill worker for {job.symbol}: {e}")
+            finally:
+                self._backfill_queued_symbols.discard(job.symbol)
+                self._backfill_queue.task_done()
+
+    async def _backfill_scheduler_loop(self) -> None:
+        while True:
+            try:
+                await self._run_backfill_sweep()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                bg_logger.error(f"Error in backfill scheduler sweep: {e}")
+
+            await asyncio.sleep(BACKFILL_SCHEDULER_INTERVAL_SECONDS)
+
+    async def _run_backfill_sweep(self) -> None:
+        """Scheduled sweep: core symbols + recently active + trickle long-tail."""
+        loop = asyncio.get_event_loop()
+
+        core_symbols = await loop.run_in_executor(frontend_executor, self._fetch_core_symbols_sync)
+        await self._enqueue_backfill_symbols(
+            core_symbols,
+            BACKFILL_DEFAULT_START_DATE,
+            reason="scheduled_core",
+            mark_seen=False
+        )
+
+        active_symbols = await self._get_recently_active_symbols(limit=200)
+        await self._enqueue_backfill_symbols(
+            active_symbols,
+            BACKFILL_DEFAULT_START_DATE,
+            reason="scheduled_active",
+            mark_seen=False
+        )
+
+        exclude = set(core_symbols) | set(active_symbols)
+        long_tail_symbols = await self._get_long_tail_symbols(
+            limit=BACKFILL_LONG_TAIL_BATCH_SIZE,
+            exclude_symbols=exclude
+        )
+        await self._enqueue_backfill_symbols(
+            long_tail_symbols,
+            BACKFILL_DEFAULT_START_DATE,
+            reason="scheduled_long_tail",
+            mark_seen=False
+        )
+
+    def _fetch_core_symbols_sync(self) -> List[str]:
+        """Fetch VN30 and VN100 constituents for scheduled backfill priority."""
+        from vnstock import Listing
+
+        if not api_circuit_breaker.can_proceed():
+            return []
+
+        symbols = set()
+        listing = Listing(source='VCI')
+
+        for group in BACKFILL_CORE_GROUPS:
+            try:
+                series = listing.symbols_by_group(group)
+                api_circuit_breaker.record_success()
+                if series is None:
+                    continue
+                symbols.update(str(item).strip().upper()[:3] for item in series.tolist() if item)
+            except (SystemExit, Exception) as e:
+                if _is_rate_limit_error(e):
+                    _record_rate_limit(reset_seconds=60.0)
+                    break
+                logger.warning(f"Error fetching core symbols for {group}: {e}")
+
+        return sorted(symbols)
+
+    async def _get_recently_active_symbols(self, limit: int = 200) -> List[str]:
+        cutoff = datetime.utcnow() - timedelta(days=BACKFILL_ACTIVITY_WINDOW_DAYS)
+
+        async with async_session() as session:
+            stmt = (
+                select(StockHistoryBackfillState.symbol)
+                .where(
+                    StockHistoryBackfillState.last_seen_at.is_not(None),
+                    StockHistoryBackfillState.last_seen_at >= cutoff
+                )
+                .order_by(StockHistoryBackfillState.last_seen_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return [row[0] for row in result.all()]
+
+    async def _get_long_tail_symbols(self, limit: int, exclude_symbols: set[str]) -> List[str]:
+        async with async_session() as session:
+            stmt = (
+                select(StockCompany.symbol)
+                .outerjoin(
+                    StockHistoryBackfillState,
+                    StockHistoryBackfillState.symbol == StockCompany.symbol
+                )
+            )
+            if exclude_symbols:
+                stmt = stmt.where(~StockCompany.symbol.in_(list(exclude_symbols)))
+
+            stmt = (
+                stmt.order_by(
+                    StockHistoryBackfillState.last_attempt_at.asc().nullsfirst(),
+                    StockCompany.symbol.asc()
+                )
+                .limit(limit)
+            )
+
+            result = await session.execute(stmt)
+            return [row[0] for row in result.all() if row[0]]
+
+    def _is_backfill_eligible(
+        self,
+        *,
+        is_exhausted: bool,
+        exhausted_until: datetime | None,
+        next_attempt_at: datetime | None,
+        now: datetime
+    ) -> bool:
+        if is_exhausted:
+            if exhausted_until is None or exhausted_until > now:
+                return False
+        if next_attempt_at and next_attempt_at > now:
+            return False
+        return True
+
+    async def _enqueue_backfill_symbols(
+        self,
+        symbols: List[str],
+        target_start_date: date,
+        reason: str,
+        mark_seen: bool
+    ) -> None:
+        if not symbols:
+            return
+
+        clean_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
+        now = datetime.utcnow()
+        to_queue: List[str] = []
+
+        async with async_session() as session:
+            existing_stmt = select(StockHistoryBackfillState).where(
+                StockHistoryBackfillState.symbol.in_(clean_symbols)
+            )
+            existing_rows = await session.execute(existing_stmt)
+            existing = {row.symbol: row for row in existing_rows.scalars().all()}
+
+            for symbol in clean_symbols:
+                state = existing.get(symbol)
+                if state is None:
+                    state = StockHistoryBackfillState(
+                        symbol=symbol,
+                        target_start_date=target_start_date,
+                        last_seen_at=now if mark_seen else None,
+                        next_attempt_at=now,
+                        no_progress_attempts=0,
+                        is_exhausted=False,
+                    )
+                    session.add(state)
+                    existing[symbol] = state
+                else:
+                    if mark_seen:
+                        state.last_seen_at = now
+
+                    if state.target_start_date is None or target_start_date < state.target_start_date:
+                        state.target_start_date = target_start_date
+
+                    if state.is_exhausted and state.exhausted_until and state.exhausted_until <= now:
+                        state.is_exhausted = False
+                        state.exhausted_until = None
+                        state.no_progress_attempts = 0
+
+                if symbol in self._backfill_queued_symbols:
+                    continue
+
+                if not self._is_backfill_eligible(
+                    is_exhausted=state.is_exhausted,
+                    exhausted_until=state.exhausted_until,
+                    next_attempt_at=state.next_attempt_at,
+                    now=now
+                ):
+                    continue
+
+                to_queue.append(symbol)
+
+            await session.commit()
+
+        for symbol in to_queue:
+            self._backfill_queued_symbols.add(symbol)
+            self._backfill_queue.put_nowait(BackfillJob(symbol=symbol, reason=reason))
+
+    async def _get_symbol_price_bounds(self, symbol: str) -> tuple[date | None, date | None]:
+        async with async_session() as session:
+            stmt = select(
+                func.min(StockDailyPrice.date),
+                func.max(StockDailyPrice.date)
+            ).where(StockDailyPrice.symbol == symbol)
+            result = await session.execute(stmt)
+            row = result.one()
+            return row[0], row[1]
+
+    async def _get_backfill_state_snapshot(
+        self, symbol: str
+    ) -> tuple[date, bool, datetime | None, datetime | None] | None:
+        async with async_session() as session:
+            stmt = select(StockHistoryBackfillState).where(StockHistoryBackfillState.symbol == symbol)
+            state = (await session.execute(stmt)).scalar_one_or_none()
+            if state is None:
+                return None
+
+            return (
+                state.target_start_date or BACKFILL_DEFAULT_START_DATE,
+                state.is_exhausted,
+                state.exhausted_until,
+                state.next_attempt_at
+            )
+
+    def _is_backfill_covered(self, oldest_date: date | None, target_start_date: date) -> bool:
+        if oldest_date is None:
+            return False
+        threshold = target_start_date + timedelta(days=BACKFILL_COVERAGE_TOLERANCE_DAYS)
+        return oldest_date <= threshold
+
+    def _resolve_backfill_window(
+        self,
+        oldest_date: date | None,
+        target_start_date: date
+    ) -> tuple[date | None, date | None]:
+        if oldest_date is None:
+            return target_start_date, date.today()
+
+        if self._is_backfill_covered(oldest_date, target_start_date):
+            return None, None
+
+        end_date = oldest_date - timedelta(days=1)
+        start_date = max(target_start_date, end_date - timedelta(days=BACKFILL_CHUNK_DAYS))
+        if end_date < start_date:
+            return None, None
+        return start_date, end_date
+
+    async def _defer_backfill_attempt(self, symbol: str, error: str, cooldown: timedelta) -> None:
+        now = datetime.utcnow()
+        async with async_session() as session:
+            stmt = select(StockHistoryBackfillState).where(StockHistoryBackfillState.symbol == symbol)
+            state = (await session.execute(stmt)).scalar_one_or_none()
+            if state is None:
+                return
+
+            state.last_attempt_at = now
+            state.next_attempt_at = now + cooldown
+            state.last_error = error[:500]
+            await session.commit()
+
+    async def _record_backfill_attempt(
+        self,
+        symbol: str,
+        target_start_date: date,
+        oldest_date: date | None,
+        latest_date: date | None,
+        progressed: bool,
+        covered: bool,
+        error: str | None = None
+    ) -> None:
+        now = datetime.utcnow()
+        async with async_session() as session:
+            stmt = select(StockHistoryBackfillState).where(StockHistoryBackfillState.symbol == symbol)
+            state = (await session.execute(stmt)).scalar_one_or_none()
+            if state is None:
+                state = StockHistoryBackfillState(symbol=symbol, target_start_date=target_start_date)
+                session.add(state)
+
+            if state.target_start_date is None or target_start_date < state.target_start_date:
+                state.target_start_date = target_start_date
+
+            state.oldest_date = oldest_date
+            state.latest_date = latest_date
+            state.last_attempt_at = now
+            state.last_error = error[:500] if error else None
+
+            if covered or progressed:
+                state.no_progress_attempts = 0
+                state.is_exhausted = False
+                state.exhausted_until = None
+            else:
+                state.no_progress_attempts = (state.no_progress_attempts or 0) + 1
+                if state.no_progress_attempts >= BACKFILL_NO_PROGRESS_LIMIT:
+                    state.is_exhausted = True
+                    state.exhausted_until = now + BACKFILL_EXHAUSTED_RETRY_COOLDOWN
+
+            if state.is_exhausted and state.exhausted_until:
+                state.next_attempt_at = state.exhausted_until
+            else:
+                state.next_attempt_at = now + BACKFILL_RETRY_COOLDOWN
+
+            await session.commit()
+
+    async def _process_backfill_job(self, job: BackfillJob) -> None:
+        now = datetime.utcnow()
+
+        snapshot = await self._get_backfill_state_snapshot(job.symbol)
+        if snapshot is None:
+            return
+
+        target_start_date, is_exhausted, exhausted_until, next_attempt_at = snapshot
+        if not self._is_backfill_eligible(
+            is_exhausted=is_exhausted,
+            exhausted_until=exhausted_until,
+            next_attempt_at=next_attempt_at,
+            now=now
+        ):
+            return
+
+        if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
+            await self._defer_backfill_attempt(
+                job.symbol,
+                "Rate limited - backfill deferred",
+                BACKFILL_RETRY_COOLDOWN
+            )
+            return
+
+        old_oldest, old_latest = await self._get_symbol_price_bounds(job.symbol)
+        fetch_start, fetch_end = self._resolve_backfill_window(old_oldest, target_start_date)
+
+        if fetch_start is None or fetch_end is None:
+            await self._record_backfill_attempt(
+                symbol=job.symbol,
+                target_start_date=target_start_date,
+                oldest_date=old_oldest,
+                latest_date=old_latest,
+                progressed=True,
+                covered=True
+            )
+            return
+
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                background_executor,
+                self._upsert_stock_price_history,
+                job.symbol,
+                fetch_start,
+                fetch_end
+            )
+        except Exception as e:
+            await self._record_backfill_attempt(
+                symbol=job.symbol,
+                target_start_date=target_start_date,
+                oldest_date=old_oldest,
+                latest_date=old_latest,
+                progressed=False,
+                covered=False,
+                error=str(e)
+            )
+            return
+
+        new_oldest, new_latest = await self._get_symbol_price_bounds(job.symbol)
+        progressed = False
+        if old_oldest is None and new_oldest is not None:
+            progressed = True
+        elif old_oldest and new_oldest and new_oldest < old_oldest:
+            progressed = True
+
+        covered = self._is_backfill_covered(new_oldest, target_start_date)
+        await self._record_backfill_attempt(
+            symbol=job.symbol,
+            target_start_date=target_start_date,
+            oldest_date=new_oldest,
+            latest_date=new_latest,
+            progressed=progressed,
+            covered=covered
+        )
 
     def enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
@@ -143,6 +640,17 @@ class HistoryService:
             return False
 
         today = date.today()
+        symbols = [s.ticker[:3].upper() for s in stocks if s.ticker]
+        try:
+            await self.schedule_completeness_backfill(
+                symbols=symbols,
+                target_start_date=BACKFILL_DEFAULT_START_DATE,
+                reason="active_request",
+                mark_seen=True
+            )
+        except Exception as e:
+            logger.warning(f"Error tracking active symbols for backfill: {e}")
+
         target_dates = {
             '1w': today - timedelta(days=7),
             '1m': today - timedelta(days=30),
@@ -152,7 +660,6 @@ class HistoryService:
             '3y': today - timedelta(days=1095),
         }
 
-        symbols = [s.ticker[:3] for s in stocks]
         engine = get_sync_engine()
         try:
             with Session(engine) as session:
@@ -480,17 +987,35 @@ class HistoryService:
         Returns cached data immediately and triggers background sync if stale.
         """
         # Clean symbols (use first 3 chars)
-        clean_symbols = list(dict.fromkeys(s[:3] for s in symbols if s))
+        clean_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
 
         # Calculate date range
         start_date = date(start_year, 1, 1)
         end_date = date.today()
+        desired_backfill_start = start_date
+
+        # Track active usage and trigger dedicated completeness backfill.
+        asyncio.create_task(
+            self._schedule_completeness_backfill_safe(
+                symbols=clean_symbols,
+                target_start_date=desired_backfill_start,
+                reason="weekly_request",
+                mark_seen=True
+            )
+        )
 
         # Load from database
         stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
 
-        # Check staleness and historical data coverage
-        is_stale = self._check_prices_staleness(stocks_data, clean_symbols, end_date)
+        # Check freshness + requested historical coverage
+        has_stale_latest = self._check_prices_staleness(stocks_data, clean_symbols, end_date)
+        has_historical_gap = self._check_prices_historical_coverage(
+            stocks_data=stocks_data,
+            requested_symbols=clean_symbols,
+            start_date=start_date
+        )
+        has_missing_symbol_data = any(not stocks_data.get(symbol, []) for symbol in clean_symbols)
+        is_stale = has_stale_latest or has_historical_gap
 
         # Load benchmarks if requested
         benchmarks = {}
@@ -514,7 +1039,14 @@ class HistoryService:
         # Trigger background sync if stale
         is_syncing = False
         if is_stale:
-            is_syncing = await self._trigger_price_history_sync(clean_symbols, start_date, end_date)
+            # Only bypass retry cooldown for cold-start symbols with no cached range at all.
+            force_sync = has_historical_gap and has_missing_symbol_data
+            is_syncing = await self._trigger_price_history_sync(
+                clean_symbols,
+                start_date,
+                end_date,
+                force=force_sync
+            )
 
         return {
             'stocks': stocks_response,
@@ -629,6 +1161,47 @@ class HistoryService:
 
         return False
 
+    def _check_prices_historical_coverage(
+        self,
+        stocks_data: Dict[str, List[Dict[str, Any]]],
+        requested_symbols: List[str],
+        start_date: date
+    ) -> bool:
+        """
+        Check whether cached history covers the requested start date.
+        Returns True if any requested symbol:
+        - Has no data
+        - Has an earliest valid data point significantly after start_date
+        """
+        if not requested_symbols:
+            return False
+
+        coverage_threshold = start_date + timedelta(days=BACKFILL_COVERAGE_TOLERANCE_DAYS)
+
+        for symbol in requested_symbols:
+            prices = stocks_data.get(symbol, [])
+            if not prices:
+                return True
+
+            oldest_date: date | None = None
+            for point in prices:
+                date_str = point.get('date')
+                try:
+                    point_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                except (TypeError, ValueError):
+                    continue
+
+                if oldest_date is None or point_date < oldest_date:
+                    oldest_date = point_date
+
+            if oldest_date is None:
+                return True
+
+            if oldest_date > coverage_threshold:
+                return True
+
+        return False
+
     async def _load_benchmark_prices(
         self,
         start_date: date,
@@ -712,21 +1285,31 @@ class HistoryService:
         self,
         symbols: List[str],
         start_date: date,
-        end_date: date
+        end_date: date,
+        force: bool = False
     ) -> bool:
         """
         Trigger background sync for price history.
         Returns True if sync was triggered, False if already syncing.
         """
         now = datetime.utcnow()
+        cooldown_state = {}
+        if not force:
+            cooldown_state = await self._get_weekly_sync_cooldown_state(symbols)
+
         symbols_to_sync = []
         for symbol in symbols:
             if symbol in self._weekly_prices_syncing_symbols:
                 continue
 
-            last_attempt = self._weekly_prices_last_attempt_at.get(symbol)
-            if last_attempt and (now - last_attempt) < self._weekly_prices_retry_cooldown:
-                continue
+            if not force:
+                state = cooldown_state.get(symbol, {})
+                last_attempt = state.get("last_attempt_at")
+                if last_attempt and (now - last_attempt) < self._weekly_prices_retry_cooldown:
+                    previous_start_date = state.get("last_attempt_start_date")
+                    # Allow immediate retry only when user requests older history than last attempt.
+                    if previous_start_date is None or start_date >= previous_start_date:
+                        continue
 
             symbols_to_sync.append(symbol)
 
@@ -736,8 +1319,11 @@ class HistoryService:
 
         # Mark as syncing
         self._weekly_prices_syncing_symbols.update(symbols_to_sync)
-        for symbol in symbols_to_sync:
-            self._weekly_prices_last_attempt_at[symbol] = now
+        await self._set_weekly_sync_cooldown_state(
+            symbols=symbols_to_sync,
+            attempted_at=now,
+            attempted_start_date=start_date
+        )
 
         # Create background task
         self._weekly_prices_sync_task = asyncio.create_task(
@@ -745,6 +1331,65 @@ class HistoryService:
         )
 
         return True
+
+    async def _get_weekly_sync_cooldown_state(
+        self,
+        symbols: List[str]
+    ) -> Dict[str, Dict[str, date | datetime | None]]:
+        if not symbols:
+            return {}
+
+        try:
+            async with async_session() as session:
+                stmt = select(
+                    StockHistoryBackfillState.symbol,
+                    StockHistoryBackfillState.weekly_sync_last_attempt_at,
+                    StockHistoryBackfillState.weekly_sync_last_attempt_start_date
+                ).where(StockHistoryBackfillState.symbol.in_(symbols))
+                result = await session.execute(stmt)
+                rows = result.all()
+
+            state: Dict[str, Dict[str, date | datetime | None]] = {}
+            for symbol, last_attempt_at, last_attempt_start_date in rows:
+                state[symbol] = {
+                    "last_attempt_at": last_attempt_at,
+                    "last_attempt_start_date": last_attempt_start_date,
+                }
+            return state
+        except Exception as e:
+            logger.warning(f"Error loading weekly sync cooldown state: {e}")
+            return {}
+
+    async def _set_weekly_sync_cooldown_state(
+        self,
+        symbols: List[str],
+        attempted_at: datetime,
+        attempted_start_date: date
+    ) -> None:
+        if not symbols:
+            return
+
+        try:
+            async with async_session() as session:
+                stmt = select(StockHistoryBackfillState).where(
+                    StockHistoryBackfillState.symbol.in_(symbols)
+                )
+                existing_rows = await session.execute(stmt)
+                existing = {row.symbol: row for row in existing_rows.scalars().all()}
+
+                for symbol in symbols:
+                    state = existing.get(symbol)
+                    if state is None:
+                        state = StockHistoryBackfillState(symbol=symbol)
+                        session.add(state)
+                        existing[symbol] = state
+
+                    state.weekly_sync_last_attempt_at = attempted_at
+                    state.weekly_sync_last_attempt_start_date = attempted_start_date
+
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Error updating weekly sync cooldown state: {e}")
 
     async def _sync_price_history_background(
         self,

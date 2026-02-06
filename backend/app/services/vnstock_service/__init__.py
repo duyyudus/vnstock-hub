@@ -40,6 +40,14 @@ class VnstockService:
         self.company = CompanyService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
 
+    async def start_background_tasks(self) -> None:
+        """Start long-running background workers."""
+        await self.history.start_background_workers()
+
+    async def stop_background_tasks(self) -> None:
+        """Stop long-running background workers."""
+        await self.history.stop_background_workers()
+
     # Indices
     async def sync_indices(self) -> None:
         return await self.indices.sync_indices()
