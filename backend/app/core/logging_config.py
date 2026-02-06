@@ -97,7 +97,7 @@ def setup_logging():
 
     # === SQLAlchemy Logger (file only) ===
     sqlalchemy_logger = logging.getLogger("sqlalchemy.engine")
-    sqlalchemy_logger.setLevel(logging.INFO)
+    sqlalchemy_logger.setLevel(logging.WARNING)
     sqlalchemy_logger.propagate = False
     sqlalchemy_logger.handlers.clear()
 
@@ -107,7 +107,10 @@ def setup_logging():
         backupCount=5,
         encoding="utf-8"
     )
-    sqlalchemy_file_handler.setLevel(logging.INFO)
+    sqlalchemy_file_handler.setLevel(logging.WARNING)
+    sqlalchemy_file_handler.addFilter(
+        lambda record: record.levelno in (logging.WARNING, logging.ERROR)
+    )
     sqlalchemy_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
     sqlalchemy_logger.addHandler(sqlalchemy_file_handler)
 
