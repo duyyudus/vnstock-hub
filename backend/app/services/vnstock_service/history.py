@@ -35,6 +35,8 @@ class HistoryService:
         # Track background sync task for weekly prices
         self._weekly_prices_sync_task: asyncio.Task | None = None
         self._weekly_prices_syncing_symbols = set()
+        self._weekly_prices_last_attempt_at: Dict[str, datetime] = {}
+        self._weekly_prices_retry_cooldown = timedelta(minutes=10)
 
     def enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """
@@ -478,7 +480,7 @@ class HistoryService:
         Returns cached data immediately and triggers background sync if stale.
         """
         # Clean symbols (use first 3 chars)
-        clean_symbols = [s[:3] for s in symbols]
+        clean_symbols = list(dict.fromkeys(s[:3] for s in symbols if s))
 
         # Calculate date range
         start_date = date(start_year, 1, 1)
@@ -488,7 +490,7 @@ class HistoryService:
         stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
 
         # Check staleness and historical data coverage
-        is_stale = self._check_prices_staleness(stocks_data, start_date, end_date)
+        is_stale = self._check_prices_staleness(stocks_data, clean_symbols, end_date)
 
         # Load benchmarks if requested
         benchmarks = {}
@@ -593,40 +595,36 @@ class HistoryService:
     def _check_prices_staleness(
         self,
         stocks_data: Dict[str, List[Dict[str, Any]]],
-        start_date: date,
+        requested_symbols: List[str],
         end_date: date
     ) -> bool:
         """
-        Check if price data is stale or incomplete.
-        Returns True if any stock:
+        Check if price data is stale for requested symbols.
+        Returns True if any requested stock:
         - Has no data
-        - Latest date is >7 days old (stale)
-        - Earliest date is >30 days after requested start_date (incomplete historical data)
+        - Latest date is >7 days old
         """
+        if not requested_symbols:
+            return False
+
         if not stocks_data:
             return True
 
         stale_threshold = end_date - timedelta(days=7)
-        # Allow 30 days tolerance for start date (some stocks may not have been listed that early)
-        start_threshold = start_date + timedelta(days=30)
 
-        for symbol, prices in stocks_data.items():
+        for symbol in requested_symbols:
+            prices = stocks_data.get(symbol, [])
             if not prices:
                 return True
 
             # Check latest date (data freshness)
             latest_date_str = prices[-1]['date']
-            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
-
-            if latest_date < stale_threshold:
+            try:
+                latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+            except (TypeError, ValueError):
                 return True
 
-            # Check earliest date (historical data coverage)
-            earliest_date_str = prices[0]['date']
-            earliest_date = datetime.strptime(earliest_date_str, '%Y-%m-%d').date()
-
-            if earliest_date > start_threshold:
-                # Data doesn't cover the requested start date range
+            if latest_date < stale_threshold:
                 return True
 
         return False
@@ -720,17 +718,29 @@ class HistoryService:
         Trigger background sync for price history.
         Returns True if sync was triggered, False if already syncing.
         """
-        # Check if already syncing these symbols
-        symbols_to_sync = [s for s in symbols if s not in self._weekly_prices_syncing_symbols]
+        now = datetime.utcnow()
+        symbols_to_sync = []
+        for symbol in symbols:
+            if symbol in self._weekly_prices_syncing_symbols:
+                continue
+
+            last_attempt = self._weekly_prices_last_attempt_at.get(symbol)
+            if last_attempt and (now - last_attempt) < self._weekly_prices_retry_cooldown:
+                continue
+
+            symbols_to_sync.append(symbol)
 
         if not symbols_to_sync:
-            return True  # Already syncing
+            # Only report syncing=True when there is an active sync task for requested symbols.
+            return any(s in self._weekly_prices_syncing_symbols for s in symbols)
 
         # Mark as syncing
         self._weekly_prices_syncing_symbols.update(symbols_to_sync)
+        for symbol in symbols_to_sync:
+            self._weekly_prices_last_attempt_at[symbol] = now
 
         # Create background task
-        asyncio.create_task(
+        self._weekly_prices_sync_task = asyncio.create_task(
             self._sync_price_history_background(symbols_to_sync, start_date, end_date)
         )
 

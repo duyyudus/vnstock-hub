@@ -150,7 +150,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                     true
                 );
                 setPriceData(response);
-                setIsSyncing(response.is_syncing || response.is_stale || false);
+                setIsSyncing(response.is_syncing || false);
             } catch (err) {
                 setError('Failed to load price data. Please try again.');
                 console.error('Error fetching weekly prices:', err);
@@ -173,10 +173,8 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                     startYear,
                     true
                 );
-                if (!response.is_syncing && !response.is_stale) {
-                    setPriceData(response);
-                    setIsSyncing(false);
-                }
+                setPriceData(response);
+                setIsSyncing(response.is_syncing || false);
             } catch (err) {
                 console.error('Error polling for fresh stock performance data:', err);
             }
