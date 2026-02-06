@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksWeeklyPricesResponse } from '../../../api/stockApi';
@@ -26,24 +26,80 @@ const TOP_COLORS = [
 const GRAY_COLOR = '#6b7280';
 const VNINDEX_COLOR = '#fbbf24'; // amber
 const VN30_COLOR = '#22d3d3'; // cyan
+const TOOLTIP_VISIBLE_ITEMS = 10;
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipEntry {
+    dataKey: string | number;
+    value?: number | string | null;
+    color?: string;
+}
+
+interface CustomTooltipProps {
+    active?: boolean;
+    payload?: TooltipEntry[];
+    label?: string;
+    isExpanded?: boolean;
+    externalScrollDelta?: number;
+}
+
+const CustomTooltip = ({
+    active,
+    payload,
+    label,
+    isExpanded = false,
+    externalScrollDelta = 0,
+}: CustomTooltipProps) => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const previousScrollDeltaRef = useRef(0);
+
+    useEffect(() => {
+        if (!isExpanded || !containerRef.current) return;
+
+        const delta = externalScrollDelta - previousScrollDeltaRef.current;
+        if (delta !== 0) {
+            containerRef.current.scrollTop += delta;
+        }
+        previousScrollDeltaRef.current = externalScrollDelta;
+    }, [externalScrollDelta, isExpanded]);
+
     if (active && payload && payload.length) {
-        // Sort payload by value descending
-        const sorted = [...payload].sort((a, b) => (b.value || 0) - (a.value || 0));
+        const normalizedLabel = String(label ?? '');
+        const benchmarkRows = payload.filter((entry) => {
+            const key = String(entry.dataKey);
+            return key === 'VNINDEX' || key === 'VN30';
+        });
+        const stockRows = payload.filter((entry) => {
+            const key = String(entry.dataKey);
+            return key !== 'VNINDEX' && key !== 'VN30';
+        });
+        const orderedRows = [...benchmarkRows, ...stockRows];
+        const hiddenCount = Math.max(orderedRows.length - TOOLTIP_VISIBLE_ITEMS, 0);
+        const visibleRows = isExpanded ? orderedRows : orderedRows.slice(0, TOOLTIP_VISIBLE_ITEMS);
+
         return (
-            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                <p className="text-sm font-semibold mb-2">{label}</p>
-                {sorted.slice(0, 10).map((entry: any, index: number) => {
-                    const isBenchmark = entry.dataKey === 'VNINDEX' || entry.dataKey === 'VN30';
+            <div
+                ref={containerRef}
+                className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+                onClick={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onAuxClick={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+            >
+                <p className="text-sm font-semibold mb-2">{normalizedLabel}</p>
+                {visibleRows.map((entry, index: number) => {
+                    const key = String(entry.dataKey);
+                    const isBenchmark = key === 'VNINDEX' || key === 'VN30';
+                    const value = typeof entry.value === 'number' ? entry.value : Number(entry.value);
                     return (
-                        <p key={index} className="text-xs" style={{ color: entry.color }}>
-                            {isBenchmark ? '📊 ' : ''}{entry.dataKey}: {entry.value?.toFixed(1) || 'N/A'}
+                        <p key={`${key}-${index}`} className="text-xs" style={{ color: entry.color }}>
+                            {isBenchmark ? '📊 ' : ''}{key}: {Number.isFinite(value) ? value.toFixed(1) : 'N/A'}
                         </p>
                     );
                 })}
-                {sorted.length > 10 && (
-                    <p className="text-xs text-base-content/50">...and {sorted.length - 10} more</p>
+                {hiddenCount > 0 && !isExpanded && (
+                    <p className="text-xs text-base-content/60">
+                        ...and {hiddenCount} more (click chart to expand)
+                    </p>
                 )}
             </div>
         );
@@ -63,6 +119,8 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isTooltipExpanded, setIsTooltipExpanded] = useState(false);
+    const [tooltipScrollDelta, setTooltipScrollDelta] = useState(0);
 
     // Extract symbols from stocks
     const symbols = useMemo(() => stocks.map(s => s.ticker), [stocks]);
@@ -207,6 +265,16 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         return value.toFixed(0);
     };
 
+    const handleChartClick = () => {
+        setIsTooltipExpanded(prev => !prev);
+    };
+
+    const handleChartWheel: React.WheelEventHandler<HTMLDivElement> = (event) => {
+        if (!isTooltipExpanded) return;
+        event.preventDefault();
+        setTooltipScrollDelta(prev => prev + event.deltaY);
+    };
+
     return (
         <div className="w-full h-full flex flex-col space-y-4">
             {/* Controls Bar */}
@@ -262,9 +330,13 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                     No price data available for the selected timeframe
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 relative">
+                <div className="flex-1 min-h-0 relative" onWheel={handleChartWheel}>
                     <ResponsiveContainer width="100%" height={500} debounce={50}>
-                        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 30 }}>
+                        <LineChart
+                            data={chartData}
+                            margin={{ top: 10, right: 30, left: 10, bottom: 30 }}
+                            onClick={handleChartClick}
+                        >
                             <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                             <XAxis
                                 dataKey="date"
@@ -282,7 +354,16 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                                 domain={['auto', 'auto']}
                                 label={{ value: 'Growth (Base=100)', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
                             />
-                            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                            <Tooltip
+                                content={
+                                    <CustomTooltip
+                                        isExpanded={isTooltipExpanded}
+                                        externalScrollDelta={tooltipScrollDelta}
+                                    />
+                                }
+                                isAnimationActive={false}
+                                wrapperStyle={{ pointerEvents: isTooltipExpanded ? 'auto' : 'none' }}
+                            />
 
                             {/* Render stocks - top 10 get colors, rest are gray */}
                             {sortedStocks.map((stock, idx) => (
