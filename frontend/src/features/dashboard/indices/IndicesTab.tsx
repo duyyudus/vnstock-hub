@@ -5,6 +5,7 @@ import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
 import { BookmarkSelector } from './BookmarkSelector';
 import { StocksGrowthChart } from './StocksGrowthChart';
+import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -14,7 +15,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'table' | 'growth';
+type ViewMode = 'table' | 'growth' | 'comparison';
 
 /**
  * Indices Tab - Main container for Index/Industry stock views.
@@ -251,6 +252,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 </svg>
                                 Growth Chart
                             </button>
+                            <button
+                                className={`join-item btn btn-sm ${viewMode === 'comparison' ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setViewMode('comparison')}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                Compare
+                            </button>
                         </div>
 
                         {/* Search & Selectors */}
@@ -312,6 +322,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     <div className="card-body p-4">
                         {viewMode === 'growth' ? (
                             <StocksGrowthChart
+                                stocks={filteredStocks}
+                            />
+                        ) : viewMode === 'comparison' ? (
+                            <StocksComparisonChart
                                 stocks={filteredStocks}
                             />
                         ) : (
