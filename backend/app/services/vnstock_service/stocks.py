@@ -23,6 +23,11 @@ from .history import HistoryService
 class StocksService:
     """Stocks and listings related operations."""
 
+    # Industry cache: symbol -> ICB level 2 industry name
+    _industry_cache: Dict[str, str] = {}
+    _industry_cache_timestamp: float = 0
+    _industry_cache_ttl: float = 6 * 3600  # 6 hours in seconds
+
     def __init__(self, metadata: StockMetadataService, history: HistoryService):
         self._metadata = metadata
         self._history = history
@@ -103,6 +108,64 @@ class StocksService:
                 _record_rate_limit(reset_seconds=30.0)
                 raise CircuitOpenError(f"Rate limited fetching industries: {e}")
             raise
+
+    def _get_or_fetch_industry_mapping(self) -> Dict[str, str]:
+        """
+        Get cached industry mapping or fetch fresh data if cache is stale.
+        Returns a dict mapping symbol -> ICB level 2 industry name.
+        Uses 6-hour TTL similar to fund cache.
+        """
+        import time
+
+        current_time = time.time()
+        cache_age = current_time - self._industry_cache_timestamp
+
+        # Return cached data if fresh
+        if self._industry_cache and cache_age < self._industry_cache_ttl:
+            logger.debug(f"Using cached industry mapping ({len(self._industry_cache)} symbols, age: {cache_age:.0f}s)")
+            return self._industry_cache
+
+        # Fetch fresh industry mapping
+        from vnstock import Listing
+
+        # Check circuit breaker before making API call
+        if not api_circuit_breaker.can_proceed():
+            logger.warning("Circuit breaker open - using stale industry cache if available")
+            return self._industry_cache if self._industry_cache else {}
+
+        try:
+            logger.info("Fetching fresh industry mapping from vnstock API")
+            listing = Listing(source='VCI')
+            df = listing.symbols_by_industries()
+            api_circuit_breaker.record_success()
+
+            if df is not None and not df.empty:
+                # Extract symbol -> icb_name2 (Level 2 industry) mapping
+                industry_map = {}
+                if 'symbol' in df.columns and 'icb_name2' in df.columns:
+                    for _, row in df.iterrows():
+                        symbol = row.get('symbol', '')
+                        industry = row.get('icb_name2', '')
+                        if symbol and industry:
+                            industry_map[str(symbol).upper()] = str(industry)
+
+                # Update cache
+                self._industry_cache = industry_map
+                self._industry_cache_timestamp = current_time
+                logger.info(f"Industry mapping cached: {len(industry_map)} symbols")
+                return industry_map
+            else:
+                logger.warning("Empty industry data returned from API")
+                return self._industry_cache if self._industry_cache else {}
+
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=60.0)
+                logger.warning("Rate limited while fetching industry mapping - using stale cache")
+            else:
+                logger.warning(f"Error fetching industry mapping: {e}")
+            # Return stale cache if available
+            return self._industry_cache if self._industry_cache else {}
 
     def _fetch_index_data(self, index_name: str, limit: int) -> List[StockInfo]:
         """
@@ -199,6 +262,9 @@ class StocksService:
             raise CircuitOpenError("Circuit breaker open - API rate limited")
 
         try:
+            # Get industry mapping (cached for 6 hours)
+            industry_mapping = self._get_or_fetch_industry_mapping()
+
             # Get price board for stocks in batches
             trading = Trading(source='VCI')
             stocks_data = []
@@ -303,6 +369,9 @@ class StocksService:
                                 # Get company name if available
                                 company_name = row.get('listing_organ_name', '')
 
+                                # Get industry from cached mapping
+                                industry = industry_mapping.get(str(ticker).upper(), '')
+
                                 stocks_data.append(StockInfo(
                                     ticker=str(ticker),
                                     price=price,
@@ -312,7 +381,8 @@ class StocksService:
                                     charter_capital=round(charter_capital, 2),
                                     pe_ratio=round(pe_ratio, 2) if pe_ratio is not None else None,
                                     accumulated_value=round(accumulated_value, 2) if accumulated_value is not None else None,
-                                    price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None
+                                    price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None,
+                                    industry=industry
                                 ))
 
                 except (SystemExit, Exception) as e:

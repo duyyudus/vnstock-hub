@@ -31,3 +31,4 @@ class StockInfo:
     price_change_1y: float | None = None  # Percentage
     price_change_2y: float | None = None  # Percentage
     price_change_3y: float | None = None  # Percentage
+    industry: str = ""  # ICB Level 2 industry classification

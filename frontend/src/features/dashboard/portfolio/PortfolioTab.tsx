@@ -7,6 +7,7 @@ import {
     type Stock
 } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
+import { IndustryHoldingChart } from '../funds/IndustryHoldingChart';
 
 interface FormState {
     ticker: string;
@@ -137,6 +138,47 @@ export const PortfolioTab: React.FC = () => {
             : totalNetPnl.total < 0
                 ? 'text-error'
                 : 'text-base-content';
+
+    const industryAllocation = useMemo(() => {
+        if (positions.length === 0 || Object.keys(quotes).length === 0) {
+            console.log('No industry allocation: positions or quotes empty', {
+                positionsCount: positions.length,
+                quotesCount: Object.keys(quotes).length
+            });
+            return [];
+        }
+
+        // Group by industry and calculate market value per industry
+        const industryMap = new Map<string, number>();
+        let totalMarketValue = 0;
+
+        positions.forEach((position) => {
+            const quote = quotes[position.ticker.toUpperCase()];
+            const price = quote?.price;
+            const industry = quote?.industry || 'Other';
+
+            console.log(`Processing ${position.ticker}: industry="${industry}", price=${price}`);
+
+            if (typeof price === 'number' && Number.isFinite(price)) {
+                const marketValue = position.quantity * price;
+                industryMap.set(industry, (industryMap.get(industry) || 0) + marketValue);
+                totalMarketValue += marketValue;
+            }
+        });
+
+        // Convert to array with allocation percentages
+        // Note: IndustryHoldingChart expects 'industry' and 'allocation' fields
+        const result = Array.from(industryMap.entries())
+            .map(([industry, value]) => ({
+                industry: industry,
+                allocation: totalMarketValue > 0 ? (value / totalMarketValue) * 100 : 0
+            }))
+            .filter(item => item.allocation > 0)
+            .sort((a, b) => b.allocation - a.allocation); // Sort by allocation descending
+
+        console.log('Industry allocation calculated:', result);
+        return result;
+    }, [positions, quotes]);
 
     const handleSort = (key: SortKey) => {
         const isSameColumn = sortKey === key;
@@ -856,6 +898,20 @@ export const PortfolioTab: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {positions.length > 0 && (
+                <div className="card bg-base-100 shadow-md border border-base-300">
+                    <div className="card-body p-4">
+                        <h3 className="card-title text-base">Industry Allocation</h3>
+                        <div className="h-80">
+                            <IndustryHoldingChart
+                                data={industryAllocation}
+                                loading={quoteLoading}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <dialog ref={importDialogRef} className="modal">
                 <div className="modal-box">

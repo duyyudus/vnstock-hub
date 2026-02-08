@@ -27,6 +27,7 @@ class StockResponse(BaseModel):
     price_change_1y: Optional[float] = None  # Percentage
     price_change_2y: Optional[float] = None  # Percentage
     price_change_3y: Optional[float] = None  # Percentage
+    industry: str = ""  # ICB Level 2 industry classification
 
 
 class IndexStocksResponse(BaseModel):
@@ -207,7 +208,8 @@ async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
                 price_change_6m=stock.price_change_6m,
                 price_change_1y=stock.price_change_1y,
                 price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y
+                price_change_3y=stock.price_change_3y,
+                industry=stock.industry
             )
             for stock in stocks
         ],
@@ -259,7 +261,8 @@ async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
                 price_change_6m=stock.price_change_6m,
                 price_change_1y=stock.price_change_1y,
                 price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y
+                price_change_3y=stock.price_change_3y,
+                industry=stock.industry
             )
             for stock in stocks
         ],
@@ -295,7 +298,8 @@ async def get_stock_quotes(request: StockQuotesRequest):
                 price_change_6m=stock.price_change_6m,
                 price_change_1y=stock.price_change_1y,
                 price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y
+                price_change_3y=stock.price_change_3y,
+                industry=stock.industry
             )
             for stock in stocks
         ],

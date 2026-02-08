@@ -241,6 +241,7 @@ export interface Stock {
     price_change_1y: number | null;
     price_change_2y?: number | null;
     price_change_3y?: number | null;
+    industry: string;  // ICB Level 2 industry classification
 }
 
 export interface BookmarkGroup {
