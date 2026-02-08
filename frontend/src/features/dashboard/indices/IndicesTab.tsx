@@ -6,6 +6,7 @@ import { IndustrySelector } from './IndustrySelector';
 import { BookmarkSelector } from './BookmarkSelector';
 import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
+import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -15,7 +16,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'table' | 'growth' | 'comparison';
+type ViewMode = 'table' | 'growth' | 'comparison' | 'risk_return';
 
 /**
  * Indices Tab - Main container for Index/Industry stock views.
@@ -261,6 +262,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 </svg>
                                 Compare
                             </button>
+                            <button
+                                className={`join-item btn btn-sm ${viewMode === 'risk_return' ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setViewMode('risk_return')}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-2.2 0-4-1.8-4-4H6a6 6 0 0012 0h-2c0 2.2-1.8 4-4 4zm0 8c2.2 0 4 1.8 4 4h2a6 6 0 00-12 0h2c0-2.2 1.8-4 4-4zm-8-4v-2h16v2H4z" />
+                                </svg>
+                                Risk/Return
+                            </button>
                         </div>
 
                         {/* Search & Selectors */}
@@ -326,6 +336,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             />
                         ) : viewMode === 'comparison' ? (
                             <StocksComparisonChart
+                                stocks={filteredStocks}
+                            />
+                        ) : viewMode === 'risk_return' ? (
+                            <StocksRiskReturnScatterPlot
                                 stocks={filteredStocks}
                             />
                         ) : (
