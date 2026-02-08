@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     stockApi,
+    type PortfolioFreshImportResponse,
     type PortfolioImportBroker,
     type PortfolioImportResponse,
     type PortfolioPosition,
@@ -57,6 +58,7 @@ export const PortfolioTab: React.FC = () => {
     const [editFormLoading, setEditFormLoading] = useState(false);
     const [editFormState, setEditFormState] = useState<FormState>(emptyFormState);
     const importDialogRef = useRef<HTMLDialogElement>(null);
+    const freshImportInputRef = useRef<HTMLInputElement>(null);
     const [importBrokers, setImportBrokers] = useState<PortfolioImportBroker[]>([]);
     const [importBrokersLoading, setImportBrokersLoading] = useState(false);
     const [importBrokerId, setImportBrokerId] = useState('');
@@ -67,6 +69,10 @@ export const PortfolioTab: React.FC = () => {
     const [importLoading, setImportLoading] = useState(false);
     const [importError, setImportError] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<PortfolioImportResponse | null>(null);
+    const [csvExportLoading, setCsvExportLoading] = useState(false);
+    const [freshImportLoading, setFreshImportLoading] = useState(false);
+    const [freshImportError, setFreshImportError] = useState<string | null>(null);
+    const [freshImportResult, setFreshImportResult] = useState<PortfolioFreshImportResponse | null>(null);
     const [sortKey, setSortKey] = useState<SortKey | null>(null);
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -476,7 +482,7 @@ export const PortfolioTab: React.FC = () => {
             setAddFormError('Quantity must be greater than zero.');
             return;
         }
-        if (averageCostValue && (!Number.isFinite(averageCost) || averageCost <= 0)) {
+        if (averageCostValue && (averageCost === null || !Number.isFinite(averageCost) || averageCost <= 0)) {
             setAddFormError('Average cost must be greater than zero when provided.');
             return;
         }
@@ -521,7 +527,7 @@ export const PortfolioTab: React.FC = () => {
             setEditFormError('Quantity must be greater than zero.');
             return;
         }
-        if (averageCostValue && (!Number.isFinite(averageCost) || averageCost <= 0)) {
+        if (averageCostValue && (averageCost === null || !Number.isFinite(averageCost) || averageCost <= 0)) {
             setEditFormError('Average cost must be greater than zero when provided.');
             return;
         }
@@ -585,6 +591,71 @@ export const PortfolioTab: React.FC = () => {
         }
     };
 
+    const handleExportCsv = async () => {
+        if (csvExportLoading) return;
+        setFreshImportError(null);
+        setCsvExportLoading(true);
+        try {
+            const response = await stockApi.exportPortfolioCsv();
+            const blobUrl = window.URL.createObjectURL(response.blob);
+            const anchor = document.createElement('a');
+            anchor.href = blobUrl;
+            anchor.download = response.filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (err) {
+            setFreshImportError(getErrorMessage(err));
+        } finally {
+            setCsvExportLoading(false);
+        }
+    };
+
+    const handleFreshImportClick = () => {
+        if (freshImportLoading) return;
+        const confirmed = window.confirm(
+            'Fresh import will overwrite your entire portfolio with data from the selected CSV. Continue?'
+        );
+        if (!confirmed) {
+            return;
+        }
+        setFreshImportError(null);
+        setFreshImportResult(null);
+        if (freshImportInputRef.current) {
+            freshImportInputRef.current.value = '';
+            freshImportInputRef.current.click();
+        }
+    };
+
+    const handleFreshImportFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = event.target.files?.[0];
+        if (!selectedFile) {
+            return;
+        }
+        if (!/\.csv$/i.test(selectedFile.name)) {
+            setFreshImportError('Please select a CSV file.');
+            event.target.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        setFreshImportError(null);
+        setFreshImportResult(null);
+        setFreshImportLoading(true);
+        try {
+            const response = await stockApi.freshImportPortfolioCsv(formData);
+            setFreshImportResult(response);
+            await fetchPositions();
+        } catch (err) {
+            setFreshImportError(getErrorMessage(err));
+        } finally {
+            setFreshImportLoading(false);
+            event.target.value = '';
+        }
+    };
+
     if (!user) {
         return (
             <div className="p-4">
@@ -621,6 +692,22 @@ export const PortfolioTab: React.FC = () => {
                             <button
                                 type="button"
                                 className="btn btn-xs btn-outline"
+                                onClick={() => handleExportCsv()}
+                                disabled={csvExportLoading || freshImportLoading || importLoading}
+                            >
+                                {csvExportLoading ? 'Exporting...' : 'Export CSV'}
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-outline btn-warning"
+                                onClick={handleFreshImportClick}
+                                disabled={freshImportLoading || csvExportLoading || importLoading}
+                            >
+                                {freshImportLoading ? 'Importing...' : 'Fresh Import'}
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-outline"
                                 onClick={() => openImportDialog()}
                             >
                                 Import
@@ -654,6 +741,19 @@ export const PortfolioTab: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-3">
+                            {freshImportResult ? (
+                                <div className="alert alert-success text-sm">
+                                    <span>
+                                        Fresh import completed. Deleted {freshImportResult.deleted_count} existing position
+                                        {freshImportResult.deleted_count === 1 ? '' : 's'} and created {freshImportResult.created_count}.
+                                    </span>
+                                </div>
+                            ) : null}
+                            {freshImportError ? (
+                                <div className="alert alert-error text-sm">
+                                    <span>{freshImportError}</span>
+                                </div>
+                            ) : null}
                             {positions.length === 0 && (
                                 <div className="text-sm text-base-content/60">
                                     No positions yet. Add your first ticker to start tracking performance.
@@ -698,7 +798,9 @@ export const PortfolioTab: React.FC = () => {
                                         const costBasis = averageCost !== null ? quantity * averageCost : null;
                                         const marketValue = price !== null ? quantity * price : null;
                                         const pnl = price !== null && costBasis !== null ? marketValue! - costBasis : null;
-                                        const pnlPercent = pnl !== null && costBasis > 0 ? (pnl / costBasis) * 100 : null;
+                                        const pnlPercent = pnl !== null && costBasis !== null && costBasis > 0
+                                            ? (pnl / costBasis) * 100
+                                            : null;
                                         const pnlClassName = pnl === null
                                             ? 'text-base-content/50'
                                             : pnl > 0
@@ -912,6 +1014,14 @@ export const PortfolioTab: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            <input
+                ref={freshImportInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleFreshImportFileChange}
+            />
 
             <dialog ref={importDialogRef} className="modal">
                 <div className="modal-box">

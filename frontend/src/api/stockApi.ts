@@ -22,6 +22,19 @@ const getStoredToken = () => {
     return window.localStorage.getItem(AUTH_TOKEN_KEY);
 };
 
+const sanitizeFilenamePart = (value: string) => {
+    const normalized = value.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._-]+|[._-]+$/g, '');
+    return normalized || 'user';
+};
+
+const buildPortfolioCsvFallbackFilename = () => {
+    const user = authStorage.getUser();
+    const emailLocalPart = user?.email?.split('@')[0] ?? 'user';
+    const userPart = sanitizeFilenamePart(emailLocalPart);
+    const datePart = new Date().toISOString().slice(0, 10);
+    return `${userPart}_${datePart}.csv`;
+};
+
 const decodeBase64Url = (value: string) => {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
     const padding = normalized.length % 4;
@@ -488,6 +501,17 @@ export interface PortfolioImportResponse {
     positions: PortfolioPosition[];
 }
 
+export interface PortfolioFreshImportResponse {
+    created_count: number;
+    deleted_count: number;
+    positions: PortfolioPosition[];
+}
+
+export interface PortfolioCsvExportResponse {
+    blob: Blob;
+    filename: string;
+}
+
 export interface StockQuotesResponse {
     stocks: Stock[];
     count: number;
@@ -743,6 +767,38 @@ export const stockApi = {
 
     async importPortfolioPositions(formData: FormData): Promise<PortfolioImportResponse> {
         const response = await apiClient.post<PortfolioImportResponse>('/portfolio/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    },
+
+    async exportPortfolioCsv(): Promise<PortfolioCsvExportResponse> {
+        const response = await apiClient.get('/portfolio/export/csv', {
+            responseType: 'blob',
+        });
+        const contentDisposition = response.headers['content-disposition'] as string | undefined;
+        let filename = buildPortfolioCsvFallbackFilename();
+        if (contentDisposition) {
+            const utf8FilenameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utf8FilenameMatch?.[1]) {
+                filename = decodeURIComponent(utf8FilenameMatch[1]);
+            } else {
+                const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+                if (filenameMatch?.[1]) {
+                    filename = filenameMatch[1];
+                }
+            }
+        }
+        return {
+            blob: response.data as Blob,
+            filename,
+        };
+    },
+
+    async freshImportPortfolioCsv(formData: FormData): Promise<PortfolioFreshImportResponse> {
+        const response = await apiClient.post<PortfolioFreshImportResponse>('/portfolio/import/fresh', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },

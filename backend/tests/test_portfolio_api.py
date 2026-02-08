@@ -3,6 +3,7 @@ from httpx import AsyncClient
 import csv
 import io
 import json
+from datetime import date
 
 
 @pytest.fixture
@@ -20,6 +21,16 @@ async def auth_headers(client: AsyncClient):
     )
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _create_position(client: AsyncClient, headers: dict, payload: dict):
+    response = await client.post(
+        "/api/v1/portfolio/positions",
+        json=payload,
+        headers=headers,
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 @pytest.mark.asyncio
@@ -141,6 +152,227 @@ async def test_update_and_delete_position(client: AsyncClient, auth_headers):
     list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_portfolio_export_csv_requires_auth(client: AsyncClient):
+    response = await client.get("/api/v1/portfolio/export/csv")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_portfolio_export_csv_returns_expected_content(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "TCB",
+            "quantity": 100,
+            "average_cost": 42000,
+            "purchase_date": "2024-01-15",
+        },
+    )
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "FPT",
+            "quantity": 25,
+        },
+    )
+
+    response = await client.get("/api/v1/portfolio/export/csv", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    expected_filename = f"portfolio_tester_{date.today().isoformat()}.csv"
+    assert f"attachment; filename=\"{expected_filename}\"" in response.headers["content-disposition"]
+
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert len(rows) == 2
+    assert list(rows[0].keys()) == ["ticker", "quantity", "average_cost", "purchase_date"]
+
+    assert rows[0]["ticker"] == "TCB"
+    assert float(rows[0]["quantity"]) == 100
+    assert float(rows[0]["average_cost"]) == 42000
+    assert rows[0]["purchase_date"] == "2024-01-15"
+
+    assert rows[1]["ticker"] == "FPT"
+    assert float(rows[1]["quantity"]) == 25
+    assert rows[1]["average_cost"] == ""
+    assert rows[1]["purchase_date"] == ""
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_requires_auth(client: AsyncClient):
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", "ticker,quantity,average_cost,purchase_date\nTCB,1,,\n", "text/csv")},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_missing_file(client: AsyncClient, auth_headers):
+    response = await client.post("/api/v1/portfolio/import/fresh", headers=auth_headers)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "File is required"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_invalid_header_keeps_existing(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "SSI",
+            "quantity": 200,
+            "average_cost": 25000,
+        },
+    )
+
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", "ticker,quantity,purchase_date\nTCB,100,2024-01-15\n", "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    list_data = list_response.json()
+    assert list_data["count"] == 1
+    assert list_data["positions"][0]["ticker"] == "SSI"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_invalid_row_keeps_existing(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "SSI",
+            "quantity": 200,
+        },
+    )
+
+    csv_payload = (
+        "ticker,quantity,average_cost,purchase_date\n"
+        "TCB,abc,42000,2024-01-15\n"
+    )
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", csv_payload, "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    list_data = list_response.json()
+    assert list_data["count"] == 1
+    assert list_data["positions"][0]["ticker"] == "SSI"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_duplicate_ticker_keeps_existing(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "SSI",
+            "quantity": 200,
+        },
+    )
+
+    csv_payload = (
+        "ticker,quantity,average_cost,purchase_date\n"
+        "TCB,100,42000,2024-01-15\n"
+        "tcb,200,43000,2024-01-16\n"
+    )
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", csv_payload, "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    list_data = list_response.json()
+    assert list_data["count"] == 1
+    assert list_data["positions"][0]["ticker"] == "SSI"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_empty_csv_rejected(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "SSI",
+            "quantity": 200,
+        },
+    )
+
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", "ticker,quantity,average_cost,purchase_date\n", "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    list_data = list_response.json()
+    assert list_data["count"] == 1
+    assert list_data["positions"][0]["ticker"] == "SSI"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_fresh_import_replaces_positions(client: AsyncClient, auth_headers):
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "SSI",
+            "quantity": 200,
+            "average_cost": 25000,
+            "purchase_date": "2024-01-10",
+        },
+    )
+    await _create_position(
+        client,
+        auth_headers,
+        {
+            "ticker": "VCB",
+            "quantity": 50,
+            "average_cost": 90000,
+            "purchase_date": "2024-02-01",
+        },
+    )
+
+    csv_payload = (
+        "ticker,quantity,average_cost,purchase_date\n"
+        "TCB,100,42000,2024-01-15\n"
+        "FPT,25,,\n"
+    )
+    response = await client.post(
+        "/api/v1/portfolio/import/fresh",
+        files={"file": ("portfolio.csv", csv_payload, "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted_count"] == 2
+    assert data["created_count"] == 2
+    assert len(data["positions"]) == 2
+    assert {item["ticker"] for item in data["positions"]} == {"TCB", "FPT"}
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    list_data = list_response.json()
+    assert list_data["count"] == 2
+    assert {item["ticker"] for item in list_data["positions"]} == {"TCB", "FPT"}
 
 
 @pytest.mark.asyncio
