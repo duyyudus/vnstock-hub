@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Any
 import asyncio
+import threading
 from datetime import datetime, date, timedelta
 import pandas as pd
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.database import async_session
 from app.db.models import StockDailyPrice, StockCompany, StockHistoryBackfillState
@@ -63,6 +65,57 @@ class HistoryService:
         self._backfill_queue: asyncio.Queue[BackfillJob] = asyncio.Queue()
         self._backfill_queued_symbols = set()
         self._backfill_start_lock: asyncio.Lock | None = None
+        self._symbol_sync_locks: Dict[str, threading.Lock] = {}
+        self._symbol_sync_locks_guard = threading.Lock()
+
+    def _get_symbol_sync_lock(self, symbol: str) -> threading.Lock:
+        symbol_key = symbol[:3].upper()
+        with self._symbol_sync_locks_guard:
+            lock = self._symbol_sync_locks.get(symbol_key)
+            if lock is None:
+                lock = threading.Lock()
+                self._symbol_sync_locks[symbol_key] = lock
+            return lock
+
+    def _normalize_price_history_payload(
+        self,
+        symbol: str,
+        hist: pd.DataFrame,
+        created_at: datetime | None = None
+    ) -> tuple[List[Dict[str, Any]], date | None, date | None]:
+        symbol_key = symbol[:3].upper()
+        row_created_at = created_at or datetime.utcnow()
+        deduped_by_date: Dict[date, Dict[str, Any]] = {}
+
+        for _, row in hist.iterrows():
+            raw_time = row.get('time')
+            if pd.isna(raw_time):
+                continue
+            raw_close = row.get('close')
+            if pd.isna(raw_close):
+                continue
+            try:
+                price_date = pd.to_datetime(raw_time).date()
+            except Exception:
+                continue
+
+            deduped_by_date[price_date] = {
+                'symbol': symbol_key,
+                'date': price_date,
+                'open': float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
+                'high': float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
+                'low': float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
+                'close': float(raw_close),
+                'volume': int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None,
+                'created_at': row_created_at,
+            }
+
+        if not deduped_by_date:
+            return [], None, None
+
+        ordered_dates = sorted(deduped_by_date.keys())
+        payload = [deduped_by_date[d] for d in ordered_dates]
+        return payload, ordered_dates[0], ordered_dates[-1]
 
     async def start_background_workers(self) -> None:
         """Start completeness backfill worker/scheduler tasks."""
@@ -722,8 +775,8 @@ class HistoryService:
         session=None
     ) -> int:
         """
-        Fetch stock history from API and store in database using upsert-like logic.
-        Returns number of new records inserted.
+        Fetch stock history from API and store in database via atomic upsert.
+        Returns number of rows synced (inserted or updated).
         """
         from vnstock import Vnstock
 
@@ -734,57 +787,61 @@ class HistoryService:
             session = Session(engine)
             own_session = True
 
+        symbol_key = symbol[:3].upper()
+        symbol_lock = self._get_symbol_sync_lock(symbol_key)
+
         try:
-            # Fetch from API with retry logic
-            def fetch_history():
-                s = Vnstock().stock(symbol=symbol, source='VCI')
-                return s.quote.history(
-                    start=start_date.strftime('%Y-%m-%d'),
-                    end=end_date.strftime('%Y-%m-%d'),
-                    interval='1D'
+            with symbol_lock:
+                # Fetch from API with retry logic
+                def fetch_history():
+                    s = Vnstock().stock(symbol=symbol_key, source='VCI')
+                    return s.quote.history(
+                        start=start_date.strftime('%Y-%m-%d'),
+                        end=end_date.strftime('%Y-%m-%d'),
+                        interval='1D'
+                    )
+
+                hist = retry_with_backoff(fetch_history, max_retries=2)
+
+                if hist is None or hist.empty:
+                    return 0
+
+                payload, min_payload_date, max_payload_date = self._normalize_price_history_payload(
+                    symbol=symbol_key,
+                    hist=hist
+                )
+                if not payload:
+                    return 0
+
+                insert_stmt = pg_insert(StockDailyPrice.__table__).values(payload)
+                upsert_stmt = insert_stmt.on_conflict_do_update(
+                    constraint='uq_symbol_date',
+                    set_={
+                        'open': insert_stmt.excluded.open,
+                        'high': insert_stmt.excluded.high,
+                        'low': insert_stmt.excluded.low,
+                        'close': insert_stmt.excluded.close,
+                        'volume': insert_stmt.excluded.volume,
+                    }
                 )
 
-            hist = retry_with_backoff(fetch_history, max_retries=2)
-
-            if hist is None or hist.empty:
-                return 0
-
-            count = 0
-            for _, row in hist.iterrows():
-                try:
-                    price_date = pd.to_datetime(row['time']).date()
-
-                    # Check if already exists in DB
-                    stmt = select(StockDailyPrice).where(
-                        and_(
-                            StockDailyPrice.symbol == symbol,
-                            StockDailyPrice.date == price_date
-                        )
-                    )
-                    existing = session.execute(stmt).scalar_one_or_none()
-
-                    if not existing:
-                        price_record = StockDailyPrice(
-                            symbol=symbol,
-                            date=price_date,
-                            open=float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
-                            high=float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
-                            low=float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
-                            close=float(row['close']),
-                            volume=int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
-                        )
-                        session.add(price_record)
-                        count += 1
-                except Exception as e:
-                    bg_logger.error(f"Error processing price for {symbol} on {row.get('time')}: {e}")
-                    continue
-
-            if count > 0:
+                session.execute(upsert_stmt)
                 session.commit()
-
-            return count
+                count = len(payload)
+                bg_logger.debug(
+                    f"Upserted {count} price records for {symbol_key} "
+                    f"({min_payload_date} -> {max_payload_date})"
+                )
+                return count
         except Exception as e:
-            bg_logger.error(f"Error in _upsert_stock_price_history for {symbol}: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            bg_logger.error(
+                f"Error in _upsert_stock_price_history for {symbol_key} "
+                f"({start_date} -> {end_date}): {e}"
+            )
             return 0
         finally:
             if own_session:
@@ -812,9 +869,13 @@ class HistoryService:
                     session=session
                 )
                 if count > 0:
-                    bg_logger.debug(f"Cached {count} new price records for {symbol}")
+                    bg_logger.debug(f"Cached {count} synced price records for {symbol}")
 
             except Exception as e:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
                 bg_logger.error(f"Error syncing history for {symbol}: {e}")
                 continue
 
