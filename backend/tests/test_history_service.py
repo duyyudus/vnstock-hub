@@ -1,4 +1,5 @@
 import os
+import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -10,7 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 import app.services.vnstock_service.history as history_module
-from app.db.models import StockDailyPrice
+from app.db.models import StockDailyPrice, StockPriceSyncState
 from app.services.vnstock_service.history import HistoryService
 
 
@@ -60,30 +61,6 @@ def test_check_prices_staleness_marks_old_latest_date_as_stale():
     )
 
     assert is_stale is True
-
-
-def test_resolve_backfill_window_for_covered_symbol_returns_none():
-    service = HistoryService()
-    target_start = date(2010, 1, 1)
-    oldest_date = date(2010, 1, 15)
-
-    start_date, end_date = service._resolve_backfill_window(oldest_date, target_start)
-
-    assert start_date is None
-    assert end_date is None
-
-
-def test_resolve_backfill_window_for_gap_returns_chunk():
-    service = HistoryService()
-    target_start = date(2010, 1, 1)
-    oldest_date = date(2020, 1, 1)
-
-    start_date, end_date = service._resolve_backfill_window(oldest_date, target_start)
-
-    assert start_date is not None
-    assert end_date is not None
-    assert start_date <= end_date
-    assert end_date == date(2019, 12, 31)
 
 
 def test_check_prices_historical_coverage_marks_late_start_as_missing():
@@ -155,8 +132,9 @@ async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_h
 
 
 @pytest.mark.asyncio
-async def test_get_stocks_weekly_prices_missing_symbol_data_keeps_sync_disabled(monkeypatch):
+async def test_get_stocks_weekly_prices_missing_symbol_data_triggers_latest_sync(monkeypatch):
     service = HistoryService()
+    trigger_calls = []
 
     async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
         return {}
@@ -167,9 +145,102 @@ async def test_get_stocks_weekly_prices_missing_symbol_data_keeps_sync_disabled(
     async def _fake_benchmarks(_start_date, _end_date):
         return {}
 
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
     monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
     monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
     monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    result = await service.get_stocks_weekly_prices(
+        symbols=["AAA"],
+        start_year=2019,
+        include_benchmarks=True
+    )
+
+    assert result["is_stale"] is True
+    assert result["is_syncing"] is True
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0]["symbols"] == ["AAA"]
+
+
+@pytest.mark.asyncio
+async def test_get_stocks_weekly_prices_triggers_request_path_sync_when_latest_is_stale(monkeypatch):
+    service = HistoryService()
+    trigger_calls = []
+
+    async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
+        return {
+            "AAA": [
+                {"date": "2025-01-03", "close": 10.0},
+                {"date": "2025-01-10", "close": 10.5},
+            ]
+        }
+
+    async def _fake_company_names(_symbols):
+        return {"AAA": "AAA Corp"}
+
+    async def _fake_benchmarks(_start_date, _end_date):
+        return {}
+
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
+    monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
+    monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
+    monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    result = await service.get_stocks_weekly_prices(
+        symbols=["AAA"],
+        start_year=2019,
+        include_benchmarks=True
+    )
+
+    assert result["is_stale"] is True
+    assert result["is_syncing"] is True
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0]["symbols"] == ["AAA"]
+
+
+@pytest.mark.asyncio
+async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_historical_gap_only(monkeypatch):
+    service = HistoryService()
+
+    async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
+        return {
+            "AAA": [
+                {"date": "2021-01-08", "close": 10.0},
+                {"date": "2026-02-06", "close": 12.0},
+            ]
+        }
+
+    async def _fake_company_names(_symbols):
+        return {"AAA": "AAA Corp"}
+
+    async def _fake_benchmarks(_start_date, _end_date):
+        return {}
+
+    async def _unexpected_trigger(*_args, **_kwargs):
+        raise AssertionError("latest-stale sync should not trigger for historical-gap-only case")
+
+    monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
+    monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
+    monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _unexpected_trigger)
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
@@ -182,72 +253,65 @@ async def test_get_stocks_weekly_prices_missing_symbol_data_keeps_sync_disabled(
 
 
 @pytest.mark.asyncio
-async def test_trigger_price_history_sync_bypasses_cooldown_for_older_start_date(monkeypatch):
+async def test_trigger_price_history_sync_respects_db_cooldown(monkeypatch, db_session):
     service = HistoryService()
-    recorded = {}
+    now = datetime.utcnow()
 
-    async def _fake_get_state(_symbols):
-        return {
-            "AAA": {
-                "last_attempt_at": datetime.utcnow(),
-                "last_attempt_start_date": date(2023, 1, 1),
-            }
-        }
-
-    async def _fake_set_state(symbols, attempted_at, attempted_start_date):
-        recorded["symbols"] = symbols
-        recorded["attempted_at"] = attempted_at
-        recorded["attempted_start_date"] = attempted_start_date
-
-    async def _fake_sync(symbols, start_date, end_date):
-        for symbol in symbols:
-            service._weekly_prices_syncing_symbols.discard(symbol)
-
-    monkeypatch.setattr(service, "_get_weekly_sync_cooldown_state", _fake_get_state)
-    monkeypatch.setattr(service, "_set_weekly_sync_cooldown_state", _fake_set_state)
-    monkeypatch.setattr(service, "_sync_price_history_background", _fake_sync)
-
-    triggered = await service._trigger_price_history_sync(
-        symbols=["AAA"],
-        start_date=date(2019, 1, 1),
-        end_date=date(2026, 2, 6),
-        force=False
+    db_session.add(
+        StockPriceSyncState(
+            symbol="AAA",
+            weekly_sync_last_attempt_at=now,
+        )
     )
+    await db_session.commit()
 
-    if service._weekly_prices_sync_task is not None:
-        await service._weekly_prices_sync_task
+    async def _unexpected_set_state(*_args, **_kwargs):
+        raise AssertionError("cooldown write should not happen when request is blocked")
 
-    assert triggered is True
-    assert recorded["symbols"] == ["AAA"]
-    assert recorded["attempted_start_date"] == date(2019, 1, 1)
-
-
-@pytest.mark.asyncio
-async def test_trigger_price_history_sync_respects_cooldown_for_newer_start_date(monkeypatch):
-    service = HistoryService()
-
-    async def _fake_get_state(_symbols):
-        return {
-            "AAA": {
-                "last_attempt_at": datetime.utcnow(),
-                "last_attempt_start_date": date(2019, 1, 1),
-            }
-        }
-
-    async def _noop_set_state(symbols, attempted_at, attempted_start_date):
-        return None
-
-    monkeypatch.setattr(service, "_get_weekly_sync_cooldown_state", _fake_get_state)
-    monkeypatch.setattr(service, "_set_weekly_sync_cooldown_state", _noop_set_state)
+    monkeypatch.setattr(service, "_set_weekly_sync_cooldown_state", _unexpected_set_state)
 
     triggered = await service._trigger_price_history_sync(
         symbols=["AAA"],
-        start_date=date(2023, 1, 1),
+        start_date=date(2026, 1, 1),
         end_date=date(2026, 2, 6),
         force=False
     )
 
     assert triggered is False
+    assert "AAA" not in service._weekly_prices_syncing_symbols
+
+
+@pytest.mark.asyncio
+async def test_weekly_sync_cooldown_state_persists_across_service_reinstantiation(db_session):
+    service_a = HistoryService()
+    attempted_at = datetime.utcnow()
+
+    await service_a._set_weekly_sync_cooldown_state(
+        symbols=["AAA"],
+        attempted_at=attempted_at,
+    )
+
+    service_b = HistoryService()
+    cooldown_state = await service_b._get_weekly_sync_cooldown_state(["AAA"])
+
+    assert "AAA" in cooldown_state
+    assert cooldown_state["AAA"] is not None
+
+
+@pytest.mark.asyncio
+async def test_stop_background_workers_cancels_weekly_sync_task():
+    service = HistoryService()
+
+    async def _never_ending_sync():
+        await asyncio.sleep(60)
+
+    service._weekly_prices_sync_task = asyncio.create_task(_never_ending_sync())
+    service._weekly_prices_syncing_symbols.add("AAA")
+
+    await service.stop_background_workers()
+
+    assert service._weekly_prices_sync_task is None
+    assert service._weekly_prices_syncing_symbols == set()
 
 
 def test_normalize_price_history_payload_deduplicates_by_symbol_date():

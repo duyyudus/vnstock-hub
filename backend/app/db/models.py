@@ -47,34 +47,6 @@ class StockDailyPrice(Base):
     )
 
 
-class StockHistoryBackfillState(Base):
-    """State tracking for incremental historical backfill per stock symbol."""
-    __tablename__ = "stock_history_backfill_states"
-
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String(10), unique=True, index=True, nullable=False)
-    target_start_date = Column(Date, nullable=True)
-    oldest_date = Column(Date, nullable=True)
-    latest_date = Column(Date, nullable=True)
-    last_seen_at = Column(DateTime, nullable=True)
-    last_attempt_at = Column(DateTime, nullable=True)
-    next_attempt_at = Column(DateTime, nullable=True)
-    weekly_sync_last_attempt_at = Column(DateTime, nullable=True)
-    weekly_sync_last_attempt_start_date = Column(Date, nullable=True)
-    no_progress_attempts = Column(Integer, nullable=False, default=0)
-    is_exhausted = Column(Boolean, nullable=False, default=False)
-    exhausted_until = Column(DateTime, nullable=True)
-    last_error = Column(String(500), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    __table_args__ = (
-        Index('ix_stock_history_backfill_next_attempt', 'next_attempt_at'),
-        Index('ix_stock_history_backfill_last_seen', 'last_seen_at'),
-        Index('ix_stock_history_backfill_exhausted', 'is_exhausted', 'exhausted_until'),
-    )
-
-
 class StockPriceSyncState(Base):
     """State tracking for deterministic price history bootstrap/incremental sync."""
     __tablename__ = "stock_price_sync_state"
@@ -88,6 +60,7 @@ class StockPriceSyncState(Base):
     earliest_synced_date = Column(Date, nullable=True)
     latest_synced_date = Column(Date, nullable=True)
     last_incremental_sync_at = Column(DateTime, nullable=True)
+    weekly_sync_last_attempt_at = Column(DateTime, nullable=True)
     last_error = Column(String(500), nullable=True)
     retry_count = Column(Integer, nullable=False, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
