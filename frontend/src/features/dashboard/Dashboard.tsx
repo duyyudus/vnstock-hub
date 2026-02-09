@@ -197,14 +197,9 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">
-                        {user ? (
-                            <a href="/admin" className="btn btn-outline btn-sm">
-                                Admin
-                            </a>
-                        ) : null}
                         <AuthWidget />
-                        <div className="dropdown dropdown-end">
-                            <label tabIndex={0} className="btn btn-ghost btn-circle">
+                        {user ? (
+                            <a href="/admin" className="btn btn-ghost btn-circle" aria-label="Open admin page">
                                 <svg
                                     xmlns="http://www.w3.org/2000/svg"
                                     className="h-5 w-5"
@@ -219,8 +214,8 @@ export const Dashboard: React.FC = () => {
                                         d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
                                     />
                                 </svg>
-                            </label>
-                        </div>
+                            </a>
+                        ) : null}
                     </div>
                 </div>
             </header>
