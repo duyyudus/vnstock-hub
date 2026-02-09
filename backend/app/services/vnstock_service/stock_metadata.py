@@ -10,7 +10,11 @@ from sqlalchemy.dialects.postgresql import insert
 from app.db.database import async_session
 from app.db.models import StockCompany
 from app.services.sync_status import sync_status
-from app.core.logging_config import log_background_start
+from app.core.logging_config import (
+    log_background_start,
+    log_background_complete,
+    log_background_error,
+)
 
 from .core import (
     background_executor,
@@ -68,131 +72,174 @@ class StockMetadataService:
         now = datetime.utcnow()
         stale_threshold = now - timedelta(days=7)
         error_stale_threshold = now - timedelta(hours=1)  # Retry missing PE after 1 hour
+        metadata_log_stats: Dict[str, int | bool | str] | None = None
 
         async with async_session() as session:
-            # Try to get from DB
-            stmt = select(StockCompany).where(StockCompany.symbol.in_(tickers))
-            result = await session.execute(stmt)
-            cached_data = {c.symbol: c for c in result.scalars().all()}
+            try:
+                # Try to get from DB
+                stmt = select(StockCompany).where(StockCompany.symbol.in_(tickers))
+                result = await session.execute(stmt)
+                cached_data = {c.symbol: c for c in result.scalars().all()}
 
-            # Identify what's missing or stale
-            tickers_needing_name = [t for t in tickers if t not in cached_data]
-            tickers_needing_finance = [
-                t for t in tickers
-                if (t not in cached_data or
-                    cached_data[t].updated_at is None or
-                    (cached_data[t].pe_ratio is None and cached_data[t].updated_at < error_stale_threshold) or
-                    cached_data[t].updated_at < stale_threshold)
-            ]
+                # Identify what's missing or stale
+                tickers_needing_name = [t for t in tickers if t not in cached_data]
+                tickers_needing_finance = [
+                    t for t in tickers
+                    if (t not in cached_data or
+                        cached_data[t].updated_at is None or
+                        (cached_data[t].pe_ratio is None and cached_data[t].updated_at < error_stale_threshold) or
+                        cached_data[t].updated_at < stale_threshold)
+                ]
 
-            # Fetch missing names if needed
-            if tickers_needing_name:
-                loop = asyncio.get_event_loop()
-                try:
-                    all_symbols_df = await loop.run_in_executor(background_executor, self._fetch_all_symbols)
-                except CircuitOpenError as e:
-                    bg_logger.warning(f"Skipping symbol name enrichment due to rate limit: {e}")
-                    all_symbols_df = None
+                # Fetch missing names if needed
+                if tickers_needing_name:
+                    loop = asyncio.get_event_loop()
+                    try:
+                        all_symbols_df = await loop.run_in_executor(background_executor, self._fetch_all_symbols)
+                    except CircuitOpenError as e:
+                        bg_logger.warning(f"Skipping symbol name enrichment due to rate limit: {e}")
+                        all_symbols_df = None
 
-                if all_symbols_df is not None and not all_symbols_df.empty:
-                    missing_set = set(tickers_needing_name)
-                    rows_to_insert = []
-                    for _, row in all_symbols_df.iterrows():
-                        symbol = row['symbol']
-                        if symbol in missing_set:
-                            rows_to_insert.append({
-                                'symbol': symbol,
-                                'company_name': row['organ_name'],
-                            })
+                    if all_symbols_df is not None and not all_symbols_df.empty:
+                        missing_set = set(tickers_needing_name)
+                        rows_to_insert = []
+                        for _, row in all_symbols_df.iterrows():
+                            symbol = row['symbol']
+                            if symbol in missing_set:
+                                rows_to_insert.append({
+                                    'symbol': symbol,
+                                    'company_name': row['organ_name'],
+                                })
 
-                    if rows_to_insert:
-                        # Idempotent insert to avoid duplicate-key races
-                        stmt = insert(StockCompany).values(rows_to_insert)
-                        stmt = stmt.on_conflict_do_nothing(index_elements=['symbol'])
-                        await session.execute(stmt)
+                        if rows_to_insert:
+                            # Idempotent insert to avoid duplicate-key races
+                            stmt = insert(StockCompany).values(rows_to_insert)
+                            stmt = stmt.on_conflict_do_nothing(index_elements=['symbol'])
+                            await session.execute(stmt)
 
-                        # Refresh cache for newly inserted (or concurrently inserted) rows
-                        symbols = [r['symbol'] for r in rows_to_insert]
-                        stmt = select(StockCompany).where(StockCompany.symbol.in_(symbols))
-                        result = await session.execute(stmt)
-                        for company in result.scalars().all():
-                            cached_data[company.symbol] = company
+                            # Refresh cache for newly inserted (or concurrently inserted) rows
+                            symbols = [r['symbol'] for r in rows_to_insert]
+                            stmt = select(StockCompany).where(StockCompany.symbol.in_(symbols))
+                            result = await session.execute(stmt)
+                            for company in result.scalars().all():
+                                cached_data[company.symbol] = company
 
-            # Fetch missing/stale financial data if needed
-            if tickers_needing_finance:
-                # Early bail-out if rate limited - skip API calls entirely
-                if sync_status.is_rate_limited:
-                    bg_logger.debug("Skipping metadata enrichment API calls due to rate limit")
-                    # Still apply existing cached data below
-                else:
-                    # Limit batch size to avoid long hangs in one request
-                    batch_limit = 50
-                    tickers_to_fetch = [t for t in tickers_needing_finance if t not in self._enriching_tickers][:batch_limit]
+                # Fetch missing/stale financial data if needed
+                if tickers_needing_finance:
+                    # Early bail-out if rate limited - skip API calls entirely
+                    if sync_status.is_rate_limited:
+                        bg_logger.debug("Skipping metadata enrichment API calls due to rate limit")
+                        # Still apply existing cached data below
+                    else:
+                        # Limit batch size to avoid long hangs in one request
+                        batch_limit = 50
+                        tickers_to_fetch = [t for t in tickers_needing_finance if t not in self._enriching_tickers][:batch_limit]
 
-                    if tickers_to_fetch:
-                        # Mark as enriching to avoid multiple tasks for same symbols
-                        self._enriching_tickers.update(tickers_to_fetch)
+                        if tickers_to_fetch:
+                            requested_count = len(tickers_to_fetch)
+                            metadata_log_stats = {
+                                'requested_count': requested_count,
+                                'processed_count': 0,
+                                'updated_pe_count': 0,
+                                'touched_count': 0,
+                                'error_count': 0,
+                                'stopped_early': False,
+                                'stop_reason': "",
+                            }
+                            # Mark as enriching to avoid multiple tasks for same symbols
+                            self._enriching_tickers.update(tickers_to_fetch)
 
-                        try:
-                            log_background_start(
-                                "Metadata Enrichment",
-                                f"{len(tickers_to_fetch)}/{len(tickers_needing_finance)} stocks"
-                            )
-                            loop = asyncio.get_event_loop()
+                            try:
+                                log_background_start(
+                                    "Metadata Enrichment",
+                                    f"{len(tickers_to_fetch)}/{len(tickers_needing_finance)} stocks"
+                                )
+                                loop = asyncio.get_event_loop()
 
-                            # Fetch one by one and commit incrementally
-                            for symbol in tickers_to_fetch:
-                                # Check rate limit on each iteration for early exit
-                                if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
-                                    bg_logger.warning("Rate limit detected during enrichment, stopping batch")
-                                    break
-                                try:
-                                    # Add a small delay between symbols
-                                    await asyncio.sleep(1.0)
-                                    data = await loop.run_in_executor(background_executor, self._fetch_stock_finance_sync, symbol)
-
-                                    if data and symbol in cached_data:
-                                        cached_data[symbol].pe_ratio = data.get('pe_ratio')
-                                        cached_data[symbol].updated_at = now
-                                        await session.commit()
-                                    elif symbol in cached_data:
-                                        # Still update to avoid retrying immediately, but mark as updated now
-                                        cached_data[symbol].updated_at = now
-                                        await session.commit()
-                                except Exception as e:
-                                    bg_logger.error(f"Error enriching {symbol}: {e}")
-                                    if _is_rate_limit_error(e):
-                                        bg_logger.warning("Rate limit hit during enrichment, stopping batch")
+                                # Fetch one by one and commit incrementally
+                                for symbol in tickers_to_fetch:
+                                    # Check rate limit on each iteration for early exit
+                                    if sync_status.is_rate_limited:
+                                        metadata_log_stats['stopped_early'] = True
+                                        metadata_log_stats['stop_reason'] = "rate_limited"
+                                        bg_logger.warning("Rate limit detected during enrichment, stopping batch")
                                         break
-                        finally:
-                            # Clean up
-                            for t in tickers_to_fetch:
-                                self._enriching_tickers.discard(t)
+                                    if not api_circuit_breaker.can_proceed():
+                                        metadata_log_stats['stopped_early'] = True
+                                        metadata_log_stats['stop_reason'] = "circuit_open"
+                                        bg_logger.warning("Rate limit detected during enrichment, stopping batch")
+                                        break
 
-            await session.commit()
+                                    metadata_log_stats['processed_count'] += 1
+                                    try:
+                                        # Add a small delay between symbols
+                                        await asyncio.sleep(1.0)
+                                        data = await loop.run_in_executor(background_executor, self._fetch_stock_finance_sync, symbol)
 
-            for stock in stocks:
-                if stock.ticker in cached_data:
-                    company = cached_data[stock.ticker]
-                    # Update cache if we have better data from price board
-                    if not company.company_name and stock.company_name:
-                        company.company_name = stock.company_name
-                    # Update exchange if it's currently empty and we have it from price board
-                    if not company.exchange and stock.exchange:
-                        company.exchange = stock.exchange
+                                        if data and symbol in cached_data:
+                                            cached_data[symbol].pe_ratio = data.get('pe_ratio')
+                                            cached_data[symbol].updated_at = now
+                                            metadata_log_stats['updated_pe_count'] += 1
+                                            await session.commit()
+                                        elif symbol in cached_data:
+                                            # Still update to avoid retrying immediately, but mark as updated now
+                                            cached_data[symbol].updated_at = now
+                                            metadata_log_stats['touched_count'] += 1
+                                            await session.commit()
+                                    except Exception as e:
+                                        metadata_log_stats['error_count'] += 1
+                                        bg_logger.error(f"Error enriching {symbol}: {e}")
+                                        if _is_rate_limit_error(e):
+                                            metadata_log_stats['stopped_early'] = True
+                                            metadata_log_stats['stop_reason'] = "rate_limited"
+                                            bg_logger.warning("Rate limit hit during enrichment, stopping batch")
+                                            break
+                            finally:
+                                # Clean up
+                                for t in tickers_to_fetch:
+                                    self._enriching_tickers.discard(t)
 
-                    if not stock.company_name and company.company_name:
-                        stock.company_name = company.company_name
-                    # Don't overwrite exchange if we already have it from the price board
-                    if not stock.exchange and company.exchange:
-                        stock.exchange = company.exchange
-                    # Use cached value if real-time value is missing
-                    if stock.charter_capital == 0 and company.charter_capital:
-                        stock.charter_capital = company.charter_capital
-                    if stock.pe_ratio is None and company.pe_ratio:
-                        stock.pe_ratio = company.pe_ratio
+                await session.commit()
 
-            await session.commit()
+                for stock in stocks:
+                    if stock.ticker in cached_data:
+                        company = cached_data[stock.ticker]
+                        # Update cache if we have better data from price board
+                        if not company.company_name and stock.company_name:
+                            company.company_name = stock.company_name
+                        # Update exchange if it's currently empty and we have it from price board
+                        if not company.exchange and stock.exchange:
+                            company.exchange = stock.exchange
+
+                        if not stock.company_name and company.company_name:
+                            stock.company_name = company.company_name
+                        # Don't overwrite exchange if we already have it from the price board
+                        if not stock.exchange and company.exchange:
+                            stock.exchange = company.exchange
+                        # Use cached value if real-time value is missing
+                        if stock.charter_capital == 0 and company.charter_capital:
+                            stock.charter_capital = company.charter_capital
+                        if stock.pe_ratio is None and company.pe_ratio:
+                            stock.pe_ratio = company.pe_ratio
+
+                await session.commit()
+            except Exception as e:
+                if metadata_log_stats is not None:
+                    log_background_error("Metadata Enrichment", str(e))
+                raise
+            else:
+                if metadata_log_stats is not None:
+                    summary = (
+                        f"processed={metadata_log_stats['processed_count']}/{metadata_log_stats['requested_count']}, "
+                        f"pe_updated={metadata_log_stats['updated_pe_count']}, "
+                        f"touched={metadata_log_stats['touched_count']}, "
+                        f"errors={metadata_log_stats['error_count']}, "
+                        f"stopped_early={str(metadata_log_stats['stopped_early']).lower()}"
+                    )
+                    stop_reason = metadata_log_stats.get('stop_reason')
+                    if stop_reason:
+                        summary += f", reason={stop_reason}"
+                    log_background_complete("Metadata Enrichment", summary)
 
         return stocks
 
