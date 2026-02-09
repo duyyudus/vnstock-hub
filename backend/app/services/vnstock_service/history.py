@@ -118,36 +118,15 @@ class HistoryService:
         return payload, ordered_dates[0], ordered_dates[-1]
 
     async def start_background_workers(self) -> None:
-        """Start completeness backfill worker/scheduler tasks."""
-        await self._ensure_backfill_workers()
+        """Legacy backfill workers are disabled in deterministic sync mode."""
+        return
 
     async def stop_background_workers(self) -> None:
-        """Stop completeness backfill worker/scheduler tasks."""
-        tasks = [self._backfill_worker_task, self._backfill_scheduler_task]
-        for task in tasks:
-            if task and not task.done():
-                task.cancel()
-
-        for task in tasks:
-            if task:
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Error stopping backfill task: {e}")
-
+        """Legacy backfill workers are disabled in deterministic sync mode."""
         self._backfill_worker_task = None
         self._backfill_scheduler_task = None
         self._backfill_queued_symbols.clear()
-
-        # Drain pending items
-        while not self._backfill_queue.empty():
-            try:
-                self._backfill_queue.get_nowait()
-                self._backfill_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
+        return
 
     async def schedule_completeness_backfill(
         self,
@@ -686,53 +665,10 @@ class HistoryService:
 
     async def trigger_missing_price_history_sync(self, stocks: List[StockInfo]) -> bool:
         """
-        Trigger background history sync for symbols missing 1w/1m/6m/1y/2y/3y cache.
-        Returns True if a sync was triggered (or already syncing), False if no missing data.
+        Deprecated in deterministic sync mode.
+        Request-path historical sync is disabled to keep write flow deterministic.
         """
-        if not stocks:
-            return False
-
-        today = date.today()
-        symbols = [s.ticker[:3].upper() for s in stocks if s.ticker]
-        try:
-            await self.schedule_completeness_backfill(
-                symbols=symbols,
-                target_start_date=BACKFILL_DEFAULT_START_DATE,
-                reason="active_request",
-                mark_seen=True
-            )
-        except Exception as e:
-            logger.warning(f"Error tracking active symbols for backfill: {e}")
-
-        target_dates = {
-            '1w': today - timedelta(days=7),
-            '1m': today - timedelta(days=30),
-            '6m': today - timedelta(days=182),
-            '1y': today - timedelta(days=365),
-            '2y': today - timedelta(days=730),
-            '3y': today - timedelta(days=1095),
-        }
-
-        engine = get_sync_engine()
-        try:
-            with Session(engine) as session:
-                cached_prices = self._get_cached_prices_sync(session, symbols, target_dates)
-        finally:
-            engine.dispose()
-
-        symbols_needing_fetch = set()
-        for symbol in symbols:
-            for period in target_dates.keys():
-                if (symbol, period) not in cached_prices:
-                    symbols_needing_fetch.add(symbol)
-
-        if not symbols_needing_fetch:
-            return False
-
-        # Fetch a bit more than 3 years to handle weekends/holidays and coverage checks.
-        start_date = today - timedelta(days=1130)
-        end_date = today
-        return await self._trigger_price_history_sync(list(symbols_needing_fetch), start_date, end_date)
+        return False
 
     def _get_cached_prices_sync(self, session, symbols: List[str], target_dates: Dict[str, date]) -> Dict[tuple, float]:
         """
@@ -772,7 +708,9 @@ class HistoryService:
         symbol: str,
         start_date: date,
         end_date: date,
-        session=None
+        session=None,
+        raise_on_error: bool = False,
+        log=None,
     ) -> int:
         """
         Fetch stock history from API and store in database via atomic upsert.
@@ -789,6 +727,7 @@ class HistoryService:
 
         symbol_key = symbol[:3].upper()
         symbol_lock = self._get_symbol_sync_lock(symbol_key)
+        active_logger = log or bg_logger
 
         try:
             with symbol_lock:
@@ -828,7 +767,7 @@ class HistoryService:
                 session.execute(upsert_stmt)
                 session.commit()
                 count = len(payload)
-                bg_logger.debug(
+                active_logger.debug(
                     f"Upserted {count} price records for {symbol_key} "
                     f"({min_payload_date} -> {max_payload_date})"
                 )
@@ -838,10 +777,12 @@ class HistoryService:
                 session.rollback()
             except Exception:
                 pass
-            bg_logger.error(
+            active_logger.error(
                 f"Error in _upsert_stock_price_history for {symbol_key} "
                 f"({start_date} -> {end_date}): {e}"
             )
+            if raise_on_error:
+                raise
             return 0
         finally:
             if own_session:
@@ -1053,18 +994,6 @@ class HistoryService:
         # Calculate date range
         start_date = date(start_year, 1, 1)
         end_date = date.today()
-        desired_backfill_start = start_date
-
-        # Track active usage and trigger dedicated completeness backfill.
-        asyncio.create_task(
-            self._schedule_completeness_backfill_safe(
-                symbols=clean_symbols,
-                target_start_date=desired_backfill_start,
-                reason="weekly_request",
-                mark_seen=True
-            )
-        )
-
         # Load from database
         stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
 
@@ -1075,7 +1004,6 @@ class HistoryService:
             requested_symbols=clean_symbols,
             start_date=start_date
         )
-        has_missing_symbol_data = any(not stocks_data.get(symbol, []) for symbol in clean_symbols)
         is_stale = has_stale_latest or has_historical_gap
 
         # Load benchmarks if requested
@@ -1097,17 +1025,8 @@ class HistoryService:
                 'prices': prices
             })
 
-        # Trigger background sync if stale
+        # Request-path sync is disabled in deterministic sync mode.
         is_syncing = False
-        if is_stale:
-            # Only bypass retry cooldown for cold-start symbols with no cached range at all.
-            force_sync = has_historical_gap and has_missing_symbol_data
-            is_syncing = await self._trigger_price_history_sync(
-                clean_symbols,
-                start_date,
-                end_date,
-                force=force_sync
-            )
 
         return {
             'stocks': stocks_response,

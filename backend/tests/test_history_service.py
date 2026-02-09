@@ -123,12 +123,8 @@ def test_check_prices_historical_coverage_allows_small_offset_from_start():
 
 
 @pytest.mark.asyncio
-async def test_get_stocks_weekly_prices_triggers_sync_for_historical_gap(monkeypatch):
+async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_historical_gap(monkeypatch):
     service = HistoryService()
-    triggered = {}
-
-    async def _noop_schedule(*args, **kwargs):
-        return None
 
     async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
         return {
@@ -144,18 +140,9 @@ async def test_get_stocks_weekly_prices_triggers_sync_for_historical_gap(monkeyp
     async def _fake_benchmarks(_start_date, _end_date):
         return {}
 
-    async def _fake_trigger(symbols, start_date, end_date, force=False):
-        triggered["symbols"] = symbols
-        triggered["start_date"] = start_date
-        triggered["end_date"] = end_date
-        triggered["force"] = force
-        return True
-
-    monkeypatch.setattr(service, "_schedule_completeness_backfill_safe", _noop_schedule)
     monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
     monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
     monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
-    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
@@ -164,19 +151,12 @@ async def test_get_stocks_weekly_prices_triggers_sync_for_historical_gap(monkeyp
     )
 
     assert result["is_stale"] is True
-    assert result["is_syncing"] is True
-    assert triggered["symbols"] == ["AAA"]
-    assert triggered["start_date"] == date(2019, 1, 1)
-    assert triggered["force"] is False
+    assert result["is_syncing"] is False
 
 
 @pytest.mark.asyncio
-async def test_get_stocks_weekly_prices_forces_sync_on_missing_symbol_data(monkeypatch):
+async def test_get_stocks_weekly_prices_missing_symbol_data_keeps_sync_disabled(monkeypatch):
     service = HistoryService()
-    triggered = {}
-
-    async def _noop_schedule(*args, **kwargs):
-        return None
 
     async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
         return {}
@@ -187,18 +167,9 @@ async def test_get_stocks_weekly_prices_forces_sync_on_missing_symbol_data(monke
     async def _fake_benchmarks(_start_date, _end_date):
         return {}
 
-    async def _fake_trigger(symbols, start_date, end_date, force=False):
-        triggered["symbols"] = symbols
-        triggered["start_date"] = start_date
-        triggered["end_date"] = end_date
-        triggered["force"] = force
-        return True
-
-    monkeypatch.setattr(service, "_schedule_completeness_backfill_safe", _noop_schedule)
     monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
     monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
     monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
-    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
@@ -207,10 +178,7 @@ async def test_get_stocks_weekly_prices_forces_sync_on_missing_symbol_data(monke
     )
 
     assert result["is_stale"] is True
-    assert result["is_syncing"] is True
-    assert triggered["symbols"] == ["AAA"]
-    assert triggered["start_date"] == date(2019, 1, 1)
-    assert triggered["force"] is True
+    assert result["is_syncing"] is False
 
 
 @pytest.mark.asyncio
@@ -401,6 +369,49 @@ def test_upsert_stock_price_history_rolls_back_session_on_failure(monkeypatch):
     )
 
     assert count == 0
+    assert failing_session.rollback_calls == 1
+
+
+def test_upsert_stock_price_history_raises_when_raise_on_error_enabled(monkeypatch):
+    service = HistoryService()
+    hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "open": 9.1,
+                "high": 9.3,
+                "low": 9.0,
+                "close": 9.0,
+                "volume": 1000,
+            }
+        ]
+    )
+
+    class FailingSession:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        def execute(self, _stmt):
+            raise RuntimeError("db exploded")
+
+        def commit(self):
+            raise AssertionError("commit should not be called on failure")
+
+        def rollback(self):
+            self.rollback_calls += 1
+
+    failing_session = FailingSession()
+    monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist)
+
+    with pytest.raises(RuntimeError, match="db exploded"):
+        service._upsert_stock_price_history(
+            symbol="INC",
+            start_date=date(2021, 10, 1),
+            end_date=date(2021, 11, 30),
+            session=failing_session,
+            raise_on_error=True,
+        )
+
     assert failing_session.rollback_calls == 1
 
 

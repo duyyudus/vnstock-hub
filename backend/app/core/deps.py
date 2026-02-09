@@ -53,3 +53,21 @@ async def get_current_user_optional(
         return await get_current_user(token=token, db=db)
     except HTTPException:
         return None
+
+
+async def get_current_admin_user(current_user=Depends(get_current_user)):
+    admin_emails = set(settings.sync_admin_emails_list)
+    if not admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No sync admins configured"
+        )
+
+    user_email = str(current_user.email).strip().lower()
+    if user_email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    return current_user

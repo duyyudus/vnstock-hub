@@ -17,6 +17,7 @@ MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 LLM_LOG_FILE = LOG_DIR / "llm.log"
+BOOTSTRAP_LOG_FILE = LOG_DIR / "bootstrap.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -28,17 +29,25 @@ _main_logger = None
 _background_logger = None
 _portfolio_import_logger = None
 _llm_logger = None
+_bootstrap_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger
+    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _bootstrap_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
 
     # Truncate log files on startup to ensure fresh logs
-    for log_path in [LOG_FILE, MAIN_LOG_FILE, SQL_LOG_FILE, PORTFOLIO_IMPORT_LOG_FILE, LLM_LOG_FILE]:
+    for log_path in [
+        LOG_FILE,
+        MAIN_LOG_FILE,
+        SQL_LOG_FILE,
+        PORTFOLIO_IMPORT_LOG_FILE,
+        LLM_LOG_FILE,
+        BOOTSTRAP_LOG_FILE,
+    ]:
         try:
             with open(log_path, 'w') as f:
                 f.truncate(0)
@@ -153,6 +162,27 @@ def setup_logging():
     llm_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
     _llm_logger.addHandler(llm_file_handler)
 
+    # === Bootstrap Logger (file only + critical errors to console) ===
+    _bootstrap_logger = logging.getLogger("vnstock_hub.bootstrap")
+    _bootstrap_logger.setLevel(logging.DEBUG)
+    _bootstrap_logger.propagate = False
+    _bootstrap_logger.handlers.clear()
+
+    bootstrap_file_handler = RotatingFileHandler(
+        BOOTSTRAP_LOG_FILE,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    bootstrap_file_handler.setLevel(logging.DEBUG)
+    bootstrap_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _bootstrap_logger.addHandler(bootstrap_file_handler)
+
+    bootstrap_console_error_handler = logging.StreamHandler()
+    bootstrap_console_error_handler.setLevel(logging.WARNING)
+    bootstrap_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
+    _bootstrap_logger.addHandler(bootstrap_console_error_handler)
+
     return _main_logger, _background_logger
 
 
@@ -186,6 +216,14 @@ def get_llm_logger() -> logging.Logger:
     if _llm_logger is None:
         setup_logging()
     return _llm_logger
+
+
+def get_bootstrap_logger() -> logging.Logger:
+    """Get the bootstrap logger for price bootstrap tasks."""
+    global _bootstrap_logger
+    if _bootstrap_logger is None:
+        setup_logging()
+    return _bootstrap_logger
 
 
 def log_background_start(task_name: str, details: str = ""):

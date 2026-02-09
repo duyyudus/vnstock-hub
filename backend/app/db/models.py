@@ -75,6 +75,29 @@ class StockHistoryBackfillState(Base):
     )
 
 
+class StockPriceSyncState(Base):
+    """State tracking for deterministic price history bootstrap/incremental sync."""
+    __tablename__ = "stock_price_sync_state"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), unique=True, index=True, nullable=False)
+    listing_date = Column(Date, nullable=True)
+    bootstrap_status = Column(String(20), nullable=False, default="idle")
+    bootstrap_started_at = Column(DateTime, nullable=True)
+    bootstrap_completed_at = Column(DateTime, nullable=True)
+    earliest_synced_date = Column(Date, nullable=True)
+    latest_synced_date = Column(Date, nullable=True)
+    last_incremental_sync_at = Column(DateTime, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_stock_price_sync_state_bootstrap_status', 'bootstrap_status'),
+        Index('ix_stock_price_sync_state_latest_synced_date', 'latest_synced_date'),
+    )
+
+
 class FundNav(Base):
     """Historical NAV data for mutual funds."""
     __tablename__ = "fund_navs"

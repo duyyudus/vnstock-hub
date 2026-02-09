@@ -525,10 +525,63 @@ export interface SyncStatusItem {
     started_at: string | null;
 }
 
+export interface PriceBootstrapStatus {
+    state: string;
+    total_symbols: number;
+    processed_symbols: number;
+    success_symbols: number;
+    failed_symbols: number;
+    current_symbol: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    error: string | null;
+    progress: number;
+}
+
+export interface PriceJobStatus {
+    is_running: boolean;
+    total_symbols: number;
+    processed_symbols: number;
+    current_symbol: string | null;
+    last_run_at: string | null;
+    started_at: string | null;
+    error: string | null;
+    progress: number;
+}
+
+export interface PriceSyncStatus {
+    bootstrap: PriceBootstrapStatus;
+    incremental: PriceJobStatus;
+    repair: PriceJobStatus;
+}
+
 export interface SyncStatusResponse {
     fund_performance: SyncStatusItem;
+    price_sync: PriceSyncStatus;
     is_rate_limited: boolean;
     rate_limit_reset_at: string | null;
+}
+
+export interface PriceSyncActionResponse {
+    started: boolean;
+    message: string;
+    processed_symbols: number;
+    success_symbols: number;
+    failed_symbols: number;
+    state?: string | null;
+    window_start_date?: string | null;
+    window_end_date?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+}
+
+export interface PriceBootstrapDbSummary {
+    total_symbols: number;
+    by_status: Record<string, number>;
+}
+
+export interface PriceBootstrapDetailedStatusResponse extends PriceBootstrapStatus {
+    db_summary: PriceBootstrapDbSummary;
 }
 
 // Stock API functions
@@ -737,6 +790,38 @@ export const stockApi = {
      */
     async getSyncStatus(): Promise<SyncStatusResponse> {
         const response = await apiClient.get<SyncStatusResponse>('/sync/status');
+        return response.data;
+    },
+
+    async startPriceBootstrap(forceRestart: boolean = false): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/bootstrap/start', {
+            force_restart: forceRestart,
+        });
+        return response.data;
+    },
+
+    async getPriceBootstrapStatus(): Promise<PriceBootstrapDetailedStatusResponse> {
+        const response = await apiClient.get<PriceBootstrapDetailedStatusResponse>('/sync/prices/bootstrap/status');
+        return response.data;
+    },
+
+    async runPriceIncrementalSync(healWindowDays: number = 7): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/incremental/run', {
+            heal_window_days: healWindowDays,
+        });
+        return response.data;
+    },
+
+    async runPriceRepairSync(
+        symbols: string[],
+        startDate: string,
+        endDate: string
+    ): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/repair/run', {
+            symbols,
+            start_date: startDate,
+            end_date: endDate,
+        });
         return response.data;
     },
 

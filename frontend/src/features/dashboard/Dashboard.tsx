@@ -197,6 +197,11 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">
+                        {user ? (
+                            <a href="/admin" className="btn btn-outline btn-sm">
+                                Admin
+                            </a>
+                        ) : null}
                         <AuthWidget />
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle">

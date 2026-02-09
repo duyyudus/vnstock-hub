@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     
     # vnstock API
     vnstock_api_key: str | None = None
+    price_bootstrap_target_rpm: int = 150
+    price_bootstrap_max_concurrency: int = 6
+    price_bootstrap_executor_workers: int = 6
+    price_bootstrap_chunk_days: int = 1095
+    price_bootstrap_rate_limit_max_retries: int = 12
+    price_bootstrap_retry_base_delay_seconds: float = 5.0
+    price_bootstrap_retry_max_delay_seconds: float = 60.0
 
     # LLM providers (OpenAI-compatible) in JSON list format
     llm_providers: str = "[]"
@@ -30,6 +37,9 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+
+    # Sync admin allowlist (JSON array of lowercased emails)
+    sync_admin_emails: str = "[]"
     
     @property
     def cors_origins_list(self) -> List[str]:
@@ -42,6 +52,14 @@ class Settings(BaseSettings):
         if not self.llm_providers:
             return []
         return json.loads(self.llm_providers)
+
+    @property
+    def sync_admin_emails_list(self) -> List[str]:
+        """Parse sync admin emails from JSON string."""
+        if not self.sync_admin_emails:
+            return []
+        raw = json.loads(self.sync_admin_emails)
+        return [str(email).strip().lower() for email in raw if str(email).strip()]
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

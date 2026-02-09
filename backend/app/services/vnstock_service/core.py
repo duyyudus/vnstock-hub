@@ -15,13 +15,15 @@ from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
 from app.core.config import settings
 from app.core.logging_config import (
     get_main_logger,
-    get_background_logger
+    get_background_logger,
+    get_bootstrap_logger,
 )
 from app.services.sync_status import sync_status
 
 # Initialize loggers
 logger = get_main_logger()
 bg_logger = get_background_logger()
+bootstrap_logger = get_bootstrap_logger()
 
 # Determine worker counts based on CPU cores
 _cpu_count = os.cpu_count() or 4
