@@ -23,6 +23,71 @@ interface CompanyFinancialPopupProps {
 
 type TabType = 'overview' | 'income' | 'balance' | 'cashflow' | 'ratios' | 'shareholders' | 'officers' | 'subsidiaries';
 
+const EXPORTABLE_TAB_SUFFIX: Partial<Record<TabType, string>> = {
+    income: 'income',
+    balance: 'balance',
+    cashflow: 'cashflow',
+    ratios: 'ratios',
+};
+
+type CsvRow = Record<string, unknown>;
+
+const CSV_ESCAPE_PATTERN = /[",\r\n]/;
+
+const escapeCsvValue = (value: unknown) => {
+    if (value === null || value === undefined) {
+        return '';
+    }
+
+    const serialized = String(value);
+    if (!CSV_ESCAPE_PATTERN.test(serialized)) {
+        return serialized;
+    }
+
+    return `"${serialized.replace(/"/g, '""')}"`;
+};
+
+const rowsToCsv = (
+    rows: CsvRow[],
+    transformValue?: (value: unknown, key: string, row: CsvRow) => unknown
+) => {
+    if (rows.length === 0) {
+        return '';
+    }
+
+    const headers: string[] = [];
+    const seenHeaders = new Set<string>();
+
+    rows.forEach((row) => {
+        Object.keys(row).forEach((key) => {
+            if (!seenHeaders.has(key)) {
+                seenHeaders.add(key);
+                headers.push(key);
+            }
+        });
+    });
+
+    if (headers.length === 0) {
+        return '';
+    }
+
+    const lines = [headers.map((header) => escapeCsvValue(header)).join(',')];
+
+    rows.forEach((row) => {
+        lines.push(
+            headers
+                .map((header) => {
+                    const rawValue = row[header];
+                    const transformedValue = transformValue ? transformValue(rawValue, header, row) : rawValue;
+                    return escapeCsvValue(transformedValue);
+                })
+                .join(',')
+        );
+    });
+
+    return lines.join('\r\n');
+};
+
 export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     ticker,
     companyName,
@@ -34,7 +99,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [data, setData] = useState<any[]>([]);
+    const [data, setData] = useState<CsvRow[]>([]);
     const [position, setPosition] = useState<Position>(initialPosition);
     const [size, setSize] = useState<Size>({ width: 900, height: 550 });
     const [attributeWidth, setAttributeWidth] = useState(200);
@@ -45,6 +110,9 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const resizeStart = useRef<{ x: number, y: number, w: number, h: number }>({ x: 0, y: 0, w: 0, h: 0 });
     const columnResizeStart = useRef<{ x: number, w: number }>({ x: 0, w: 0 });
     const popupRef = useRef<HTMLDivElement>(null);
+    const exportSuffix = EXPORTABLE_TAB_SUFFIX[activeTab];
+    const isExportableTab = typeof exportSuffix === 'string';
+    const isExportDisabled = loading || error !== null || data.length === 0;
 
     useEffect(() => {
         const fetchData = async () => {
@@ -181,7 +249,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     };
 
     // Format utility for numbers
-    const formatValue = (val: any, key?: string) => {
+    const formatValue = (val: unknown, key?: string) => {
         if (val === null || val === undefined) return '-';
         const lowerKey = (key || '').toLowerCase();
 
@@ -226,6 +294,51 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
             return `${result} Bil VND`;
         }
         return result;
+    };
+
+    const handleExportCurrentTabCsv = () => {
+        if (!isExportableTab || isExportDisabled || !exportSuffix) {
+            return;
+        }
+
+        const csvContent = rowsToCsv(data, (value, key) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (typeof value !== 'number') {
+                return value;
+            }
+
+            const lowerKey = key.toLowerCase();
+            const isNonCurrencyMetric = lowerKey.includes('percent')
+                || lowerKey.includes('quantity')
+                || lowerKey.includes('volume')
+                || lowerKey.includes('share');
+
+            if (isNonCurrencyMetric) {
+                return value;
+            }
+
+            if (Math.abs(value) > 1e6) {
+                return Math.round(value / 1e6) / 1000;
+            }
+
+            return value;
+        });
+        const normalizedTicker = ticker
+            .toUpperCase()
+            .replace(/[^A-Za-z0-9._-]+/g, '_')
+            .replace(/^[._-]+|[._-]+$/g, '') || 'TICKER';
+        const filename = `${normalizedTicker}_${exportSuffix}.csv`;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+        const blobUrl = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        window.URL.revokeObjectURL(blobUrl);
     };
 
     // Render Overview tab with a nice layout
@@ -552,7 +665,18 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                 )}
             </div>
 
-            <div className="p-2 border-t border-base-300 bg-base-200 text-[10px] text-base-content/50 text-right shrink-0 relative">
+            <div className="p-2 border-t border-base-300 bg-base-200 text-[10px] text-base-content/50 shrink-0 relative flex items-center justify-start pr-6">
+                {isExportableTab && (
+                    <button
+                        type="button"
+                        className="btn btn-xs btn-outline"
+                        onClick={handleExportCurrentTabCsv}
+                        disabled={isExportDisabled}
+                        title={isExportDisabled ? 'No data to export' : 'Export this tab as CSV'}
+                    >
+                        Export
+                    </button>
+                )}
                 {/* Resize Handle */}
                 <div
                     className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize resize-handle flex items-end justify-end p-0.5"
