@@ -231,7 +231,46 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     </h2>
                 </div>
 
-                {/* Row 2: View Mode Toggle */}
+                {/* Row 2: Search & Selectors */}
+                <div className="flex flex-wrap gap-2 items-center">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search tickers..."
+                            className="input input-sm input-bordered w-32 md:w-48 pl-8"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        <svg
+                            className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    {user ? (
+                        <BookmarkSelector
+                            groups={bookmarkGroups}
+                            selectedGroupId={selectedBookmarkGroupId}
+                            onGroupChange={handleBookmarkGroupChange}
+                            disabled={bookmarkLoading}
+                        />
+                    ) : null}
+                    <IndustrySelector
+                        industries={industries}
+                        selectedIndustryName={selectedIndustryName}
+                        onIndustryChange={handleIndustryChange}
+                    />
+                    <IndexSelector
+                        indices={indices}
+                        selectedIndex={selectedIndex}
+                        onIndexChange={handleIndexChange}
+                    />
+                </div>
+
+                {/* Row 3: View Mode Toggle */}
                 <div className="overflow-x-auto">
                     <div className="join min-w-max">
                         <button
@@ -271,45 +310,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             Risk/Return
                         </button>
                     </div>
-                </div>
-
-                {/* Row 3: Search & Selectors */}
-                <div className="flex flex-wrap gap-2 items-center">
-                    <div className="relative">
-                        <input
-                            type="text"
-                            placeholder="Search tickers..."
-                            className="input input-sm input-bordered w-32 md:w-48 pl-8"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                        <svg
-                            className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </div>
-                    {user ? (
-                        <BookmarkSelector
-                            groups={bookmarkGroups}
-                            selectedGroupId={selectedBookmarkGroupId}
-                            onGroupChange={handleBookmarkGroupChange}
-                            disabled={bookmarkLoading}
-                        />
-                    ) : null}
-                    <IndustrySelector
-                        industries={industries}
-                        selectedIndustryName={selectedIndustryName}
-                        onIndustryChange={handleIndustryChange}
-                    />
-                    <IndexSelector
-                        indices={indices}
-                        selectedIndex={selectedIndex}
-                        onIndexChange={handleIndexChange}
-                    />
                 </div>
             </div>
 
