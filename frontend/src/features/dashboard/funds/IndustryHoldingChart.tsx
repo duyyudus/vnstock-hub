@@ -72,7 +72,7 @@ export const IndustryHoldingChart: React.FC<IndustryHoldingChartProps> = ({ data
                                 {`${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                             </text>
                         )}
-                        outerRadius={80}
+                        outerRadius="60%"
                         fill="#8884d8"
                         dataKey="value"
                     >

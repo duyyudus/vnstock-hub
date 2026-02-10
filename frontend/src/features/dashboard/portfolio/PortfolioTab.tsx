@@ -9,6 +9,7 @@ import {
 } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
 import { IndustryHoldingChart } from '../funds/IndustryHoldingChart';
+import { StockAllocationChart } from './StockAllocationChart';
 
 interface FormState {
     ticker: string;
@@ -19,6 +20,12 @@ interface FormState {
 
 type SortKey = 'ticker' | 'quantity' | 'averageCost' | 'purchaseDate' | 'currentPrice' | 'marketValue' | 'pnl';
 type SortDirection = 'asc' | 'desc';
+
+interface StockAllocationItem {
+    ticker: string;
+    allocation: number;
+    companyName?: string;
+}
 
 const emptyFormState: FormState = {
     ticker: '',
@@ -184,6 +191,46 @@ export const PortfolioTab: React.FC = () => {
 
         console.log('Industry allocation calculated:', result);
         return result;
+    }, [positions, quotes]);
+
+    const stockAllocation = useMemo<StockAllocationItem[]>(() => {
+        if (positions.length === 0 || Object.keys(quotes).length === 0) {
+            return [];
+        }
+
+        const stockMap = new Map<string, number>();
+        const companyNameMap = new Map<string, string>();
+        let total = 0;
+
+        positions.forEach((position) => {
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
+            const price = quote?.price;
+            const companyName = quote?.company_name?.trim();
+            if (typeof price === 'number' && Number.isFinite(price)) {
+                const marketValue = position.quantity * price;
+                stockMap.set(ticker, (stockMap.get(ticker) || 0) + marketValue);
+                if (companyName) {
+                    companyNameMap.set(ticker, companyName);
+                }
+                total += marketValue;
+            }
+        });
+
+        if (total <= 0) {
+            return [];
+        }
+
+        const allocations = Array.from(stockMap.entries())
+            .map(([ticker, marketValue]) => ({
+                ticker,
+                allocation: (marketValue / total) * 100,
+                companyName: companyNameMap.get(ticker)
+            }))
+            .filter((item) => item.allocation > 0)
+            .sort((a, b) => b.allocation - a.allocation);
+
+        return allocations;
     }, [positions, quotes]);
 
     const handleSort = (key: SortKey) => {
@@ -1002,14 +1049,27 @@ export const PortfolioTab: React.FC = () => {
             </div>
 
             {positions.length > 0 && (
-                <div className="card bg-base-100 shadow-md border border-base-300">
-                    <div className="card-body p-4">
-                        <h3 className="card-title text-base">Industry Allocation</h3>
-                        <div className="h-80">
-                            <IndustryHoldingChart
-                                data={industryAllocation}
-                                loading={quoteLoading}
-                            />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="card bg-base-100 shadow-md border border-base-300">
+                        <div className="card-body p-4">
+                            <h3 className="card-title text-base">Industry Allocation</h3>
+                            <div className="w-full aspect-square">
+                                <IndustryHoldingChart
+                                    data={industryAllocation}
+                                    loading={quoteLoading}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card bg-base-100 shadow-md border border-base-300">
+                        <div className="card-body p-4">
+                            <h3 className="card-title text-base">Stock Allocation</h3>
+                            <div className="w-full aspect-square overflow-y-auto pr-1">
+                                <StockAllocationChart
+                                    data={stockAllocation}
+                                    loading={quoteLoading}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
