@@ -8,8 +8,8 @@ import {
     type Stock
 } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
-import { IndustryHoldingChart } from '../funds/IndustryHoldingChart';
-import { StockAllocationChart } from './StockAllocationChart';
+import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
+import { StockAllocationChart } from '../components/StockAllocationChart';
 
 interface FormState {
     ticker: string;

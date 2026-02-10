@@ -4,7 +4,7 @@ import { FundSelector, type FundInfo } from './FundSelector';
 import { FundInfoCard } from './FundInfoCard';
 import { NavReportChart } from './NavReportChart';
 import { TopHoldingChart } from './TopHoldingChart';
-import { IndustryHoldingChart } from './IndustryHoldingChart';
+import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
 import { AssetHoldingChart } from './AssetHoldingChart';
 import { CumulativeGrowthChart } from './CumulativeGrowthChart';
 import { RiskReturnScatterPlot } from './RiskReturnScatterPlot';
