@@ -17,7 +17,7 @@ MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 LLM_LOG_FILE = LOG_DIR / "llm.log"
-BOOTSTRAP_LOG_FILE = LOG_DIR / "bootstrap.log"
+BOOTSTRAP_LOG_FILE = LOG_DIR / "price_sync.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -162,8 +162,8 @@ def setup_logging():
     llm_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
     _llm_logger.addHandler(llm_file_handler)
 
-    # === Bootstrap Logger (file only + critical errors to console) ===
-    _bootstrap_logger = logging.getLogger("vnstock_hub.bootstrap")
+    # === Price Sync Logger (file only + critical errors to console) ===
+    _bootstrap_logger = logging.getLogger("vnstock_hub.price_sync")
     _bootstrap_logger.setLevel(logging.DEBUG)
     _bootstrap_logger.propagate = False
     _bootstrap_logger.handlers.clear()

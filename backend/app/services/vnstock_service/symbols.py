@@ -12,7 +12,13 @@ def get_group_code_for_index(index_symbol: str) -> str:
     """
     Map index symbol from all_indices() to group code expected by symbols_by_group().
     """
+    normalized = str(index_symbol or "").strip().upper().replace("-", "").replace("_", "")
+
     mapping = {
+        'VNINDEX': 'HOSE',
+        'HNXINDEX': 'HNX',
+        'UPCOMINDEX': 'UPCOM',
+        'VNXINDEX': 'VNAllShare',
         'VN30': 'VN30',
         'VN100': 'VN100',
         'VNMID': 'VNMidCap',
@@ -21,4 +27,6 @@ def get_group_code_for_index(index_symbol: str) -> str:
         'HNX30': 'HNX30',
         # Add more mappings as needed based on valid groups
     }
-    return mapping.get(index_symbol, index_symbol)
+    if normalized in mapping:
+        return mapping[normalized]
+    return str(index_symbol or "").strip()

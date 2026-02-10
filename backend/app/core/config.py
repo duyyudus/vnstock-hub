@@ -18,13 +18,12 @@ class Settings(BaseSettings):
     
     # vnstock API
     vnstock_api_key: str | None = None
-    price_bootstrap_target_rpm: int = 150
-    price_bootstrap_max_concurrency: int = 6
-    price_bootstrap_executor_workers: int = 6
-    price_bootstrap_chunk_days: int = 1095
-    price_bootstrap_rate_limit_max_retries: int = 12
-    price_bootstrap_retry_base_delay_seconds: float = 5.0
-    price_bootstrap_retry_max_delay_seconds: float = 60.0
+    price_sync_target_rpm: int = 150
+    price_sync_max_workers: int = 6
+    price_sync_chunk_days: int = 1095
+    price_sync_rate_limit_max_retries: int = 12
+    price_sync_retry_base_delay_seconds: float = 5.0
+    price_sync_retry_max_delay_seconds: float = 60.0
 
     # LLM providers (OpenAI-compatible) in JSON list format
     llm_providers: str = "[]"

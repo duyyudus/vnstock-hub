@@ -76,6 +76,19 @@ LLM_PROVIDERS='[
 LLM_REQUEST_TIMEOUT_SECONDS=30
 ```
 
+### Price Sync Runtime Configuration
+
+`PriceSyncService` reads these environment variables:
+
+```bash
+PRICE_SYNC_TARGET_RPM=150
+PRICE_SYNC_MAX_WORKERS=10
+PRICE_SYNC_CHUNK_DAYS=1825
+PRICE_SYNC_RATE_LIMIT_MAX_RETRIES=12
+PRICE_SYNC_RETRY_BASE_DELAY_SECONDS=5
+PRICE_SYNC_RETRY_MAX_DELAY_SECONDS=60
+```
+
 ### Running the Application
 
 Start the development server:

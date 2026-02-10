@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthWidget } from '../auth/AuthWidget';
 import { useAuthUser } from '../auth/useAuthUser';
 import {
+    type IndexInfo,
     stockApi,
-    type PriceBootstrapDetailedStatusResponse,
+    type PriceAuditActionResponse,
     type PriceSyncActionResponse,
     type SyncStatusResponse,
 } from '../../api/stockApi';
@@ -27,36 +28,52 @@ const formatDateTime = (value: string | null | undefined) => {
     if (!value) {
         return '-';
     }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
         return value;
     }
-    return date.toLocaleString();
+    return parsed.toLocaleString();
+};
+
+const parseSymbolsInput = (value: string): string[] => {
+    return value
+        .split(/[\s,]+/)
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter(Boolean);
 };
 
 export const AdminPage: React.FC = () => {
     const user = useAuthUser();
 
     const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
-    const [bootstrapStatus, setBootstrapStatus] = useState<PriceBootstrapDetailedStatusResponse | null>(null);
     const [loadingStatus, setLoadingStatus] = useState(false);
     const [statusError, setStatusError] = useState<string | null>(null);
 
+    const [syncSymbols, setSyncSymbols] = useState('');
+    const [syncIndexSymbol, setSyncIndexSymbol] = useState('');
     const [forceRestart, setForceRestart] = useState(false);
-    const [healWindowDays, setHealWindowDays] = useState(7);
+
+    const [indexOptions, setIndexOptions] = useState<IndexInfo[]>([]);
+    const [auditSymbols, setAuditSymbols] = useState('');
+    const [auditIndexSymbol, setAuditIndexSymbol] = useState('');
+    const [auditStartDate, setAuditStartDate] = useState('');
+    const [auditEndDate, setAuditEndDate] = useState('');
+    const [auditAutoRepair, setAuditAutoRepair] = useState(false);
+    const [auditResult, setAuditResult] = useState<PriceAuditActionResponse | null>(null);
+
     const [repairSymbols, setRepairSymbols] = useState('');
     const [repairStartDate, setRepairStartDate] = useState('');
     const [repairEndDate, setRepairEndDate] = useState('');
 
-    const [bootstrapRunning, setBootstrapRunning] = useState(false);
-    const [incrementalRunning, setIncrementalRunning] = useState(false);
+    const [syncRunning, setSyncRunning] = useState(false);
+    const [auditRunning, setAuditRunning] = useState(false);
     const [repairRunning, setRepairRunning] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
     const canAccess = Boolean(user);
 
-    const loadStatuses = async () => {
+    const loadStatuses = useCallback(async () => {
         if (!canAccess) {
             return;
         }
@@ -65,21 +82,30 @@ export const AdminPage: React.FC = () => {
         setStatusError(null);
 
         try {
-            const [sync, bootstrap] = await Promise.all([
-                stockApi.getSyncStatus(),
-                stockApi.getPriceBootstrapStatus(),
-            ]);
+            const sync = await stockApi.getSyncStatus();
             setSyncStatus(sync);
-            setBootstrapStatus(bootstrap);
         } catch (error) {
             setStatusError(getErrorMessage(error));
         } finally {
             setLoadingStatus(false);
         }
-    };
+    }, [canAccess]);
+
+    const loadIndexOptions = useCallback(async () => {
+        if (!canAccess) {
+            return;
+        }
+        try {
+            const indices = await stockApi.getIndices();
+            setIndexOptions(indices.indices);
+        } catch {
+            setIndexOptions([]);
+        }
+    }, [canAccess]);
 
     useEffect(() => {
         loadStatuses();
+        loadIndexOptions();
 
         if (!canAccess) {
             return;
@@ -92,11 +118,12 @@ export const AdminPage: React.FC = () => {
         return () => {
             window.clearInterval(intervalId);
         };
-    }, [canAccess]);
+    }, [canAccess, loadIndexOptions, loadStatuses]);
 
-    const runAction = async (
-        fn: () => Promise<PriceSyncActionResponse>,
+    const runAction = async <T extends PriceSyncActionResponse>(
+        fn: () => Promise<T>,
         setLoading: React.Dispatch<React.SetStateAction<boolean>>,
+        onSuccess?: (result: T) => void,
     ) => {
         setLoading(true);
         setActionMessage(null);
@@ -105,6 +132,7 @@ export const AdminPage: React.FC = () => {
         try {
             const result = await fn();
             setActionMessage(result.message);
+            onSuccess?.(result);
             await loadStatuses();
         } catch (error) {
             setActionError(getErrorMessage(error));
@@ -113,25 +141,41 @@ export const AdminPage: React.FC = () => {
         }
     };
 
-    const handleStartBootstrap = async () => {
+    const handleRunSync = async () => {
+        const symbols = parseSymbolsInput(syncSymbols);
         await runAction(
-            () => stockApi.startPriceBootstrap(forceRestart),
-            setBootstrapRunning,
+            () => stockApi.runPriceSync(
+                forceRestart,
+                symbols.length > 0 ? symbols : undefined,
+                syncIndexSymbol || undefined,
+            ),
+            setSyncRunning,
         );
     };
 
-    const handleRunIncremental = async () => {
+    const handleRunAudit = async () => {
+        if (!auditStartDate || !auditEndDate) {
+            setActionError('Please provide both start date and end date for audit.');
+            return;
+        }
+
+        const symbols = parseSymbolsInput(auditSymbols);
+
         await runAction(
-            () => stockApi.runPriceIncrementalSync(healWindowDays),
-            setIncrementalRunning,
+            () => stockApi.runPriceAudit(
+                auditStartDate,
+                auditEndDate,
+                symbols.length > 0 ? symbols : undefined,
+                auditIndexSymbol || undefined,
+                auditAutoRepair,
+            ),
+            setAuditRunning,
+            (result) => setAuditResult(result as PriceAuditActionResponse),
         );
     };
 
     const handleRunRepair = async () => {
-        const symbols = repairSymbols
-            .split(/[\s,]+/)
-            .map((symbol) => symbol.trim().toUpperCase())
-            .filter(Boolean);
+        const symbols = parseSymbolsInput(repairSymbols);
 
         if (symbols.length === 0) {
             setActionError('Please provide at least one symbol for repair.');
@@ -149,14 +193,18 @@ export const AdminPage: React.FC = () => {
         );
     };
 
-    const runtimeBootstrap = syncStatus?.price_sync.bootstrap;
-    const runtimeIncremental = syncStatus?.price_sync.incremental;
+    const runtimeSync = syncStatus?.price_sync.sync;
+    const runtimeAudit = syncStatus?.price_sync.audit;
     const runtimeRepair = syncStatus?.price_sync.repair;
+    const syncActive = syncRunning || Boolean(runtimeSync?.is_running);
+    const auditActive = auditRunning || Boolean(runtimeAudit?.is_running);
+    const repairActive = repairRunning || Boolean(runtimeRepair?.is_running);
+    const anyJobActive = syncActive || auditActive || repairActive;
 
-    const bootstrapProgressPercent = useMemo(() => {
-        const value = bootstrapStatus?.progress ?? runtimeBootstrap?.progress ?? 0;
+    const syncProgressPercent = useMemo(() => {
+        const value = runtimeSync?.progress ?? 0;
         return Math.max(0, Math.min(100, Math.round(value * 100)));
-    }, [bootstrapStatus?.progress, runtimeBootstrap?.progress]);
+    }, [runtimeSync?.progress]);
 
     if (!canAccess) {
         return (
@@ -214,38 +262,42 @@ export const AdminPage: React.FC = () => {
                 <section className="grid gap-4 md:grid-cols-3">
                     <div className="card bg-base-100 shadow-lg">
                         <div className="card-body">
-                            <h2 className="card-title text-base">Bootstrap</h2>
-                            <p>State: <strong>{bootstrapStatus?.state ?? runtimeBootstrap?.state ?? '-'}</strong></p>
-                            <p>Progress: <strong>{bootstrapProgressPercent}%</strong></p>
-                            <progress className="progress progress-primary w-full" value={bootstrapProgressPercent} max={100}></progress>
-                            <p>Processed: {bootstrapStatus?.processed_symbols ?? runtimeBootstrap?.processed_symbols ?? 0} / {bootstrapStatus?.total_symbols ?? runtimeBootstrap?.total_symbols ?? 0}</p>
-                            <p>Current symbol: {bootstrapStatus?.current_symbol ?? runtimeBootstrap?.current_symbol ?? '-'}</p>
-                            <p>Started: {formatDateTime(bootstrapStatus?.started_at ?? runtimeBootstrap?.started_at ?? null)}</p>
-                            <p>Completed: {formatDateTime(bootstrapStatus?.completed_at ?? runtimeBootstrap?.completed_at ?? null)}</p>
-                            <p>Error: {bootstrapStatus?.error ?? runtimeBootstrap?.error ?? '-'}</p>
+                            <h2 className="card-title text-base">Price Sync Status</h2>
+                            <p>Running: <strong>{runtimeSync?.is_running ? 'Yes' : 'No'}</strong></p>
+                            <p>Progress: <strong>{syncProgressPercent}%</strong></p>
+                            <progress className="progress progress-primary w-full" value={syncProgressPercent} max={100}></progress>
+                            <p>Processed: {runtimeSync?.processed_symbols ?? 0} / {runtimeSync?.total_symbols ?? 0}</p>
+                            <p>Success: {runtimeSync?.success_symbols ?? 0}</p>
+                            <p>Failed: {runtimeSync?.failed_symbols ?? 0}</p>
+                            <p>Current symbol: {runtimeSync?.current_symbol ?? '-'}</p>
+                            <p>Last run: {formatDateTime(runtimeSync?.last_run_at)}</p>
+                            <p>Started: {formatDateTime(runtimeSync?.started_at)}</p>
+                            <p>Error: {runtimeSync?.error ?? '-'}</p>
                         </div>
                     </div>
 
                     <div className="card bg-base-100 shadow-lg">
                         <div className="card-body">
-                            <h2 className="card-title text-base">Incremental</h2>
-                            <p>Running: <strong>{runtimeIncremental?.is_running ? 'Yes' : 'No'}</strong></p>
-                            <p>Processed: {runtimeIncremental?.processed_symbols ?? 0} / {runtimeIncremental?.total_symbols ?? 0}</p>
-                            <p>Current symbol: {runtimeIncremental?.current_symbol ?? '-'}</p>
-                            <p>Last run: {formatDateTime(runtimeIncremental?.last_run_at)}</p>
-                            <p>Started: {formatDateTime(runtimeIncremental?.started_at)}</p>
-                            <p>Error: {runtimeIncremental?.error ?? '-'}</p>
+                            <h2 className="card-title text-base">Gap Audit Status</h2>
+                            <p>Running: <strong>{runtimeAudit?.is_running ? 'Yes' : 'No'}</strong></p>
+                            <p>Processed: {runtimeAudit?.processed_symbols ?? 0} / {runtimeAudit?.total_symbols ?? 0}</p>
+                            <p>Success: {runtimeAudit?.success_symbols ?? 0}</p>
+                            <p>Failed: {runtimeAudit?.failed_symbols ?? 0}</p>
+                            <p>Current symbol: {runtimeAudit?.current_symbol ?? '-'}</p>
+                            <p>Last run: {formatDateTime(runtimeAudit?.last_run_at)}</p>
+                            <p>Error: {runtimeAudit?.error ?? '-'}</p>
                         </div>
                     </div>
 
                     <div className="card bg-base-100 shadow-lg">
                         <div className="card-body">
-                            <h2 className="card-title text-base">Repair</h2>
+                            <h2 className="card-title text-base">Repair Status</h2>
                             <p>Running: <strong>{runtimeRepair?.is_running ? 'Yes' : 'No'}</strong></p>
                             <p>Processed: {runtimeRepair?.processed_symbols ?? 0} / {runtimeRepair?.total_symbols ?? 0}</p>
+                            <p>Success: {runtimeRepair?.success_symbols ?? 0}</p>
+                            <p>Failed: {runtimeRepair?.failed_symbols ?? 0}</p>
                             <p>Current symbol: {runtimeRepair?.current_symbol ?? '-'}</p>
                             <p>Last run: {formatDateTime(runtimeRepair?.last_run_at)}</p>
-                            <p>Started: {formatDateTime(runtimeRepair?.started_at)}</p>
                             <p>Error: {runtimeRepair?.error ?? '-'}</p>
                         </div>
                     </div>
@@ -254,7 +306,32 @@ export const AdminPage: React.FC = () => {
                 <section className="grid gap-4 lg:grid-cols-3">
                     <div className="card bg-base-100 shadow-lg">
                         <div className="card-body space-y-3">
-                            <h2 className="card-title">Start Bootstrap</h2>
+                            <h2 className="card-title">Run Price Sync</h2>
+                            <label className="form-control">
+                                <span className="label-text">Index scope (optional)</span>
+                                <select
+                                    className="select select-bordered"
+                                    value={syncIndexSymbol}
+                                    onChange={(event) => setSyncIndexSymbol(event.target.value)}
+                                >
+                                    <option value="">All indices</option>
+                                    {indexOptions.map((index) => (
+                                        <option key={index.symbol} value={index.symbol}>
+                                            {index.symbol} - {index.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-control">
+                                <span className="label-text">Symbols (optional, comma/space separated)</span>
+                                <input
+                                    type="text"
+                                    className="input input-bordered"
+                                    value={syncSymbols}
+                                    onChange={(event) => setSyncSymbols(event.target.value)}
+                                    placeholder="All symbols if empty"
+                                />
+                            </label>
                             <label className="label cursor-pointer justify-start gap-3">
                                 <input
                                     type="checkbox"
@@ -265,35 +342,88 @@ export const AdminPage: React.FC = () => {
                                 <span className="label-text">Force restart if already running</span>
                             </label>
                             <button
-                                className={`btn btn-primary ${bootstrapRunning ? 'loading' : ''}`}
-                                onClick={handleStartBootstrap}
-                                disabled={bootstrapRunning || loadingStatus}
+                                className="btn btn-primary"
+                                onClick={handleRunSync}
+                                disabled={loadingStatus || anyJobActive}
                             >
-                                Start Bootstrap
+                                {syncActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                {syncActive
+                                    ? 'Syncing...'
+                                    : anyJobActive
+                                        ? 'Waiting for current job...'
+                                        : 'Run Price Sync'}
                             </button>
                         </div>
                     </div>
 
                     <div className="card bg-base-100 shadow-lg">
                         <div className="card-body space-y-3">
-                            <h2 className="card-title">Run Incremental</h2>
+                            <h2 className="card-title">Run Gap Audit</h2>
                             <label className="form-control">
-                                <span className="label-text">Heal window (days)</span>
+                                <span className="label-text">Index scope (optional)</span>
+                                <select
+                                    className="select select-bordered"
+                                    value={auditIndexSymbol}
+                                    onChange={(event) => setAuditIndexSymbol(event.target.value)}
+                                >
+                                    <option value="">All indices</option>
+                                    {indexOptions.map((index) => (
+                                        <option key={index.symbol} value={index.symbol}>
+                                            {index.symbol} - {index.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-control">
+                                <span className="label-text">Symbols (optional, comma/space separated)</span>
                                 <input
-                                    type="number"
-                                    min={1}
-                                    max={60}
+                                    type="text"
                                     className="input input-bordered"
-                                    value={healWindowDays}
-                                    onChange={(event) => setHealWindowDays(Number(event.target.value) || 7)}
+                                    value={auditSymbols}
+                                    onChange={(event) => setAuditSymbols(event.target.value)}
+                                    placeholder="All symbols if empty"
                                 />
                             </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="form-control">
+                                    <span className="label-text">Start date</span>
+                                    <input
+                                        type="date"
+                                        className="input input-bordered"
+                                        value={auditStartDate}
+                                        onChange={(event) => setAuditStartDate(event.target.value)}
+                                    />
+                                </label>
+                                <label className="form-control">
+                                    <span className="label-text">End date</span>
+                                    <input
+                                        type="date"
+                                        className="input input-bordered"
+                                        value={auditEndDate}
+                                        onChange={(event) => setAuditEndDate(event.target.value)}
+                                    />
+                                </label>
+                            </div>
+                            <label className="label cursor-pointer justify-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="checkbox"
+                                    checked={auditAutoRepair}
+                                    onChange={(event) => setAuditAutoRepair(event.target.checked)}
+                                />
+                                <span className="label-text">Auto repair detected gaps</span>
+                            </label>
                             <button
-                                className={`btn btn-secondary ${incrementalRunning ? 'loading' : ''}`}
-                                onClick={handleRunIncremental}
-                                disabled={incrementalRunning || loadingStatus}
+                                className="btn btn-secondary"
+                                onClick={handleRunAudit}
+                                disabled={loadingStatus || anyJobActive}
                             >
-                                Run Incremental Sync
+                                {auditActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                {auditActive
+                                    ? 'Auditing...'
+                                    : anyJobActive
+                                        ? 'Waiting for current job...'
+                                        : 'Run Gap Audit'}
                             </button>
                         </div>
                     </div>
@@ -332,37 +462,56 @@ export const AdminPage: React.FC = () => {
                                 </label>
                             </div>
                             <button
-                                className={`btn btn-accent ${repairRunning ? 'loading' : ''}`}
+                                className="btn btn-accent"
                                 onClick={handleRunRepair}
-                                disabled={repairRunning || loadingStatus}
+                                disabled={loadingStatus || anyJobActive}
                             >
-                                Run Repair Sync
+                                {repairActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                {repairActive
+                                    ? 'Repairing...'
+                                    : anyJobActive
+                                        ? 'Waiting for current job...'
+                                        : 'Run Repair Sync'}
                             </button>
                         </div>
                     </div>
                 </section>
 
-                <section className="card bg-base-100 shadow-lg">
-                    <div className="card-body">
-                        <h2 className="card-title">Bootstrap DB Summary</h2>
-                        <div className="overflow-x-auto">
-                            <table className="table table-zebra">
-                                <tbody>
-                                    <tr>
-                                        <td>Total symbols</td>
-                                        <td>{bootstrapStatus?.db_summary?.total_symbols ?? '-'}</td>
-                                    </tr>
-                                    {Object.entries(bootstrapStatus?.db_summary?.by_status ?? {}).map(([statusKey, count]) => (
-                                        <tr key={statusKey}>
-                                            <td>{statusKey}</td>
-                                            <td>{String(count)}</td>
+                {auditResult ? (
+                    <section className="card bg-base-100 shadow-lg">
+                        <div className="card-body space-y-3">
+                            <h2 className="card-title">Latest Audit Results</h2>
+                            <p>Audited symbols: <strong>{auditResult.audited_symbols}</strong></p>
+                            <p>Symbols with gaps: <strong>{auditResult.symbols_with_gaps}</strong></p>
+                            <p>Total missing dates: <strong>{auditResult.total_missing_dates}</strong></p>
+                            <p>Total repaired dates: <strong>{auditResult.total_repaired_dates}</strong></p>
+                            <div className="overflow-x-auto">
+                                <table className="table table-zebra">
+                                    <thead>
+                                        <tr>
+                                            <th>Symbol</th>
+                                            <th>Missing</th>
+                                            <th>Repaired</th>
+                                            <th>Samples</th>
+                                            <th>Error</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {auditResult.results.map((row) => (
+                                            <tr key={row.symbol}>
+                                                <td>{row.symbol}</td>
+                                                <td>{row.missing_dates}</td>
+                                                <td>{row.repaired_dates}</td>
+                                                <td>{row.missing_date_samples.join(', ') || '-'}</td>
+                                                <td>{row.error || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
-                </section>
+                    </section>
+                ) : null}
             </main>
         </div>
     );

@@ -525,23 +525,12 @@ export interface SyncStatusItem {
     started_at: string | null;
 }
 
-export interface PriceBootstrapStatus {
-    state: string;
-    total_symbols: number;
-    processed_symbols: number;
-    success_symbols: number;
-    failed_symbols: number;
-    current_symbol: string | null;
-    started_at: string | null;
-    completed_at: string | null;
-    error: string | null;
-    progress: number;
-}
-
 export interface PriceJobStatus {
     is_running: boolean;
     total_symbols: number;
     processed_symbols: number;
+    success_symbols: number;
+    failed_symbols: number;
     current_symbol: string | null;
     last_run_at: string | null;
     started_at: string | null;
@@ -550,8 +539,8 @@ export interface PriceJobStatus {
 }
 
 export interface PriceSyncStatus {
-    bootstrap: PriceBootstrapStatus;
-    incremental: PriceJobStatus;
+    sync: PriceJobStatus;
+    audit: PriceJobStatus;
     repair: PriceJobStatus;
 }
 
@@ -569,19 +558,26 @@ export interface PriceSyncActionResponse {
     success_symbols: number;
     failed_symbols: number;
     state?: string | null;
-    window_start_date?: string | null;
-    window_end_date?: string | null;
     start_date?: string | null;
     end_date?: string | null;
 }
 
-export interface PriceBootstrapDbSummary {
-    total_symbols: number;
-    by_status: Record<string, number>;
+export interface PriceAuditSymbolResult {
+    symbol: string;
+    local_dates: number;
+    upstream_dates: number;
+    missing_dates: number;
+    repaired_dates: number;
+    missing_date_samples: string[];
+    error?: string | null;
 }
 
-export interface PriceBootstrapDetailedStatusResponse extends PriceBootstrapStatus {
-    db_summary: PriceBootstrapDbSummary;
+export interface PriceAuditActionResponse extends PriceSyncActionResponse {
+    audited_symbols: number;
+    symbols_with_gaps: number;
+    total_missing_dates: number;
+    total_repaired_dates: number;
+    results: PriceAuditSymbolResult[];
 }
 
 // Stock API functions
@@ -793,21 +789,32 @@ export const stockApi = {
         return response.data;
     },
 
-    async startPriceBootstrap(forceRestart: boolean = false): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/bootstrap/start', {
+    async runPriceSync(
+        forceRestart: boolean = false,
+        symbols?: string[],
+        indexSymbol?: string
+    ): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/run', {
             force_restart: forceRestart,
+            symbols: symbols && symbols.length > 0 ? symbols : undefined,
+            index_symbol: indexSymbol || undefined,
         });
         return response.data;
     },
 
-    async getPriceBootstrapStatus(): Promise<PriceBootstrapDetailedStatusResponse> {
-        const response = await apiClient.get<PriceBootstrapDetailedStatusResponse>('/sync/prices/bootstrap/status');
-        return response.data;
-    },
-
-    async runPriceIncrementalSync(healWindowDays: number = 7): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/incremental/run', {
-            heal_window_days: healWindowDays,
+    async runPriceAudit(
+        startDate: string,
+        endDate: string,
+        symbols?: string[],
+        indexSymbol?: string,
+        autoRepair: boolean = false
+    ): Promise<PriceAuditActionResponse> {
+        const response = await apiClient.post<PriceAuditActionResponse>('/sync/prices/audit/run', {
+            symbols: symbols && symbols.length > 0 ? symbols : undefined,
+            index_symbol: indexSymbol || undefined,
+            start_date: startDate,
+            end_date: endDate,
+            auto_repair: autoRepair,
         });
         return response.data;
     },

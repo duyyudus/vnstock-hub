@@ -118,14 +118,36 @@ class VnstockService:
         )
 
     # Price Sync
-    async def start_price_bootstrap(self, force_restart: bool = False) -> Dict[str, Any]:
-        return await self.price_sync.start_bootstrap(force_restart=force_restart)
+    async def run_price_sync(
+        self,
+        force_restart: bool = False,
+        symbols: List[str] | None = None,
+        index_symbol: str | None = None,
+    ) -> Dict[str, Any]:
+        return await self.price_sync.run_sync(
+            force_restart=force_restart,
+            symbols=symbols,
+            index_symbol=index_symbol,
+        )
 
-    async def get_price_bootstrap_status(self) -> Dict[str, Any]:
-        return await self.price_sync.get_bootstrap_status()
-
-    async def run_price_incremental_sync(self, heal_window_days: int | None = None) -> Dict[str, Any]:
-        return await self.price_sync.run_incremental_sync(heal_window_days=heal_window_days)
+    async def run_price_audit_sync(
+        self,
+        symbols: List[str] | None,
+        start_date: str,
+        end_date: str,
+        auto_repair: bool = False,
+        index_symbol: str | None = None,
+    ) -> Dict[str, Any]:
+        from datetime import datetime
+        parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        return await self.price_sync.run_audit_sync(
+            symbols=symbols,
+            start_date=parsed_start,
+            end_date=parsed_end,
+            auto_repair=auto_repair,
+            index_symbol=index_symbol,
+        )
 
     async def run_price_repair_sync(self, symbols: List[str], start_date: str, end_date: str) -> Dict[str, Any]:
         from datetime import datetime

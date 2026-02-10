@@ -22,23 +22,12 @@ class SyncStatusItem(BaseModel):
     started_at: Optional[str] = None
 
 
-class PriceBootstrapStatusResponse(BaseModel):
-    state: str
-    total_symbols: int
-    processed_symbols: int
-    success_symbols: int
-    failed_symbols: int
-    current_symbol: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    error: Optional[str] = None
-    progress: float = 0.0
-
-
 class PriceJobStatusResponse(BaseModel):
     is_running: bool
     total_symbols: int
     processed_symbols: int
+    success_symbols: int
+    failed_symbols: int
     current_symbol: Optional[str] = None
     last_run_at: Optional[str] = None
     started_at: Optional[str] = None
@@ -47,8 +36,8 @@ class PriceJobStatusResponse(BaseModel):
 
 
 class PriceSyncStatusResponse(BaseModel):
-    bootstrap: PriceBootstrapStatusResponse
-    incremental: PriceJobStatusResponse
+    sync: PriceJobStatusResponse
+    audit: PriceJobStatusResponse
     repair: PriceJobStatusResponse
 
 
@@ -60,12 +49,18 @@ class SyncStatusResponse(BaseModel):
     rate_limit_reset_at: Optional[str] = None
 
 
-class PriceBootstrapStartRequest(BaseModel):
+class PriceSyncRunRequest(BaseModel):
     force_restart: bool = False
+    symbols: Optional[List[str]] = None
+    index_symbol: Optional[str] = None
 
 
-class PriceIncrementalRunRequest(BaseModel):
-    heal_window_days: int = Field(default=7, ge=1, le=60)
+class PriceAuditRunRequest(BaseModel):
+    symbols: Optional[List[str]] = None
+    index_symbol: Optional[str] = None
+    start_date: str
+    end_date: str
+    auto_repair: bool = False
 
 
 class PriceRepairRunRequest(BaseModel):
@@ -81,24 +76,26 @@ class PriceSyncActionResponse(BaseModel):
     success_symbols: int = 0
     failed_symbols: int = 0
     state: Optional[str] = None
-    window_start_date: Optional[str] = None
-    window_end_date: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
 
-class PriceBootstrapDetailedStatusResponse(BaseModel):
-    state: str
-    total_symbols: int
-    processed_symbols: int
-    success_symbols: int
-    failed_symbols: int
-    current_symbol: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+class PriceAuditSymbolResultResponse(BaseModel):
+    symbol: str
+    local_dates: int
+    upstream_dates: int
+    missing_dates: int
+    repaired_dates: int
+    missing_date_samples: List[str] = Field(default_factory=list)
     error: Optional[str] = None
-    progress: float = 0.0
-    db_summary: dict
+
+
+class PriceAuditActionResponse(PriceSyncActionResponse):
+    audited_symbols: int = 0
+    symbols_with_gaps: int = 0
+    total_missing_dates: int = 0
+    total_repaired_dates: int = 0
+    results: List[PriceAuditSymbolResultResponse] = Field(default_factory=list)
 
 
 @router.get("/status", response_model=SyncStatusResponse)
@@ -106,9 +103,9 @@ async def get_sync_status():
     """
     Get current background sync status for all operations.
     """
-    price_bootstrap = sync_status.price_bootstrap
-    price_incremental = sync_status.price_incremental
-    price_repair = sync_status.price_repair
+    price_sync_runtime = sync_status.price_sync
+    price_audit_runtime = sync_status.price_audit
+    price_repair_runtime = sync_status.price_repair
 
     return SyncStatusResponse(
         fund_performance=SyncStatusItem(
@@ -118,37 +115,41 @@ async def get_sync_status():
             started_at=sync_status.fund_performance.started_at,
         ),
         price_sync=PriceSyncStatusResponse(
-            bootstrap=PriceBootstrapStatusResponse(
-                state=price_bootstrap.state,
-                total_symbols=price_bootstrap.total_symbols,
-                processed_symbols=price_bootstrap.processed_symbols,
-                success_symbols=price_bootstrap.success_symbols,
-                failed_symbols=price_bootstrap.failed_symbols,
-                current_symbol=price_bootstrap.current_symbol,
-                started_at=price_bootstrap.started_at,
-                completed_at=price_bootstrap.completed_at,
-                error=price_bootstrap.error,
-                progress=price_bootstrap.progress,
+            sync=PriceJobStatusResponse(
+                is_running=price_sync_runtime.is_running,
+                total_symbols=price_sync_runtime.total_symbols,
+                processed_symbols=price_sync_runtime.processed_symbols,
+                success_symbols=price_sync_runtime.success_symbols,
+                failed_symbols=price_sync_runtime.failed_symbols,
+                current_symbol=price_sync_runtime.current_symbol,
+                last_run_at=price_sync_runtime.last_run_at,
+                started_at=price_sync_runtime.started_at,
+                error=price_sync_runtime.error,
+                progress=price_sync_runtime.progress,
             ),
-            incremental=PriceJobStatusResponse(
-                is_running=price_incremental.is_running,
-                total_symbols=price_incremental.total_symbols,
-                processed_symbols=price_incremental.processed_symbols,
-                current_symbol=price_incremental.current_symbol,
-                last_run_at=price_incremental.last_run_at,
-                started_at=price_incremental.started_at,
-                error=price_incremental.error,
-                progress=price_incremental.progress,
+            audit=PriceJobStatusResponse(
+                is_running=price_audit_runtime.is_running,
+                total_symbols=price_audit_runtime.total_symbols,
+                processed_symbols=price_audit_runtime.processed_symbols,
+                success_symbols=price_audit_runtime.success_symbols,
+                failed_symbols=price_audit_runtime.failed_symbols,
+                current_symbol=price_audit_runtime.current_symbol,
+                last_run_at=price_audit_runtime.last_run_at,
+                started_at=price_audit_runtime.started_at,
+                error=price_audit_runtime.error,
+                progress=price_audit_runtime.progress,
             ),
             repair=PriceJobStatusResponse(
-                is_running=price_repair.is_running,
-                total_symbols=price_repair.total_symbols,
-                processed_symbols=price_repair.processed_symbols,
-                current_symbol=price_repair.current_symbol,
-                last_run_at=price_repair.last_run_at,
-                started_at=price_repair.started_at,
-                error=price_repair.error,
-                progress=price_repair.progress,
+                is_running=price_repair_runtime.is_running,
+                total_symbols=price_repair_runtime.total_symbols,
+                processed_symbols=price_repair_runtime.processed_symbols,
+                success_symbols=price_repair_runtime.success_symbols,
+                failed_symbols=price_repair_runtime.failed_symbols,
+                current_symbol=price_repair_runtime.current_symbol,
+                last_run_at=price_repair_runtime.last_run_at,
+                started_at=price_repair_runtime.started_at,
+                error=price_repair_runtime.error,
+                progress=price_repair_runtime.progress,
             ),
         ),
         is_rate_limited=sync_status.is_rate_limited,
@@ -156,32 +157,59 @@ async def get_sync_status():
     )
 
 
-@router.post("/prices/bootstrap/start", response_model=PriceSyncActionResponse)
-async def start_price_bootstrap(
-    payload: PriceBootstrapStartRequest,
+@router.post("/prices/run", response_model=PriceSyncActionResponse)
+async def run_price_sync(
+    payload: PriceSyncRunRequest,
     _current_admin=Depends(get_current_admin_user),
 ):
-    result = await vnstock_service.start_price_bootstrap(force_restart=payload.force_restart)
+    try:
+        result = await vnstock_service.run_price_sync(
+            force_restart=payload.force_restart,
+            symbols=payload.symbols,
+            index_symbol=payload.index_symbol,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
     return PriceSyncActionResponse(**result)
 
 
-@router.get("/prices/bootstrap/status", response_model=PriceBootstrapDetailedStatusResponse)
-async def get_price_bootstrap_status(
+@router.post("/prices/audit/run", response_model=PriceAuditActionResponse)
+async def run_price_audit_sync(
+    payload: PriceAuditRunRequest,
     _current_admin=Depends(get_current_admin_user),
 ):
-    result = await vnstock_service.get_price_bootstrap_status()
-    return PriceBootstrapDetailedStatusResponse(**result)
+    try:
+        start_date = datetime.strptime(payload.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(payload.end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date and end_date must be YYYY-MM-DD",
+        )
 
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be on or after start_date",
+        )
 
-@router.post("/prices/incremental/run", response_model=PriceSyncActionResponse)
-async def run_price_incremental_sync(
-    payload: PriceIncrementalRunRequest,
-    _current_admin=Depends(get_current_admin_user),
-):
-    result = await vnstock_service.run_price_incremental_sync(
-        heal_window_days=payload.heal_window_days,
-    )
-    return PriceSyncActionResponse(**result)
+    try:
+        result = await vnstock_service.run_price_audit_sync(
+            symbols=payload.symbols,
+            index_symbol=payload.index_symbol,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            auto_repair=payload.auto_repair,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    return PriceAuditActionResponse(**result)
 
 
 @router.post("/prices/repair/run", response_model=PriceSyncActionResponse)

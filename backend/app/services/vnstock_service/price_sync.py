@@ -18,190 +18,289 @@ from app.db.models import StockCompany, StockDailyPrice, StockPriceSyncState
 from app.services.sync_status import sync_status
 
 from .core import (
-    background_executor,
     bootstrap_logger,
     api_circuit_breaker,
     CircuitOpenError,
     _is_rate_limit_error,
 )
 from .history import HistoryService
+from .symbols import VALID_GROUPS, get_group_code_for_index
 
 
 @dataclass(frozen=True)
-class SymbolBootstrapMeta:
+class SymbolSyncMeta:
     symbol: str
     listing_date: date | None
 
 
 class PriceSyncService:
-    """Deterministic price history sync orchestration.
+    """Deterministic stock price synchronization and gap-audit orchestration."""
 
-    Workflow:
-    - One-time bootstrap for all symbols (resumable via DB checkpoints)
-    - Incremental sync with small heal window
-    - Manual repair for specific symbols/date ranges
-    """
-
-    BOOTSTRAP_CHUNK_DAYS = 1095
-    BOOTSTRAP_TARGET_RPM = 150
-    BOOTSTRAP_MAX_CONCURRENCY = 6
-    BOOTSTRAP_RATE_LIMIT_MAX_RETRIES = 12
-    BOOTSTRAP_RETRY_BASE_DELAY_SECONDS = 5.0
-    BOOTSTRAP_RETRY_MAX_DELAY_SECONDS = 60.0
-    INCREMENTAL_HEAL_WINDOW_DAYS = 7
+    SYNC_OVERLAP_DAYS = 2
     FALLBACK_DISCOVERY_START_DATE = date(1990, 1, 1)
 
     def __init__(self, history: HistoryService) -> None:
         self._history = history
-        self._bootstrap_task: asyncio.Task | None = None
-        self._bootstrap_lock = asyncio.Lock()
-        self._bootstrap_pacer_lock = asyncio.Lock()
-        self._bootstrap_last_request_monotonic: float | None = None
-        self._bootstrap_chunk_days = max(1, int(settings.price_bootstrap_chunk_days))
-        self._bootstrap_target_rpm = max(1, int(settings.price_bootstrap_target_rpm))
-        self._bootstrap_max_concurrency = max(1, int(settings.price_bootstrap_max_concurrency))
-        self._bootstrap_executor_workers = max(1, int(settings.price_bootstrap_executor_workers))
-        self._bootstrap_rate_limit_max_retries = max(0, int(settings.price_bootstrap_rate_limit_max_retries))
-        self._bootstrap_retry_base_delay_seconds = max(
+        self._sync_task: asyncio.Task | None = None
+        self._sync_lock = asyncio.Lock()
+        self._sync_pacer_lock = asyncio.Lock()
+        self._sync_last_request_monotonic: float | None = None
+
+        self._sync_chunk_days = max(1, int(settings.price_sync_chunk_days))
+        self._sync_target_rpm = max(1, int(settings.price_sync_target_rpm))
+        self._sync_max_workers = max(1, int(settings.price_sync_max_workers))
+        self._sync_rate_limit_max_retries = max(0, int(settings.price_sync_rate_limit_max_retries))
+        self._sync_retry_base_delay_seconds = max(
             0.1,
-            float(settings.price_bootstrap_retry_base_delay_seconds),
+            float(settings.price_sync_retry_base_delay_seconds),
         )
-        self._bootstrap_retry_max_delay_seconds = max(
-            self._bootstrap_retry_base_delay_seconds,
-            float(settings.price_bootstrap_retry_max_delay_seconds),
+        self._sync_retry_max_delay_seconds = max(
+            self._sync_retry_base_delay_seconds,
+            float(settings.price_sync_retry_max_delay_seconds),
         )
-        self._bootstrap_executor: ThreadPoolExecutor | None = None
+        self._sync_executor: ThreadPoolExecutor | None = None
+        self._operation_worker_semaphore = asyncio.Semaphore(self._sync_max_workers)
 
     async def start_background_tasks(self) -> None:
         """No-op hook kept for lifecycle symmetry."""
         return
 
     async def stop_background_tasks(self) -> None:
-        """Cancel running bootstrap task on shutdown."""
-        async with self._bootstrap_lock:
-            if self._bootstrap_task and not self._bootstrap_task.done():
-                self._bootstrap_task.cancel()
+        """Cancel running sync task on shutdown."""
+        async with self._sync_lock:
+            if self._sync_task and not self._sync_task.done():
+                self._sync_task.cancel()
                 try:
-                    await self._bootstrap_task
+                    await self._sync_task
                 except asyncio.CancelledError:
                     pass
-            self._bootstrap_task = None
-            if self._bootstrap_executor is not None:
-                self._bootstrap_executor.shutdown(wait=False, cancel_futures=True)
-                self._bootstrap_executor = None
+            self._sync_task = None
+            if self._sync_executor is not None:
+                self._sync_executor.shutdown(wait=False, cancel_futures=True)
+                self._sync_executor = None
 
-    async def start_bootstrap(self, force_restart: bool = False) -> Dict[str, Any]:
-        """Start one-time bootstrap as background task."""
-        async with self._bootstrap_lock:
-            self._ensure_bootstrap_executor()
-            if self._bootstrap_task and not self._bootstrap_task.done():
+    async def run_sync(
+        self,
+        force_restart: bool = False,
+        symbols: Optional[List[str]] = None,
+        index_symbol: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Start unified price sync as background task."""
+        symbols_filter = await self._resolve_symbols_filter(
+            symbols=symbols,
+            index_symbol=index_symbol,
+        )
+
+        async with self._sync_lock:
+            self._ensure_sync_executor()
+            if self._sync_task and not self._sync_task.done():
                 if not force_restart:
                     return {
                         "started": False,
-                        "message": "Bootstrap is already running",
-                        "state": sync_status.price_bootstrap.state,
+                        "message": "Price sync is already running",
+                        "state": "running",
                     }
 
-                self._bootstrap_task.cancel()
+                self._sync_task.cancel()
                 try:
-                    await self._bootstrap_task
+                    await self._sync_task
                 except asyncio.CancelledError:
                     pass
 
-            self._bootstrap_task = asyncio.create_task(self._run_bootstrap())
+            self._sync_task = asyncio.create_task(self._run_sync(symbols_filter))
 
         return {
             "started": True,
-            "message": "Bootstrap started",
+            "message": "Price sync started",
             "state": "running",
         }
 
-    async def get_bootstrap_status(self) -> Dict[str, Any]:
-        runtime = sync_status.price_bootstrap
-        db_summary = await self._get_bootstrap_db_summary()
+    async def run_audit_sync(
+        self,
+        symbols: Optional[List[str]],
+        start_date: date,
+        end_date: date,
+        auto_repair: bool = False,
+        index_symbol: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run on-demand gap audit against upstream history and optionally repair gaps."""
+        symbols_filter = await self._resolve_symbols_filter(
+            symbols=symbols,
+            index_symbol=index_symbol,
+        )
+        if symbols_filter:
+            symbols_to_audit = symbols_filter
+        else:
+            symbols_meta = await self._build_symbol_universe()
+            symbols_to_audit = [meta.symbol for meta in symbols_meta]
 
-        return {
-            "state": runtime.state,
-            "total_symbols": runtime.total_symbols,
-            "processed_symbols": runtime.processed_symbols,
-            "success_symbols": runtime.success_symbols,
-            "failed_symbols": runtime.failed_symbols,
-            "current_symbol": runtime.current_symbol,
-            "started_at": runtime.started_at,
-            "completed_at": runtime.completed_at,
-            "error": runtime.error,
-            "progress": runtime.progress,
-            "db_summary": db_summary,
-        }
-
-    async def run_incremental_sync(self, heal_window_days: int | None = None) -> Dict[str, Any]:
-        """Run incremental sync for all active symbols."""
-        if sync_status.price_bootstrap.state == "running":
+        total_symbols = len(symbols_to_audit)
+        if total_symbols == 0:
             return {
                 "started": False,
-                "message": "Bootstrap is running. Incremental sync skipped.",
+                "message": "No symbols available for audit",
                 "processed_symbols": 0,
                 "success_symbols": 0,
                 "failed_symbols": 0,
+                "audited_symbols": 0,
+                "symbols_with_gaps": 0,
+                "total_missing_dates": 0,
+                "total_repaired_dates": 0,
+                "results": [],
             }
 
-        symbols = await self._get_active_symbols_for_incremental()
-        total_symbols = len(symbols)
-        window_days = heal_window_days or self.INCREMENTAL_HEAL_WINDOW_DAYS
+        sync_status.start_price_audit(total_symbols=total_symbols)
 
-        sync_status.start_price_incremental(total_symbols=total_symbols)
+        processed_symbols = 0
+        success_symbols = 0
+        failed_symbols = 0
+        symbols_with_gaps = 0
+        total_missing_dates = 0
+        total_repaired_dates = 0
+        results: List[Optional[Dict[str, Any]]] = [None] * total_symbols
+        progress_lock = asyncio.Lock()
 
-        today = date.today()
-        start_date = today - timedelta(days=max(1, window_days))
+        work_queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
+        for index, symbol in enumerate(symbols_to_audit):
+            work_queue.put_nowait((index, symbol))
 
-        success_count = 0
-        failure_count = 0
+        worker_count = min(total_symbols, self._sync_max_workers)
 
-        try:
-            loop = asyncio.get_event_loop()
-            for idx, symbol in enumerate(symbols, start=1):
-                sync_status.update_price_incremental_progress(
-                    processed_symbols=idx - 1,
-                    current_symbol=symbol,
-                )
+        async def _audit_worker() -> None:
+            nonlocal processed_symbols, success_symbols, failed_symbols
+            nonlocal symbols_with_gaps, total_missing_dates, total_repaired_dates
+
+            while True:
+                try:
+                    result_index, symbol = work_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+
+                symbol_result: Dict[str, Any]
+                symbol_failed = False
+                symbol_missing_count = 0
+                symbol_repaired_count = 0
 
                 try:
-                    await loop.run_in_executor(
-                        background_executor,
-                        self._history._upsert_stock_price_history,
-                        symbol,
-                        start_date,
-                        today,
-                    )
-                    await self._mark_incremental_result(symbol)
-                    success_count += 1
+                    async with self._operation_worker_semaphore:
+                        async with progress_lock:
+                            sync_status.update_price_audit_progress(
+                                processed_symbols=processed_symbols,
+                                success_symbols=success_symbols,
+                                failed_symbols=failed_symbols,
+                                current_symbol=symbol,
+                            )
+
+                        local_dates = await self._get_local_history_dates(symbol, start_date, end_date)
+                        upstream_dates = await self._fetch_remote_history_dates(symbol, start_date, end_date)
+
+                        missing_dates = sorted(upstream_dates - local_dates)
+                        symbol_missing_count = len(missing_dates)
+
+                        if symbol_missing_count > 0 and auto_repair:
+                            symbol_repaired_count = await self._repair_missing_dates(symbol, missing_dates)
+
+                        symbol_result = {
+                            "symbol": symbol,
+                            "local_dates": len(local_dates),
+                            "upstream_dates": len(upstream_dates),
+                            "missing_dates": symbol_missing_count,
+                            "repaired_dates": symbol_repaired_count,
+                            "missing_date_samples": [d.isoformat() for d in missing_dates[:20]],
+                            "error": None,
+                        }
                 except Exception as e:
-                    failure_count += 1
-                    await self._mark_symbol_error(symbol, f"Incremental sync failed: {e}")
+                    symbol_failed = True
+                    await self._mark_symbol_error(symbol, f"Audit sync failed: {e}")
+                    symbol_result = {
+                        "symbol": symbol,
+                        "local_dates": 0,
+                        "upstream_dates": 0,
+                        "missing_dates": 0,
+                        "repaired_dates": 0,
+                        "missing_date_samples": [],
+                        "error": str(e)[:500],
+                    }
+                finally:
+                    async with progress_lock:
+                        processed_symbols += 1
 
-                sync_status.update_price_incremental_progress(
-                    processed_symbols=idx,
-                    current_symbol=symbol,
+                        if symbol_failed:
+                            failed_symbols += 1
+                        else:
+                            success_symbols += 1
+                            if symbol_missing_count > 0:
+                                symbols_with_gaps += 1
+                                total_missing_dates += symbol_missing_count
+                                total_repaired_dates += symbol_repaired_count
+
+                        results[result_index] = symbol_result
+                        sync_status.update_price_audit_progress(
+                            processed_symbols=processed_symbols,
+                            success_symbols=success_symbols,
+                            failed_symbols=failed_symbols,
+                            current_symbol=symbol,
+                        )
+                    work_queue.task_done()
+
+        workers = [
+            asyncio.create_task(_audit_worker())
+            for _ in range(worker_count)
+        ]
+
+        try:
+            await asyncio.gather(*workers)
+
+            normalized_results: List[Dict[str, Any]] = []
+            for index, symbol in enumerate(symbols_to_audit):
+                result = results[index]
+                if result is None:
+                    result = {
+                        "symbol": symbol,
+                        "local_dates": 0,
+                        "upstream_dates": 0,
+                        "missing_dates": 0,
+                        "repaired_dates": 0,
+                        "missing_date_samples": [],
+                        "error": "Audit worker did not complete",
+                    }
+                normalized_results.append(result)
+
+            if failed_symbols > 0:
+                sync_status.complete_price_audit(
+                    success=True,
+                    error=f"Price audit completed with {failed_symbols} failed symbols",
                 )
+            else:
+                sync_status.complete_price_audit(success=True)
 
-            sync_status.complete_price_incremental(success=True)
             return {
                 "started": True,
-                "message": "Incremental sync completed",
-                "processed_symbols": total_symbols,
-                "success_symbols": success_count,
-                "failed_symbols": failure_count,
-                "window_start_date": start_date.isoformat(),
-                "window_end_date": today.isoformat(),
+                "message": "Price audit completed",
+                "processed_symbols": processed_symbols,
+                "success_symbols": success_symbols,
+                "failed_symbols": failed_symbols,
+                "audited_symbols": total_symbols,
+                "symbols_with_gaps": symbols_with_gaps,
+                "total_missing_dates": total_missing_dates,
+                "total_repaired_dates": total_repaired_dates,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "results": normalized_results,
             }
         except Exception as e:
-            sync_status.complete_price_incremental(success=False, error=str(e)[:500])
+            sync_status.complete_price_audit(success=False, error=str(e)[:500])
             return {
                 "started": False,
-                "message": f"Incremental sync failed: {e}",
-                "processed_symbols": success_count + failure_count,
-                "success_symbols": success_count,
-                "failed_symbols": failure_count,
+                "message": f"Price audit failed: {e}",
+                "processed_symbols": processed_symbols,
+                "success_symbols": success_symbols,
+                "failed_symbols": failed_symbols,
+                "audited_symbols": total_symbols,
+                "symbols_with_gaps": symbols_with_gaps,
+                "total_missing_dates": total_missing_dates,
+                "total_repaired_dates": total_repaired_dates,
+                "results": [row for row in results if row is not None],
             }
 
     async def run_repair_sync(self, symbols: List[str], start_date: date, end_date: date) -> Dict[str, Any]:
@@ -222,35 +321,79 @@ class PriceSyncService:
 
         success_count = 0
         failure_count = 0
+        processed_count = 0
+        progress_lock = asyncio.Lock()
+
+        work_queue: asyncio.Queue[str] = asyncio.Queue()
+        for symbol in clean_symbols:
+            work_queue.put_nowait(symbol)
+
+        worker_count = min(total_symbols, self._sync_max_workers)
 
         try:
-            loop = asyncio.get_event_loop()
-            for idx, symbol in enumerate(clean_symbols, start=1):
-                sync_status.update_price_repair_progress(
-                    processed_symbols=idx - 1,
-                    current_symbol=symbol,
+            loop = asyncio.get_running_loop()
+            sync_executor = self._ensure_sync_executor()
+
+            async def _repair_worker() -> None:
+                nonlocal processed_count, success_count, failure_count
+                while True:
+                    try:
+                        symbol = work_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        return
+
+                    symbol_failed = False
+                    try:
+                        async with self._operation_worker_semaphore:
+                            async with progress_lock:
+                                sync_status.update_price_repair_progress(
+                                    processed_symbols=processed_count,
+                                    success_symbols=success_count,
+                                    failed_symbols=failure_count,
+                                    current_symbol=symbol,
+                                )
+
+                            await loop.run_in_executor(
+                                sync_executor,
+                                self._history._upsert_stock_price_history,
+                                symbol,
+                                start_date,
+                                end_date,
+                            )
+                            await self._mark_symbol_sync_result(symbol)
+                    except Exception as e:
+                        symbol_failed = True
+                        await self._mark_symbol_error(symbol, f"Repair sync failed: {e}")
+                    finally:
+                        async with progress_lock:
+                            processed_count += 1
+                            if symbol_failed:
+                                failure_count += 1
+                            else:
+                                success_count += 1
+
+                            sync_status.update_price_repair_progress(
+                                processed_symbols=processed_count,
+                                success_symbols=success_count,
+                                failed_symbols=failure_count,
+                                current_symbol=symbol,
+                            )
+                        work_queue.task_done()
+
+            workers = [
+                asyncio.create_task(_repair_worker())
+                for _ in range(worker_count)
+            ]
+            await asyncio.gather(*workers)
+
+            if failure_count > 0:
+                sync_status.complete_price_repair(
+                    success=True,
+                    error=f"Repair sync completed with {failure_count} failed symbols",
                 )
+            else:
+                sync_status.complete_price_repair(success=True)
 
-                try:
-                    await loop.run_in_executor(
-                        background_executor,
-                        self._history._upsert_stock_price_history,
-                        symbol,
-                        start_date,
-                        end_date,
-                    )
-                    await self._mark_incremental_result(symbol)
-                    success_count += 1
-                except Exception as e:
-                    failure_count += 1
-                    await self._mark_symbol_error(symbol, f"Repair sync failed: {e}")
-
-                sync_status.update_price_repair_progress(
-                    processed_symbols=idx,
-                    current_symbol=symbol,
-                )
-
-            sync_status.complete_price_repair(success=True)
             return {
                 "started": True,
                 "message": "Repair sync completed",
@@ -270,38 +413,37 @@ class PriceSyncService:
                 "failed_symbols": failure_count,
             }
 
-    async def _run_bootstrap(self) -> None:
-        """Background bootstrap execution."""
-        symbols_meta = await self._build_symbol_universe()
+    async def _run_sync(self, symbols: Optional[List[str]]) -> None:
+        """Background unified sync execution."""
+        symbols_meta = await self._build_symbol_universe(symbols)
         total = len(symbols_meta)
 
-        sync_status.start_price_bootstrap(total_symbols=total)
+        sync_status.start_price_sync(total_symbols=total)
         if total == 0:
-            sync_status.complete_price_bootstrap(success=True)
+            sync_status.complete_price_sync(success=True)
             return
 
         await self._ensure_sync_state_rows(symbols_meta)
 
-        await self._reset_bootstrap_pacer()
+        await self._reset_sync_pacer()
         bootstrap_logger.info(
-            "Bootstrap runtime config: max_concurrency=%s executor_workers=%s target_rpm=%s chunk_days=%s",
-            self._bootstrap_max_concurrency,
-            self._bootstrap_executor_workers,
-            self._bootstrap_target_rpm,
-            self._bootstrap_chunk_days,
+            "Price sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s",
+            self._sync_max_workers,
+            self._sync_target_rpm,
+            self._sync_chunk_days,
         )
 
-        work_queue: asyncio.Queue[SymbolBootstrapMeta] = asyncio.Queue()
+        work_queue: asyncio.Queue[SymbolSyncMeta] = asyncio.Queue()
         for meta in symbols_meta:
             work_queue.put_nowait(meta)
 
-        worker_count = min(total, self._bootstrap_max_concurrency)
+        worker_count = min(total, self._sync_max_workers)
         success_count = 0
         failure_count = 0
         processed_count = 0
         progress_lock = asyncio.Lock()
 
-        async def _bootstrap_worker(worker_id: int) -> None:
+        async def _sync_worker(worker_id: int) -> None:
             nonlocal processed_count, success_count, failure_count
             while True:
                 try:
@@ -313,13 +455,14 @@ class PriceSyncService:
                 was_cancelled = False
                 try:
                     async with progress_lock:
-                        sync_status.update_price_bootstrap_progress(
+                        sync_status.update_price_sync_progress(
                             processed_symbols=processed_count,
                             success_symbols=success_count,
                             failed_symbols=failure_count,
                             current_symbol=meta.symbol,
                         )
-                    await self._bootstrap_symbol(meta)
+                    async with self._operation_worker_semaphore:
+                        await self._sync_symbol(meta)
                 except asyncio.CancelledError:
                     was_cancelled = True
                     raise
@@ -327,7 +470,7 @@ class PriceSyncService:
                     symbol_failed = True
                     await self._mark_symbol_failed(meta.symbol, str(e))
                     bootstrap_logger.error(
-                        f"Bootstrap worker {worker_id} failed symbol {meta.symbol}: {e}"
+                        f"Price sync worker {worker_id} failed symbol {meta.symbol}: {e}"
                     )
                 finally:
                     if not was_cancelled:
@@ -338,7 +481,7 @@ class PriceSyncService:
                             else:
                                 success_count += 1
 
-                            sync_status.update_price_bootstrap_progress(
+                            sync_status.update_price_sync_progress(
                                 processed_symbols=processed_count,
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
@@ -347,49 +490,42 @@ class PriceSyncService:
                     work_queue.task_done()
 
         workers = [
-            asyncio.create_task(_bootstrap_worker(worker_idx))
+            asyncio.create_task(_sync_worker(worker_idx))
             for worker_idx in range(1, worker_count + 1)
         ]
 
         try:
             await asyncio.gather(*workers)
             if failure_count > 0:
-                sync_status.complete_price_bootstrap(
+                sync_status.complete_price_sync(
                     success=True,
-                    error=f"Bootstrap completed with {failure_count} failed symbols",
+                    error=f"Price sync completed with {failure_count} failed symbols",
                 )
             else:
-                sync_status.complete_price_bootstrap(success=True)
+                sync_status.complete_price_sync(success=True)
 
         except asyncio.CancelledError:
             for worker in workers:
                 worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
-            sync_status.complete_price_bootstrap(success=False, error="Bootstrap cancelled")
+            sync_status.complete_price_sync(success=False, error="Price sync cancelled")
             raise
         except Exception as e:
-            sync_status.complete_price_bootstrap(success=False, error=str(e)[:500])
+            sync_status.complete_price_sync(success=False, error=str(e)[:500])
 
-    async def _bootstrap_symbol(self, meta: SymbolBootstrapMeta) -> None:
+    async def _sync_symbol(self, meta: SymbolSyncMeta) -> None:
         started = time.monotonic()
         chunk_count = 0
         retry_count = 0
 
         state = await self._get_or_create_symbol_state(meta.symbol, meta.listing_date)
 
-        if (
-            state.bootstrap_status == "completed"
-            and state.latest_synced_date is not None
-            and state.earliest_synced_date is not None
-        ):
-            return
-
         symbol_start_date = state.listing_date or meta.listing_date
         if symbol_start_date is None:
             loop = asyncio.get_event_loop()
-            bootstrap_executor = self._ensure_bootstrap_executor()
+            sync_executor = self._ensure_sync_executor()
             symbol_start_date = await loop.run_in_executor(
-                bootstrap_executor,
+                sync_executor,
                 self._discover_oldest_history_date,
                 meta.symbol,
             )
@@ -397,16 +533,20 @@ class PriceSyncService:
         if symbol_start_date is None:
             raise RuntimeError("Unable to determine symbol start date")
 
-        await self._set_symbol_bootstrap_running(meta.symbol, symbol_start_date)
+        await self._set_symbol_sync_running(meta.symbol, symbol_start_date)
 
         today = date.today()
+        _, latest_local = await self._get_symbol_bounds(meta.symbol)
+
         cursor = symbol_start_date
-        if state.latest_synced_date and state.latest_synced_date >= symbol_start_date:
-            cursor = state.latest_synced_date + timedelta(days=1)
+        if latest_local is not None:
+            overlap_days = max(0, self.SYNC_OVERLAP_DAYS - 1)
+            overlap_start = latest_local - timedelta(days=overlap_days)
+            cursor = max(symbol_start_date, overlap_start)
 
         while cursor <= today:
-            chunk_end = min(cursor + timedelta(days=self._bootstrap_chunk_days - 1), today)
-            retries = await self._run_bootstrap_chunk_with_retry(
+            chunk_end = min(cursor + timedelta(days=self._sync_chunk_days - 1), today)
+            retries = await self._run_sync_chunk_with_retry(
                 meta.symbol,
                 cursor,
                 chunk_end,
@@ -419,7 +559,7 @@ class PriceSyncService:
         if oldest is None or latest is None:
             raise RuntimeError("No price history returned by source")
 
-        await self._mark_symbol_bootstrap_completed(
+        await self._mark_symbol_sync_completed(
             symbol=meta.symbol,
             listing_date=symbol_start_date,
             earliest_date=oldest,
@@ -428,41 +568,41 @@ class PriceSyncService:
 
         elapsed = time.monotonic() - started
         bootstrap_logger.info(
-            f"Bootstrap symbol {meta.symbol} completed: chunks={chunk_count}, "
+            f"Price sync symbol {meta.symbol} completed: chunks={chunk_count}, "
             f"retries={retry_count}, elapsed={elapsed:.2f}s"
         )
 
-    def _ensure_bootstrap_executor(self) -> ThreadPoolExecutor:
-        if self._bootstrap_executor is None:
-            self._bootstrap_executor = ThreadPoolExecutor(
-                max_workers=self._bootstrap_executor_workers,
-                thread_name_prefix="bootstrap_sync",
+    def _ensure_sync_executor(self) -> ThreadPoolExecutor:
+        if self._sync_executor is None:
+            self._sync_executor = ThreadPoolExecutor(
+                max_workers=self._sync_max_workers,
+                thread_name_prefix="price_sync",
             )
-        return self._bootstrap_executor
+        return self._sync_executor
 
-    async def _reset_bootstrap_pacer(self) -> None:
-        async with self._bootstrap_pacer_lock:
-            self._bootstrap_last_request_monotonic = None
+    async def _reset_sync_pacer(self) -> None:
+        async with self._sync_pacer_lock:
+            self._sync_last_request_monotonic = None
 
-    async def _acquire_bootstrap_request_slot(self) -> None:
-        interval_seconds = 60.0 / float(self._bootstrap_target_rpm)
-        async with self._bootstrap_pacer_lock:
+    async def _acquire_sync_request_slot(self) -> None:
+        interval_seconds = 60.0 / float(self._sync_target_rpm)
+        async with self._sync_pacer_lock:
             now = time.monotonic()
-            if self._bootstrap_last_request_monotonic is not None:
-                elapsed = now - self._bootstrap_last_request_monotonic
+            if self._sync_last_request_monotonic is not None:
+                elapsed = now - self._sync_last_request_monotonic
                 if elapsed < interval_seconds:
                     await asyncio.sleep(interval_seconds - elapsed)
                     now = time.monotonic()
-            self._bootstrap_last_request_monotonic = now
+            self._sync_last_request_monotonic = now
 
-    async def _execute_bootstrap_chunk_upsert(
+    async def _execute_sync_chunk_upsert(
         self,
         symbol: str,
         start_date: date,
         end_date: date,
     ) -> int:
         loop = asyncio.get_event_loop()
-        bootstrap_executor = self._ensure_bootstrap_executor()
+        sync_executor = self._ensure_sync_executor()
         upsert_call = partial(
             self._history._upsert_stock_price_history,
             symbol=symbol,
@@ -471,13 +611,13 @@ class PriceSyncService:
             raise_on_error=True,
             log=bootstrap_logger,
         )
-        return await loop.run_in_executor(bootstrap_executor, upsert_call)
+        return await loop.run_in_executor(sync_executor, upsert_call)
 
-    def _compute_bootstrap_retry_delay(self, retry_number: int) -> float:
-        delay = self._bootstrap_retry_base_delay_seconds * (2 ** max(0, retry_number - 1))
-        return min(delay, self._bootstrap_retry_max_delay_seconds)
+    def _compute_sync_retry_delay(self, retry_number: int) -> float:
+        delay = self._sync_retry_base_delay_seconds * (2 ** max(0, retry_number - 1))
+        return min(delay, self._sync_retry_max_delay_seconds)
 
-    async def _run_bootstrap_chunk_with_retry(
+    async def _run_sync_chunk_with_retry(
         self,
         symbol: str,
         start_date: date,
@@ -487,14 +627,14 @@ class PriceSyncService:
         while True:
             attempt += 1
             retries_so_far = attempt - 1
-            await self._acquire_bootstrap_request_slot()
+            await self._acquire_sync_request_slot()
             started = time.monotonic()
 
             try:
-                await self._execute_bootstrap_chunk_upsert(symbol, start_date, end_date)
+                await self._execute_sync_chunk_upsert(symbol, start_date, end_date)
                 elapsed = time.monotonic() - started
                 bootstrap_logger.debug(
-                    f"Bootstrap chunk synced for {symbol} ({start_date} -> {end_date}) "
+                    f"Price sync chunk synced for {symbol} ({start_date} -> {end_date}) "
                     f"attempt={attempt} elapsed={elapsed:.2f}s"
                 )
                 return retries_so_far
@@ -502,18 +642,18 @@ class PriceSyncService:
                 elapsed = time.monotonic() - started
                 if not (_is_rate_limit_error(e) or isinstance(e, CircuitOpenError)):
                     bootstrap_logger.debug(
-                        f"Bootstrap chunk failed for {symbol} ({start_date} -> {end_date}) "
+                        f"Price sync chunk failed for {symbol} ({start_date} -> {end_date}) "
                         f"attempt={attempt} elapsed={elapsed:.2f}s error={e}"
                     )
                     raise
 
-                if retries_so_far >= self._bootstrap_rate_limit_max_retries:
+                if retries_so_far >= self._sync_rate_limit_max_retries:
                     raise RuntimeError(
                         f"Rate limit persisted for {symbol} ({start_date} -> {end_date}) "
                         f"after {attempt} attempts"
                     ) from e
 
-                backoff_delay = self._compute_bootstrap_retry_delay(retries_so_far + 1)
+                backoff_delay = self._compute_sync_retry_delay(retries_so_far + 1)
                 status_delay = sync_status.rate_limit_seconds_remaining or 0.0
                 circuit_delay = api_circuit_breaker.time_until_half_open or 0.0
                 wait_base = max(backoff_delay, status_delay, circuit_delay)
@@ -521,27 +661,169 @@ class PriceSyncService:
                 sleep_seconds = wait_base + jitter
 
                 bootstrap_logger.debug(
-                    f"Bootstrap chunk rate-limited for {symbol} ({start_date} -> {end_date}) "
+                    f"Price sync chunk rate-limited for {symbol} ({start_date} -> {end_date}) "
                     f"attempt={attempt} elapsed={elapsed:.2f}s sleep={sleep_seconds:.2f}s"
                 )
                 await asyncio.sleep(sleep_seconds)
 
-    async def _build_symbol_universe(self) -> List[SymbolBootstrapMeta]:
-        listing_map = await self._fetch_listing_symbol_map()
-        db_symbols = await self._fetch_db_symbols()
+    async def _repair_missing_dates(self, symbol: str, missing_dates: List[date]) -> int:
+        ranges = self._group_dates_into_ranges(missing_dates)
+        for range_start, range_end in ranges:
+            await self._run_sync_chunk_with_retry(symbol, range_start, range_end)
 
+        await self._mark_symbol_sync_result(symbol)
+        return len(missing_dates)
+
+    async def _resolve_symbols_filter(
+        self,
+        symbols: Optional[List[str]],
+        index_symbol: Optional[str],
+    ) -> Optional[List[str]]:
+        normalized_symbols = [
+            self._normalize_symbol(s)
+            for s in (symbols or [])
+            if s
+        ]
+        normalized_symbols = [s for s in normalized_symbols if s]
+
+        group_symbols: List[str] = []
+        if index_symbol:
+            group_symbols = await self._fetch_symbols_for_index(index_symbol)
+
+        merged = list(dict.fromkeys([*normalized_symbols, *group_symbols]))
+        return merged if merged else None
+
+    async def _fetch_symbols_for_index(self, index_symbol: str) -> List[str]:
+        loop = asyncio.get_event_loop()
+        sync_executor = self._ensure_sync_executor()
+        return await loop.run_in_executor(
+            sync_executor,
+            self._fetch_symbols_for_index_sync,
+            index_symbol,
+        )
+
+    def _fetch_symbols_for_index_sync(self, index_symbol: str) -> List[str]:
+        from vnstock import Listing
+
+        normalized_index = str(index_symbol or "").strip().upper()
+        mapped_group_code = get_group_code_for_index(normalized_index)
+        valid_group_lookup = {group.upper(): group for group in VALID_GROUPS}
+        group_code = valid_group_lookup.get(str(mapped_group_code).strip().upper())
+        if group_code is None:
+            raise ValueError(
+                f"Unsupported index symbol/group '{index_symbol}'. "
+                f"Supported groups include: {', '.join(sorted(VALID_GROUPS))}"
+            )
+
+        listing = Listing(source='VCI')
+        symbols_df = listing.symbols_by_group(group_code)
+        if symbols_df is None or symbols_df.empty:
+            return []
+
+        symbols = [self._normalize_symbol(value) for value in symbols_df.tolist()]
+        return [symbol for symbol in symbols if symbol]
+
+    async def _fetch_remote_history_dates(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> set[date]:
+        loop = asyncio.get_event_loop()
+        sync_executor = self._ensure_sync_executor()
+        return await loop.run_in_executor(
+            sync_executor,
+            self._fetch_remote_history_dates_sync,
+            symbol,
+            start_date,
+            end_date,
+        )
+
+    def _fetch_remote_history_dates_sync(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> set[date]:
+        from vnstock import Vnstock
+
+        stock = Vnstock().stock(symbol=symbol, source='VCI')
+        hist = stock.quote.history(
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+            interval='1D',
+        )
+        if hist is None or hist.empty:
+            return set()
+
+        times = pd.to_datetime(hist['time'], errors='coerce').dropna()
+        return {
+            ts.date()
+            for ts in times
+            if start_date <= ts.date() <= end_date
+        }
+
+    async def _get_local_history_dates(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> set[date]:
+        async with async_session() as session:
+            stmt = select(StockDailyPrice.date).where(
+                StockDailyPrice.symbol == symbol,
+                StockDailyPrice.date >= start_date,
+                StockDailyPrice.date <= end_date,
+            )
+            result = await session.execute(stmt)
+            return set(result.scalars().all())
+
+    @staticmethod
+    def _group_dates_into_ranges(dates_list: List[date]) -> List[tuple[date, date]]:
+        if not dates_list:
+            return []
+
+        sorted_dates = sorted(dates_list)
+        ranges: List[tuple[date, date]] = []
+
+        start = sorted_dates[0]
+        end = sorted_dates[0]
+
+        for current in sorted_dates[1:]:
+            if current == end + timedelta(days=1):
+                end = current
+                continue
+            ranges.append((start, end))
+            start = current
+            end = current
+
+        ranges.append((start, end))
+        return ranges
+
+    async def _build_symbol_universe(self, symbols: Optional[List[str]] = None) -> List[SymbolSyncMeta]:
+        listing_map = await self._fetch_listing_symbol_map()
+
+        if symbols is not None:
+            normalized = [self._normalize_symbol(s) for s in symbols if s]
+            filtered_symbols = sorted(set(s for s in normalized if s))
+            return [
+                SymbolSyncMeta(symbol=symbol, listing_date=listing_map.get(symbol))
+                for symbol in filtered_symbols
+            ]
+
+        db_symbols = await self._fetch_db_symbols()
         all_symbols = set(listing_map.keys()) | set(db_symbols)
         sorted_symbols = sorted(all_symbols)
 
         return [
-            SymbolBootstrapMeta(symbol=symbol, listing_date=listing_map.get(symbol))
+            SymbolSyncMeta(symbol=symbol, listing_date=listing_map.get(symbol))
             for symbol in sorted_symbols
         ]
 
     async def _fetch_listing_symbol_map(self) -> Dict[str, date | None]:
         loop = asyncio.get_event_loop()
-        bootstrap_executor = self._ensure_bootstrap_executor()
-        return await loop.run_in_executor(bootstrap_executor, self._fetch_listing_symbol_map_sync)
+        sync_executor = self._ensure_sync_executor()
+        return await loop.run_in_executor(sync_executor, self._fetch_listing_symbol_map_sync)
 
     def _fetch_listing_symbol_map_sync(self) -> Dict[str, date | None]:
         from vnstock import Listing
@@ -560,7 +842,7 @@ class PriceSyncService:
                 result[symbol] = listing_date
 
         except Exception as e:
-            bootstrap_logger.warning(f"Error fetching listing symbols for bootstrap: {e}")
+            bootstrap_logger.warning(f"Error fetching listing symbols for price sync: {e}")
 
         return result
 
@@ -622,7 +904,7 @@ class PriceSyncService:
 
         return list(dict.fromkeys([*company_symbols, *state_symbols]))
 
-    async def _ensure_sync_state_rows(self, symbols_meta: List[SymbolBootstrapMeta]) -> None:
+    async def _ensure_sync_state_rows(self, symbols_meta: List[SymbolSyncMeta]) -> None:
         if not symbols_meta:
             return
 
@@ -680,7 +962,7 @@ class PriceSyncService:
 
             return row
 
-    async def _set_symbol_bootstrap_running(self, symbol: str, listing_date: date) -> None:
+    async def _set_symbol_sync_running(self, symbol: str, listing_date: date) -> None:
         now = datetime.utcnow()
         async with async_session() as session:
             stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
@@ -696,7 +978,7 @@ class PriceSyncService:
             row.updated_at = now
             await session.commit()
 
-    async def _mark_symbol_bootstrap_completed(
+    async def _mark_symbol_sync_completed(
         self,
         symbol: str,
         listing_date: date,
@@ -716,6 +998,7 @@ class PriceSyncService:
             row.bootstrap_completed_at = now
             row.earliest_synced_date = earliest_date
             row.latest_synced_date = latest_date
+            row.last_incremental_sync_at = now
             row.last_error = None
             row.updated_at = now
             await session.commit()
@@ -749,7 +1032,7 @@ class PriceSyncService:
             row.updated_at = now
             await session.commit()
 
-    async def _mark_incremental_result(self, symbol: str) -> None:
+    async def _mark_symbol_sync_result(self, symbol: str) -> None:
         now = datetime.utcnow()
         oldest, latest = await self._get_symbol_bounds(symbol)
 
@@ -778,40 +1061,6 @@ class PriceSyncService:
             result = await session.execute(stmt)
             row = result.one()
             return row[0], row[1]
-
-    async def _get_active_symbols_for_incremental(self) -> List[str]:
-        async with async_session() as session:
-            stmt = select(StockPriceSyncState.symbol).where(
-                StockPriceSyncState.bootstrap_status.in_(['completed', 'failed', 'idle', 'running'])
-            )
-            result = await session.execute(stmt)
-            symbols = [self._normalize_symbol(row[0]) for row in result.all() if row[0]]
-
-        if symbols:
-            return list(dict.fromkeys(symbols))
-
-        # Fallback before any bootstrap state exists
-        return await self._fetch_db_symbols()
-
-    async def _get_bootstrap_db_summary(self) -> Dict[str, Any]:
-        async with async_session() as session:
-            total_stmt = select(func.count(StockPriceSyncState.id))
-            total = (await session.execute(total_stmt)).scalar() or 0
-
-            grouped_stmt = (
-                select(StockPriceSyncState.bootstrap_status, func.count(StockPriceSyncState.id))
-                .group_by(StockPriceSyncState.bootstrap_status)
-            )
-            grouped = await session.execute(grouped_stmt)
-
-            by_status: Dict[str, int] = {}
-            for status_value, count_value in grouped.all():
-                by_status[str(status_value)] = int(count_value)
-
-        return {
-            "total_symbols": int(total),
-            "by_status": by_status,
-        }
 
     def _normalize_symbol(self, symbol: Any) -> str:
         if symbol is None:
