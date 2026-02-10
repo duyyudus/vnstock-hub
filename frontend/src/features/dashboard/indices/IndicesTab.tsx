@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, IndustryInfo, BookmarkGroup } from '../../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
 import { BookmarkSelector } from './BookmarkSelector';
+import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
 import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
@@ -47,6 +48,9 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('table');
     const [searchQuery, setSearchQuery] = useState('');
+    const indexDetailsDialogRef = useRef<HTMLDialogElement>(null);
+
+    const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
 
     // --- Effects ---
 
@@ -128,6 +132,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
     }, [bookmarkGroups, selectedBookmarkGroupId]);
 
+    useEffect(() => {
+        if (!isIndexContextActive) {
+            indexDetailsDialogRef.current?.close();
+        }
+    }, [isIndexContextActive]);
+
     // Fetch Stocks Data
     useEffect(() => {
         const fetchData = async () => {
@@ -199,6 +209,14 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
     };
 
+    const openIndexDetailsModal = () => {
+        indexDetailsDialogRef.current?.showModal();
+    };
+
+    const closeIndexDetailsModal = () => {
+        indexDetailsDialogRef.current?.close();
+    };
+
     // --- Filtering ---
 
     const filteredStocks = useMemo(() => {
@@ -213,6 +231,33 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         if (!selectedBookmarkGroupId) return null;
         return bookmarkGroups.find(group => group.id === selectedBookmarkGroupId) || null;
     }, [bookmarkGroups, selectedBookmarkGroupId]);
+
+    const industryAllocation = useMemo(() => {
+        const industryMap = new Map<string, number>();
+        let totalMarketCap = 0;
+
+        stocks.forEach((stock) => {
+            const marketCap = Number(stock.market_cap);
+            if (!Number.isFinite(marketCap) || marketCap <= 0) {
+                return;
+            }
+
+            const industryName = stock.industry?.trim() || 'Other';
+            industryMap.set(industryName, (industryMap.get(industryName) || 0) + marketCap);
+            totalMarketCap += marketCap;
+        });
+
+        if (totalMarketCap <= 0) {
+            return [];
+        }
+
+        return Array.from(industryMap.entries())
+            .map(([industry, marketCap]) => ({
+                industry,
+                allocation: (marketCap / totalMarketCap) * 100,
+            }))
+            .sort((a, b) => b.allocation - a.allocation);
+    }, [stocks]);
 
     // --- Render ---
 
@@ -268,6 +313,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         selectedIndex={selectedIndex}
                         onIndexChange={handleIndexChange}
                     />
+                    {isIndexContextActive ? (
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={openIndexDetailsModal}
+                        >
+                            Index Details
+                        </button>
+                    ) : null}
                 </div>
 
                 {/* Row 3: View Mode Toggle */}
@@ -353,6 +407,28 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     </div>
                 </div>
             )}
+
+            <dialog ref={indexDetailsDialogRef} className="modal">
+                <div className="modal-box max-w-3xl">
+                    <h3 className="font-bold text-lg">{selectedIndex.label} index details</h3>
+                    <p className="text-sm text-base-content/70 mt-1">
+                        Industry allocation by market cap
+                    </p>
+
+                    <div className="h-80 mt-4">
+                        <IndustryHoldingChart data={industryAllocation} />
+                    </div>
+
+                    <div className="modal-action">
+                        <button type="button" className="btn btn-ghost" onClick={closeIndexDetailsModal}>
+                            Close
+                        </button>
+                    </div>
+                </div>
+                <form method="dialog" className="modal-backdrop">
+                    <button onClick={closeIndexDetailsModal}>close</button>
+                </form>
+            </dialog>
         </div>
     );
 };
