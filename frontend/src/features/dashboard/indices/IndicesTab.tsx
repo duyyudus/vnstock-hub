@@ -224,92 +224,92 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         <div className="space-y-6 p-4">
             {/* Header Section */}
             <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div>
-                        <h2 className="text-2xl font-bold text-base-content">
-                            {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.title}
-                        </h2>
-                    </div>
+                {/* Row 1: Title */}
+                <div>
+                    <h2 className="text-2xl font-bold text-base-content">
+                        {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.title}
+                    </h2>
+                </div>
 
-                    {/* Toolbar */}
-                    <div className="flex flex-wrap gap-2 items-center">
-                        {/* View Mode Toggle */}
-                        <div className="join">
-                            <button
-                                className={`join-item btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setViewMode('table')}
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                                Price Table
-                            </button>
-                            <button
-                                className={`join-item btn btn-sm ${viewMode === 'growth' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setViewMode('growth')}
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                                </svg>
-                                Growth Chart
-                            </button>
-                            <button
-                                className={`join-item btn btn-sm ${viewMode === 'comparison' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setViewMode('comparison')}
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                                Compare
-                            </button>
-                            <button
-                                className={`join-item btn btn-sm ${viewMode === 'risk_return' ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setViewMode('risk_return')}
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-2.2 0-4-1.8-4-4H6a6 6 0 0012 0h-2c0 2.2-1.8 4-4 4zm0 8c2.2 0 4 1.8 4 4h2a6 6 0 00-12 0h2c0-2.2 1.8-4 4-4zm-8-4v-2h16v2H4z" />
-                                </svg>
-                                Risk/Return
-                            </button>
-                        </div>
-
-                        {/* Search & Selectors */}
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Search tickers..."
-                                className="input input-sm input-bordered w-32 md:w-48 pl-8"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                            <svg
-                                className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                            >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                {/* Row 2: View Mode Toggle */}
+                <div className="overflow-x-auto">
+                    <div className="join min-w-max">
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('table')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
-                        </div>
-                        {user ? (
-                            <BookmarkSelector
-                                groups={bookmarkGroups}
-                                selectedGroupId={selectedBookmarkGroupId}
-                                onGroupChange={handleBookmarkGroupChange}
-                                disabled={bookmarkLoading}
-                            />
-                        ) : null}
-                        <IndustrySelector
-                            industries={industries}
-                            selectedIndustryName={selectedIndustryName}
-                            onIndustryChange={handleIndustryChange}
-                        />
-                        <IndexSelector
-                            indices={indices}
-                            selectedIndex={selectedIndex}
-                            onIndexChange={handleIndexChange}
-                        />
+                            Price Table
+                        </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'growth' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('growth')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                            </svg>
+                            Growth Chart
+                        </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'comparison' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('comparison')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            Compare
+                        </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'risk_return' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('risk_return')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-2.2 0-4-1.8-4-4H6a6 6 0 0012 0h-2c0 2.2-1.8 4-4 4zm0 8c2.2 0 4 1.8 4 4h2a6 6 0 00-12 0h2c0-2.2 1.8-4 4-4zm-8-4v-2h16v2H4z" />
+                            </svg>
+                            Risk/Return
+                        </button>
                     </div>
+                </div>
+
+                {/* Row 3: Search & Selectors */}
+                <div className="flex flex-wrap gap-2 items-center">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search tickers..."
+                            className="input input-sm input-bordered w-32 md:w-48 pl-8"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        <svg
+                            className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    {user ? (
+                        <BookmarkSelector
+                            groups={bookmarkGroups}
+                            selectedGroupId={selectedBookmarkGroupId}
+                            onGroupChange={handleBookmarkGroupChange}
+                            disabled={bookmarkLoading}
+                        />
+                    ) : null}
+                    <IndustrySelector
+                        industries={industries}
+                        selectedIndustryName={selectedIndustryName}
+                        onIndustryChange={handleIndustryChange}
+                    />
+                    <IndexSelector
+                        indices={indices}
+                        selectedIndex={selectedIndex}
+                        onIndexChange={handleIndexChange}
+                    />
                 </div>
             </div>
 
