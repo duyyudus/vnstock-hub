@@ -82,6 +82,7 @@ export const PortfolioTab: React.FC = () => {
     const [freshImportResult, setFreshImportResult] = useState<PortfolioFreshImportResponse | null>(null);
     const [sortKey, setSortKey] = useState<SortKey | null>(null);
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+    const [searchQuery, setSearchQuery] = useState('');
 
     const formatNumber = useMemo(() => {
         return (value: number, options?: Intl.NumberFormatOptions) =>
@@ -300,6 +301,17 @@ export const PortfolioTab: React.FC = () => {
             return (Number(aValue) - Number(bValue)) * direction;
         });
     }, [positions, quotes, sortDirection, sortKey]);
+
+    const filteredPositions = useMemo(() => {
+        const query = searchQuery.trim().toUpperCase();
+        if (!query) {
+            return sortedPositions;
+        }
+
+        return sortedPositions.filter((position) => (
+            position.ticker.toUpperCase().includes(query)
+        ));
+    }, [searchQuery, sortedPositions]);
 
     const renderSortHeader = (label: string, key: SortKey) => {
         const isActive = sortKey === key;
@@ -806,6 +818,30 @@ export const PortfolioTab: React.FC = () => {
                                     No positions yet. Add your first ticker to start tracking performance.
                                 </div>
                             )}
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search ticker..."
+                                        className="input input-sm input-bordered w-40 md:w-56 pl-8"
+                                        value={searchQuery}
+                                        onChange={(event) => setSearchQuery(event.target.value)}
+                                    />
+                                    <svg
+                                        className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                                {positions.length > 0 && filteredPositions.length === 0 && searchQuery.trim() && (
+                                    <div className="text-sm text-base-content/60">
+                                        No positions match "{searchQuery.trim()}".
+                                    </div>
+                                )}
+                            </div>
                             <div className="overflow-x-auto">
                                 <table className="table table-zebra table-sm">
                                 <thead>
@@ -821,7 +857,7 @@ export const PortfolioTab: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sortedPositions.map((position) => {
+                                    {filteredPositions.map((position) => {
                                         const isEditing = editingId === position.id;
                                         const parsedQuantity = Number(editFormState.quantity);
                                         const parsedAverageCost = Number(editFormState.averageCost);
