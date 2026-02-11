@@ -71,6 +71,37 @@ class StockPriceSyncState(Base):
     )
 
 
+class StockFinancialDataCache(Base):
+    """Cached company financial data snapshots from vnstock."""
+    __tablename__ = "stock_financial_data_cache"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False)
+    data_type = Column(String(30), nullable=False)  # income | cashflow | balance_sheet | ratios
+    period = Column(String(10), nullable=False)  # quarter | year
+    lang = Column(String(10), nullable=False, default="en")
+    data = Column(JSON, nullable=False, default=list)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'symbol',
+            'data_type',
+            'period',
+            'lang',
+            name='uq_stock_financial_data_cache_key',
+        ),
+        Index(
+            'ix_stock_financial_data_cache_lookup',
+            'symbol',
+            'data_type',
+            'period',
+            'lang',
+        ),
+        Index('ix_stock_financial_data_cache_symbol_updated_at', 'symbol', 'updated_at'),
+    )
+
+
 class FundNav(Base):
     """Historical NAV data for mutual funds."""
     __tablename__ = "fund_navs"

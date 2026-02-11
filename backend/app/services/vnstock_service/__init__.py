@@ -12,6 +12,7 @@ from .stocks import StocksService
 from .stock_metadata import StockMetadataService
 from .history import HistoryService
 from .price_sync import PriceSyncService
+from .finance_sync import FinanceDataSyncService
 from .finance import FinanceService
 from .company import CompanyService
 from .funds import FundsService
@@ -33,12 +34,13 @@ class VnstockService:
             except Exception as e:
                 logger.error(f"Error configuring vnstock API key: {e}")
 
-        self.metadata = StockMetadataService()
         self.history = HistoryService()
+        self.finance = FinanceService()
+        self.metadata = StockMetadataService(finance_service=self.finance)
         self.price_sync = PriceSyncService(history=self.history)
+        self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
         self.indices = IndicesService()
         self.funds = FundsService()
-        self.finance = FinanceService()
         self.company = CompanyService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
 
@@ -46,9 +48,11 @@ class VnstockService:
         """Start long-running background workers."""
         await self.history.start_background_workers()
         await self.price_sync.start_background_tasks()
+        await self.finance_data_sync.start_background_tasks()
 
     async def stop_background_tasks(self) -> None:
         """Stop long-running background workers."""
+        await self.finance_data_sync.stop_background_tasks()
         await self.price_sync.stop_background_tasks()
         await self.history.stop_background_workers()
 
@@ -160,6 +164,19 @@ class VnstockService:
             symbols=symbols,
             start_date=parsed_start,
             end_date=parsed_end
+        )
+
+    # Finance Sync
+    async def run_finance_sync(
+        self,
+        force_restart: bool = False,
+        symbols: List[str] | None = None,
+        index_symbol: str | None = None,
+    ) -> Dict[str, Any]:
+        return await self.finance_data_sync.run_sync(
+            force_restart=force_restart,
+            symbols=symbols,
+            index_symbol=index_symbol,
         )
 
     # Funds

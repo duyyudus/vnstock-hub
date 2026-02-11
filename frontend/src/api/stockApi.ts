@@ -334,7 +334,7 @@ export interface IndustryStocksResponse {
 
 export interface FinancialDataResponse {
     symbol: string;
-    data: any[];
+    data: Record<string, string | number | boolean | null>[];
     count: number;
 }
 
@@ -391,7 +391,7 @@ export interface StocksWeeklyPricesResponse {
 // Fund data types
 export interface FundDataResponse {
     symbol?: string;
-    data: any[];
+    data: Record<string, string | number | boolean | null>[];
     count: number;
 }
 
@@ -559,6 +559,7 @@ export interface PriceSyncStatus {
 export interface SyncStatusResponse {
     fund_performance: SyncStatusItem;
     price_sync: PriceSyncStatus;
+    finance_sync: PriceJobStatus;
     is_rate_limited: boolean;
     rate_limit_reset_at: string | null;
 }
@@ -854,6 +855,19 @@ export const stockApi = {
         return response.data;
     },
 
+    async runFinanceSync(
+        forceRestart: boolean = false,
+        symbols?: string[],
+        indexSymbol?: string
+    ): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/finance/run', {
+            force_restart: forceRestart,
+            symbols: symbols && symbols.length > 0 ? symbols : undefined,
+            index_symbol: indexSymbol || undefined,
+        });
+        return response.data;
+    },
+
     // Portfolio positions
     async getPortfolioPositions(): Promise<PortfolioPositionsResponse> {
         const response = await apiClient.get<PortfolioPositionsResponse>('/portfolio/positions');
@@ -899,7 +913,7 @@ export const stockApi = {
             if (utf8FilenameMatch?.[1]) {
                 filename = decodeURIComponent(utf8FilenameMatch[1]);
             } else {
-                const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+                const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
                 if (filenameMatch?.[1]) {
                     filename = filenameMatch[1];
                 }

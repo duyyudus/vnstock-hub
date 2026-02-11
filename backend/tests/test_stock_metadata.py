@@ -283,3 +283,17 @@ async def test_metadata_enrichment_no_terminal_log_when_not_started(metadata_ser
     mock_start.assert_not_called()
     mock_complete.assert_not_called()
     mock_error.assert_not_called()
+
+
+def test_fetch_stock_finance_sync_uses_finance_service_not_direct_vnstock():
+    finance_service = MagicMock()
+    finance_service.get_financial_ratios = AsyncMock(return_value=[{"P/E": 8.2}])
+    finance_service.extract_latest_pe_ratio.return_value = 8.2
+    metadata_service = StockMetadataService(finance_service=finance_service)
+
+    with patch("app.services.vnstock_service.stock_metadata.asyncio.run", return_value=[{"P/E": 8.2}]) as mock_run:
+        result = metadata_service._fetch_stock_finance_sync("TCB")
+
+    assert result == {"pe_ratio": 8.2}
+    mock_run.assert_called_once()
+    finance_service.extract_latest_pe_ratio.assert_called_once_with([{"P/E": 8.2}])

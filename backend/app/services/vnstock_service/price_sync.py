@@ -46,17 +46,17 @@ class PriceSyncService:
         self._sync_pacer_lock = asyncio.Lock()
         self._sync_last_request_monotonic: float | None = None
 
-        self._sync_chunk_days = max(1, int(settings.price_sync_chunk_days))
-        self._sync_target_rpm = max(1, int(settings.price_sync_target_rpm))
-        self._sync_max_workers = max(1, int(settings.price_sync_max_workers))
-        self._sync_rate_limit_max_retries = max(0, int(settings.price_sync_rate_limit_max_retries))
+        self._sync_chunk_days = max(1, int(settings.sync_chunk_days))
+        self._sync_target_rpm = max(1, int(settings.sync_target_rpm))
+        self._sync_max_workers = max(1, int(settings.sync_max_workers))
+        self._sync_rate_limit_max_retries = max(0, int(settings.sync_rate_limit_max_retries))
         self._sync_retry_base_delay_seconds = max(
             0.1,
-            float(settings.price_sync_retry_base_delay_seconds),
+            float(settings.sync_retry_base_delay_seconds),
         )
         self._sync_retry_max_delay_seconds = max(
             self._sync_retry_base_delay_seconds,
-            float(settings.price_sync_retry_max_delay_seconds),
+            float(settings.sync_retry_max_delay_seconds),
         )
         self._sync_executor: ThreadPoolExecutor | None = None
         self._operation_worker_semaphore = asyncio.Semaphore(self._sync_max_workers)

@@ -22,7 +22,6 @@ from .core import (
     bg_logger,
     api_circuit_breaker,
     CircuitOpenError,
-    retry_with_backoff,
     _is_rate_limit_error,
     _record_rate_limit,
 )
@@ -32,8 +31,9 @@ from .models import StockInfo
 class StockMetadataService:
     """Enrich stock data with company metadata and financial ratios."""
 
-    def __init__(self) -> None:
+    def __init__(self, finance_service=None) -> None:
         self._enriching_tickers = set()
+        self._finance_service = finance_service
 
     async def apply_cache_to_stocks(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """Apply currently cached data to stocks without fetching new data."""
@@ -245,35 +245,23 @@ class StockMetadataService:
 
     def _fetch_stock_finance_sync(self, symbol: str) -> Dict | None:
         """
-        Fetch financial metadata for a single symbol synchronously.
-        Uses retry mechanism with exponential backoff for rate limits.
+        Fetch financial metadata for a single symbol via DB-first finance service.
         """
-        from vnstock import Vnstock
-
-        def fetch_finance():
-            # We only need the latest ratio
-            s = Vnstock().stock(symbol=symbol[:3], source='VCI')
-            ratio = s.finance.ratio(period='quarter', lang='vi')
-            if ratio is not None and not ratio.empty:
-                # Try multiple possible column names for P/E
-                pe = None
-                if ('Chỉ tiêu định giá', 'P/E') in ratio.columns:
-                    pe = ratio.iloc[0].get(('Chỉ tiêu định giá', 'P/E'))
-                else:
-                    # Look for any column containing 'P/E'
-                    for col in ratio.columns:
-                        col_str = str(col)
-                        if 'P/E' in col_str:
-                            pe = ratio.iloc[0].get(col)
-                            break
-
-                return {
-                    'pe_ratio': float(pe) if pd.notna(pe) else None
-                }
+        if self._finance_service is None:
             return None
 
         try:
-            return retry_with_backoff(fetch_finance, max_retries=3)
+            ratio_records = asyncio.run(
+                self._finance_service.get_financial_ratios(
+                    symbol=symbol[:3],
+                    period='quarter',
+                    lang='en',
+                )
+            )
+            pe_ratio = self._finance_service.extract_latest_pe_ratio(ratio_records)
+            if pe_ratio is None:
+                return None
+            return {'pe_ratio': pe_ratio}
         except Exception as e:
             bg_logger.error(f"Error fetching financial metadata for {symbol}: {e}")
             raise e

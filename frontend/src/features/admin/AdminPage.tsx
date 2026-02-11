@@ -11,6 +11,8 @@ import {
 
 const REFRESH_INTERVAL_MS = 5000;
 
+type AdminTab = 'price' | 'finance';
+
 const getErrorMessage = (error: unknown) => {
     if (typeof error === 'object' && error && 'response' in error) {
         const response = (error as { response?: { data?: { detail?: string } } }).response;
@@ -45,6 +47,8 @@ const parseSymbolsInput = (value: string): string[] => {
 export const AdminPage: React.FC = () => {
     const user = useAuthUser();
 
+    const [activeTab, setActiveTab] = useState<AdminTab>('price');
+
     const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
     const [loadingStatus, setLoadingStatus] = useState(false);
     const [statusError, setStatusError] = useState<string | null>(null);
@@ -65,9 +69,14 @@ export const AdminPage: React.FC = () => {
     const [repairStartDate, setRepairStartDate] = useState('');
     const [repairEndDate, setRepairEndDate] = useState('');
 
+    const [financeSymbols, setFinanceSymbols] = useState('');
+    const [financeIndexSymbol, setFinanceIndexSymbol] = useState('');
+    const [financeForceRestart, setFinanceForceRestart] = useState(false);
+
     const [syncRunning, setSyncRunning] = useState(false);
     const [auditRunning, setAuditRunning] = useState(false);
     const [repairRunning, setRepairRunning] = useState(false);
+    const [financeRunning, setFinanceRunning] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
@@ -193,18 +202,38 @@ export const AdminPage: React.FC = () => {
         );
     };
 
+    const handleRunFinanceSync = async () => {
+        const symbols = parseSymbolsInput(financeSymbols);
+        await runAction(
+            () => stockApi.runFinanceSync(
+                financeForceRestart,
+                symbols.length > 0 ? symbols : undefined,
+                financeIndexSymbol || undefined,
+            ),
+            setFinanceRunning,
+        );
+    };
+
     const runtimeSync = syncStatus?.price_sync.sync;
     const runtimeAudit = syncStatus?.price_sync.audit;
     const runtimeRepair = syncStatus?.price_sync.repair;
+    const runtimeFinance = syncStatus?.finance_sync;
+
     const syncActive = syncRunning || Boolean(runtimeSync?.is_running);
     const auditActive = auditRunning || Boolean(runtimeAudit?.is_running);
     const repairActive = repairRunning || Boolean(runtimeRepair?.is_running);
-    const anyJobActive = syncActive || auditActive || repairActive;
+    const financeActive = financeRunning || Boolean(runtimeFinance?.is_running);
+    const anyJobActive = syncActive || auditActive || repairActive || financeActive;
 
     const syncProgressPercent = useMemo(() => {
         const value = runtimeSync?.progress ?? 0;
         return Math.max(0, Math.min(100, Math.round(value * 100)));
     }, [runtimeSync?.progress]);
+
+    const financeProgressPercent = useMemo(() => {
+        const value = runtimeFinance?.progress ?? 0;
+        return Math.max(0, Math.min(100, Math.round(value * 100)));
+    }, [runtimeFinance?.progress]);
 
     if (!canAccess) {
         return (
@@ -259,255 +288,348 @@ export const AdminPage: React.FC = () => {
                     </div>
                 ) : null}
 
-                <section className="grid gap-4 md:grid-cols-3">
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body">
-                            <h2 className="card-title text-base">Price Sync Status</h2>
-                            <p>Running: <strong>{runtimeSync?.is_running ? 'Yes' : 'No'}</strong></p>
-                            <p>Progress: <strong>{syncProgressPercent}%</strong></p>
-                            <progress className="progress progress-primary w-full" value={syncProgressPercent} max={100}></progress>
-                            <p>Processed: {runtimeSync?.processed_symbols ?? 0} / {runtimeSync?.total_symbols ?? 0}</p>
-                            <p>Success: {runtimeSync?.success_symbols ?? 0}</p>
-                            <p>Failed: {runtimeSync?.failed_symbols ?? 0}</p>
-                            <p>Current symbol: {runtimeSync?.current_symbol ?? '-'}</p>
-                            <p>Last run: {formatDateTime(runtimeSync?.last_run_at)}</p>
-                            <p>Started: {formatDateTime(runtimeSync?.started_at)}</p>
-                            <p>Error: {runtimeSync?.error ?? '-'}</p>
-                        </div>
-                    </div>
+                <div role="tablist" className="tabs tabs-boxed w-fit">
+                    <button
+                        role="tab"
+                        className={`tab ${activeTab === 'price' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('price')}
+                    >
+                        Price Sync
+                    </button>
+                    <button
+                        role="tab"
+                        className={`tab ${activeTab === 'finance' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('finance')}
+                    >
+                        Finance Sync
+                    </button>
+                </div>
 
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body">
-                            <h2 className="card-title text-base">Gap Audit Status</h2>
-                            <p>Running: <strong>{runtimeAudit?.is_running ? 'Yes' : 'No'}</strong></p>
-                            <p>Processed: {runtimeAudit?.processed_symbols ?? 0} / {runtimeAudit?.total_symbols ?? 0}</p>
-                            <p>Success: {runtimeAudit?.success_symbols ?? 0}</p>
-                            <p>Failed: {runtimeAudit?.failed_symbols ?? 0}</p>
-                            <p>Current symbol: {runtimeAudit?.current_symbol ?? '-'}</p>
-                            <p>Last run: {formatDateTime(runtimeAudit?.last_run_at)}</p>
-                            <p>Error: {runtimeAudit?.error ?? '-'}</p>
-                        </div>
-                    </div>
-
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body">
-                            <h2 className="card-title text-base">Repair Status</h2>
-                            <p>Running: <strong>{runtimeRepair?.is_running ? 'Yes' : 'No'}</strong></p>
-                            <p>Processed: {runtimeRepair?.processed_symbols ?? 0} / {runtimeRepair?.total_symbols ?? 0}</p>
-                            <p>Success: {runtimeRepair?.success_symbols ?? 0}</p>
-                            <p>Failed: {runtimeRepair?.failed_symbols ?? 0}</p>
-                            <p>Current symbol: {runtimeRepair?.current_symbol ?? '-'}</p>
-                            <p>Last run: {formatDateTime(runtimeRepair?.last_run_at)}</p>
-                            <p>Error: {runtimeRepair?.error ?? '-'}</p>
-                        </div>
-                    </div>
-                </section>
-
-                <section className="grid gap-4 lg:grid-cols-3">
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body space-y-3">
-                            <h2 className="card-title">Run Price Sync</h2>
-                            <label className="form-control">
-                                <span className="label-text">Index scope (optional)</span>
-                                <select
-                                    className="select select-bordered"
-                                    value={syncIndexSymbol}
-                                    onChange={(event) => setSyncIndexSymbol(event.target.value)}
-                                >
-                                    <option value="">All indices</option>
-                                    {indexOptions.map((index) => (
-                                        <option key={index.symbol} value={index.symbol}>
-                                            {index.symbol} - {index.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <label className="form-control">
-                                <span className="label-text">Symbols (optional, comma/space separated)</span>
-                                <input
-                                    type="text"
-                                    className="input input-bordered"
-                                    value={syncSymbols}
-                                    onChange={(event) => setSyncSymbols(event.target.value)}
-                                    placeholder="All symbols if empty"
-                                />
-                            </label>
-                            <label className="label cursor-pointer justify-start gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="checkbox"
-                                    checked={forceRestart}
-                                    onChange={(event) => setForceRestart(event.target.checked)}
-                                />
-                                <span className="label-text">Force restart if already running</span>
-                            </label>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleRunSync}
-                                disabled={loadingStatus || anyJobActive}
-                            >
-                                {syncActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                                {syncActive
-                                    ? 'Syncing...'
-                                    : anyJobActive
-                                        ? 'Waiting for current job...'
-                                        : 'Run Price Sync'}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body space-y-3">
-                            <h2 className="card-title">Run Gap Audit</h2>
-                            <label className="form-control">
-                                <span className="label-text">Index scope (optional)</span>
-                                <select
-                                    className="select select-bordered"
-                                    value={auditIndexSymbol}
-                                    onChange={(event) => setAuditIndexSymbol(event.target.value)}
-                                >
-                                    <option value="">All indices</option>
-                                    {indexOptions.map((index) => (
-                                        <option key={index.symbol} value={index.symbol}>
-                                            {index.symbol} - {index.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <label className="form-control">
-                                <span className="label-text">Symbols (optional, comma/space separated)</span>
-                                <input
-                                    type="text"
-                                    className="input input-bordered"
-                                    value={auditSymbols}
-                                    onChange={(event) => setAuditSymbols(event.target.value)}
-                                    placeholder="All symbols if empty"
-                                />
-                            </label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <label className="form-control">
-                                    <span className="label-text">Start date</span>
-                                    <input
-                                        type="date"
-                                        className="input input-bordered"
-                                        value={auditStartDate}
-                                        onChange={(event) => setAuditStartDate(event.target.value)}
-                                    />
-                                </label>
-                                <label className="form-control">
-                                    <span className="label-text">End date</span>
-                                    <input
-                                        type="date"
-                                        className="input input-bordered"
-                                        value={auditEndDate}
-                                        onChange={(event) => setAuditEndDate(event.target.value)}
-                                    />
-                                </label>
+                {activeTab === 'price' ? (
+                    <>
+                        <section className="grid gap-4 md:grid-cols-3">
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body">
+                                    <h2 className="card-title text-base">Price Sync Status</h2>
+                                    <p>Running: <strong>{runtimeSync?.is_running ? 'Yes' : 'No'}</strong></p>
+                                    <p>Progress: <strong>{syncProgressPercent}%</strong></p>
+                                    <progress className="progress progress-primary w-full" value={syncProgressPercent} max={100}></progress>
+                                    <p>Processed: {runtimeSync?.processed_symbols ?? 0} / {runtimeSync?.total_symbols ?? 0}</p>
+                                    <p>Success: {runtimeSync?.success_symbols ?? 0}</p>
+                                    <p>Failed: {runtimeSync?.failed_symbols ?? 0}</p>
+                                    <p>Current symbol: {runtimeSync?.current_symbol ?? '-'}</p>
+                                    <p>Last run: {formatDateTime(runtimeSync?.last_run_at)}</p>
+                                    <p>Started: {formatDateTime(runtimeSync?.started_at)}</p>
+                                    <p>Error: {runtimeSync?.error ?? '-'}</p>
+                                </div>
                             </div>
-                            <label className="label cursor-pointer justify-start gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="checkbox"
-                                    checked={auditAutoRepair}
-                                    onChange={(event) => setAuditAutoRepair(event.target.checked)}
-                                />
-                                <span className="label-text">Auto repair detected gaps</span>
-                            </label>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={handleRunAudit}
-                                disabled={loadingStatus || anyJobActive}
-                            >
-                                {auditActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                                {auditActive
-                                    ? 'Auditing...'
-                                    : anyJobActive
-                                        ? 'Waiting for current job...'
-                                        : 'Run Gap Audit'}
-                            </button>
-                        </div>
-                    </div>
 
-                    <div className="card bg-base-100 shadow-lg">
-                        <div className="card-body space-y-3">
-                            <h2 className="card-title">Run Repair</h2>
-                            <label className="form-control">
-                                <span className="label-text">Symbols (comma/space separated)</span>
-                                <input
-                                    type="text"
-                                    className="input input-bordered"
-                                    value={repairSymbols}
-                                    onChange={(event) => setRepairSymbols(event.target.value)}
-                                    placeholder="VCB,FPT,SSI"
-                                />
-                            </label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <label className="form-control">
-                                    <span className="label-text">Start date</span>
-                                    <input
-                                        type="date"
-                                        className="input input-bordered"
-                                        value={repairStartDate}
-                                        onChange={(event) => setRepairStartDate(event.target.value)}
-                                    />
-                                </label>
-                                <label className="form-control">
-                                    <span className="label-text">End date</span>
-                                    <input
-                                        type="date"
-                                        className="input input-bordered"
-                                        value={repairEndDate}
-                                        onChange={(event) => setRepairEndDate(event.target.value)}
-                                    />
-                                </label>
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body">
+                                    <h2 className="card-title text-base">Gap Audit Status</h2>
+                                    <p>Running: <strong>{runtimeAudit?.is_running ? 'Yes' : 'No'}</strong></p>
+                                    <p>Processed: {runtimeAudit?.processed_symbols ?? 0} / {runtimeAudit?.total_symbols ?? 0}</p>
+                                    <p>Success: {runtimeAudit?.success_symbols ?? 0}</p>
+                                    <p>Failed: {runtimeAudit?.failed_symbols ?? 0}</p>
+                                    <p>Current symbol: {runtimeAudit?.current_symbol ?? '-'}</p>
+                                    <p>Last run: {formatDateTime(runtimeAudit?.last_run_at)}</p>
+                                    <p>Error: {runtimeAudit?.error ?? '-'}</p>
+                                </div>
                             </div>
-                            <button
-                                className="btn btn-accent"
-                                onClick={handleRunRepair}
-                                disabled={loadingStatus || anyJobActive}
-                            >
-                                {repairActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                                {repairActive
-                                    ? 'Repairing...'
-                                    : anyJobActive
-                                        ? 'Waiting for current job...'
-                                        : 'Run Repair Sync'}
-                            </button>
-                        </div>
-                    </div>
-                </section>
 
-                {auditResult ? (
-                    <section className="card bg-base-100 shadow-lg">
-                        <div className="card-body space-y-3">
-                            <h2 className="card-title">Latest Audit Results</h2>
-                            <p>Audited symbols: <strong>{auditResult.audited_symbols}</strong></p>
-                            <p>Symbols with gaps: <strong>{auditResult.symbols_with_gaps}</strong></p>
-                            <p>Total missing dates: <strong>{auditResult.total_missing_dates}</strong></p>
-                            <p>Total repaired dates: <strong>{auditResult.total_repaired_dates}</strong></p>
-                            <div className="overflow-x-auto">
-                                <table className="table table-zebra">
-                                    <thead>
-                                        <tr>
-                                            <th>Symbol</th>
-                                            <th>Missing</th>
-                                            <th>Repaired</th>
-                                            <th>Samples</th>
-                                            <th>Error</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {auditResult.results.map((row) => (
-                                            <tr key={row.symbol}>
-                                                <td>{row.symbol}</td>
-                                                <td>{row.missing_dates}</td>
-                                                <td>{row.repaired_dates}</td>
-                                                <td>{row.missing_date_samples.join(', ') || '-'}</td>
-                                                <td>{row.error || '-'}</td>
-                                            </tr>
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body">
+                                    <h2 className="card-title text-base">Repair Status</h2>
+                                    <p>Running: <strong>{runtimeRepair?.is_running ? 'Yes' : 'No'}</strong></p>
+                                    <p>Processed: {runtimeRepair?.processed_symbols ?? 0} / {runtimeRepair?.total_symbols ?? 0}</p>
+                                    <p>Success: {runtimeRepair?.success_symbols ?? 0}</p>
+                                    <p>Failed: {runtimeRepair?.failed_symbols ?? 0}</p>
+                                    <p>Current symbol: {runtimeRepair?.current_symbol ?? '-'}</p>
+                                    <p>Last run: {formatDateTime(runtimeRepair?.last_run_at)}</p>
+                                    <p>Error: {runtimeRepair?.error ?? '-'}</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="grid gap-4 lg:grid-cols-3">
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body space-y-3">
+                                    <h2 className="card-title">Run Price Sync</h2>
+                                    <label className="form-control">
+                                        <span className="label-text">Index scope (optional)</span>
+                                        <select
+                                            className="select select-bordered"
+                                            value={syncIndexSymbol}
+                                            onChange={(event) => setSyncIndexSymbol(event.target.value)}
+                                        >
+                                            <option value="">All indices</option>
+                                            {indexOptions.map((index) => (
+                                                <option key={index.symbol} value={index.symbol}>
+                                                    {index.symbol} - {index.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="form-control">
+                                        <span className="label-text">Symbols (optional, comma/space separated)</span>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered"
+                                            value={syncSymbols}
+                                            onChange={(event) => setSyncSymbols(event.target.value)}
+                                            placeholder="All symbols if empty"
+                                        />
+                                    </label>
+                                    <label className="label cursor-pointer justify-start gap-3">
+                                        <input
+                                            type="checkbox"
+                                            className="checkbox"
+                                            checked={forceRestart}
+                                            onChange={(event) => setForceRestart(event.target.checked)}
+                                        />
+                                        <span className="label-text">Force restart if already running</span>
+                                    </label>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={handleRunSync}
+                                        disabled={loadingStatus || anyJobActive}
+                                    >
+                                        {syncActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                        {syncActive
+                                            ? 'Syncing...'
+                                            : anyJobActive
+                                                ? 'Waiting for current job...'
+                                                : 'Run Price Sync'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body space-y-3">
+                                    <h2 className="card-title">Run Gap Audit</h2>
+                                    <label className="form-control">
+                                        <span className="label-text">Index scope (optional)</span>
+                                        <select
+                                            className="select select-bordered"
+                                            value={auditIndexSymbol}
+                                            onChange={(event) => setAuditIndexSymbol(event.target.value)}
+                                        >
+                                            <option value="">All indices</option>
+                                            {indexOptions.map((index) => (
+                                                <option key={index.symbol} value={index.symbol}>
+                                                    {index.symbol} - {index.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="form-control">
+                                        <span className="label-text">Symbols (optional, comma/space separated)</span>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered"
+                                            value={auditSymbols}
+                                            onChange={(event) => setAuditSymbols(event.target.value)}
+                                            placeholder="All symbols if empty"
+                                        />
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="form-control">
+                                            <span className="label-text">Start date</span>
+                                            <input
+                                                type="date"
+                                                className="input input-bordered"
+                                                value={auditStartDate}
+                                                onChange={(event) => setAuditStartDate(event.target.value)}
+                                            />
+                                        </label>
+                                        <label className="form-control">
+                                            <span className="label-text">End date</span>
+                                            <input
+                                                type="date"
+                                                className="input input-bordered"
+                                                value={auditEndDate}
+                                                onChange={(event) => setAuditEndDate(event.target.value)}
+                                            />
+                                        </label>
+                                    </div>
+                                    <label className="label cursor-pointer justify-start gap-3">
+                                        <input
+                                            type="checkbox"
+                                            className="checkbox"
+                                            checked={auditAutoRepair}
+                                            onChange={(event) => setAuditAutoRepair(event.target.checked)}
+                                        />
+                                        <span className="label-text">Auto repair detected gaps</span>
+                                    </label>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={handleRunAudit}
+                                        disabled={loadingStatus || anyJobActive}
+                                    >
+                                        {auditActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                        {auditActive
+                                            ? 'Auditing...'
+                                            : anyJobActive
+                                                ? 'Waiting for current job...'
+                                                : 'Run Gap Audit'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="card bg-base-100 shadow-lg">
+                                <div className="card-body space-y-3">
+                                    <h2 className="card-title">Run Repair</h2>
+                                    <label className="form-control">
+                                        <span className="label-text">Symbols (comma/space separated)</span>
+                                        <input
+                                            type="text"
+                                            className="input input-bordered"
+                                            value={repairSymbols}
+                                            onChange={(event) => setRepairSymbols(event.target.value)}
+                                            placeholder="VCB,FPT,SSI"
+                                        />
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="form-control">
+                                            <span className="label-text">Start date</span>
+                                            <input
+                                                type="date"
+                                                className="input input-bordered"
+                                                value={repairStartDate}
+                                                onChange={(event) => setRepairStartDate(event.target.value)}
+                                            />
+                                        </label>
+                                        <label className="form-control">
+                                            <span className="label-text">End date</span>
+                                            <input
+                                                type="date"
+                                                className="input input-bordered"
+                                                value={repairEndDate}
+                                                onChange={(event) => setRepairEndDate(event.target.value)}
+                                            />
+                                        </label>
+                                    </div>
+                                    <button
+                                        className="btn btn-accent"
+                                        onClick={handleRunRepair}
+                                        disabled={loadingStatus || anyJobActive}
+                                    >
+                                        {repairActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                        {repairActive
+                                            ? 'Repairing...'
+                                            : anyJobActive
+                                                ? 'Waiting for current job...'
+                                                : 'Run Repair Sync'}
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
+                        {auditResult ? (
+                            <section className="card bg-base-100 shadow-lg">
+                                <div className="card-body space-y-3">
+                                    <h2 className="card-title">Latest Audit Results</h2>
+                                    <p>Audited symbols: <strong>{auditResult.audited_symbols}</strong></p>
+                                    <p>Symbols with gaps: <strong>{auditResult.symbols_with_gaps}</strong></p>
+                                    <p>Total missing dates: <strong>{auditResult.total_missing_dates}</strong></p>
+                                    <p>Total repaired dates: <strong>{auditResult.total_repaired_dates}</strong></p>
+                                    <div className="overflow-x-auto">
+                                        <table className="table table-zebra">
+                                            <thead>
+                                                <tr>
+                                                    <th>Symbol</th>
+                                                    <th>Missing</th>
+                                                    <th>Repaired</th>
+                                                    <th>Samples</th>
+                                                    <th>Error</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {auditResult.results.map((row) => (
+                                                    <tr key={row.symbol}>
+                                                        <td>{row.symbol}</td>
+                                                        <td>{row.missing_dates}</td>
+                                                        <td>{row.repaired_dates}</td>
+                                                        <td>{row.missing_date_samples.join(', ') || '-'}</td>
+                                                        <td>{row.error || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
+                        ) : null}
+                    </>
+                ) : null}
+
+                {activeTab === 'finance' ? (
+                    <section className="grid gap-4 lg:grid-cols-2">
+                        <div className="card bg-base-100 shadow-lg">
+                            <div className="card-body">
+                                <h2 className="card-title text-base">Finance Sync Status</h2>
+                                <p>Running: <strong>{runtimeFinance?.is_running ? 'Yes' : 'No'}</strong></p>
+                                <p>Progress: <strong>{financeProgressPercent}%</strong></p>
+                                <progress className="progress progress-info w-full" value={financeProgressPercent} max={100}></progress>
+                                <p>Processed: {runtimeFinance?.processed_symbols ?? 0} / {runtimeFinance?.total_symbols ?? 0}</p>
+                                <p>Success: {runtimeFinance?.success_symbols ?? 0}</p>
+                                <p>Failed: {runtimeFinance?.failed_symbols ?? 0}</p>
+                                <p>Current symbol: {runtimeFinance?.current_symbol ?? '-'}</p>
+                                <p>Last run: {formatDateTime(runtimeFinance?.last_run_at)}</p>
+                                <p>Started: {formatDateTime(runtimeFinance?.started_at)}</p>
+                                <p>Error: {runtimeFinance?.error ?? '-'}</p>
+                            </div>
+                        </div>
+
+                        <div className="card bg-base-100 shadow-lg">
+                            <div className="card-body space-y-3">
+                                <h2 className="card-title">Run Finance Sync</h2>
+                                <label className="form-control">
+                                    <span className="label-text">Index scope (optional)</span>
+                                    <select
+                                        className="select select-bordered"
+                                        value={financeIndexSymbol}
+                                        onChange={(event) => setFinanceIndexSymbol(event.target.value)}
+                                    >
+                                        <option value="">All indices</option>
+                                        {indexOptions.map((index) => (
+                                            <option key={index.symbol} value={index.symbol}>
+                                                {index.symbol} - {index.name}
+                                            </option>
                                         ))}
-                                    </tbody>
-                                </table>
+                                    </select>
+                                </label>
+                                <label className="form-control">
+                                    <span className="label-text">Symbols (optional, comma/space separated)</span>
+                                    <input
+                                        type="text"
+                                        className="input input-bordered"
+                                        value={financeSymbols}
+                                        onChange={(event) => setFinanceSymbols(event.target.value)}
+                                        placeholder="All symbols if empty"
+                                    />
+                                </label>
+                                <label className="label cursor-pointer justify-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox"
+                                        checked={financeForceRestart}
+                                        onChange={(event) => setFinanceForceRestart(event.target.checked)}
+                                    />
+                                    <span className="label-text">Force restart if already running</span>
+                                </label>
+                                <button
+                                    className="btn btn-info"
+                                    onClick={handleRunFinanceSync}
+                                    disabled={loadingStatus || anyJobActive}
+                                >
+                                    {financeActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                    {financeActive
+                                        ? 'Syncing...'
+                                        : anyJobActive
+                                            ? 'Waiting for current job...'
+                                            : 'Run Finance Sync'}
+                                </button>
                             </div>
                         </div>
                     </section>

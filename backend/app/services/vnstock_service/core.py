@@ -17,6 +17,7 @@ from app.core.logging_config import (
     get_main_logger,
     get_background_logger,
     get_bootstrap_logger,
+    get_finance_sync_logger,
 )
 from app.services.sync_status import sync_status
 
@@ -24,6 +25,7 @@ from app.services.sync_status import sync_status
 logger = get_main_logger()
 bg_logger = get_background_logger()
 bootstrap_logger = get_bootstrap_logger()
+finance_sync_logger = get_finance_sync_logger()
 
 # Determine worker counts based on CPU cores
 _cpu_count = os.cpu_count() or 4
