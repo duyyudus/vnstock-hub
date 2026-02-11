@@ -33,6 +33,7 @@ from .models import StockInfo
 # Weekly price history defaults
 HISTORY_COVERAGE_TOLERANCE_DAYS = 30
 WEEKLY_SYNC_LATEST_WINDOW_DAYS = 45
+VOLUME_HISTORY_STALE_DAYS = 7
 
 
 class HistoryService:
@@ -369,14 +370,73 @@ class HistoryService:
         """
         Fetch volume history for a given stock symbol.
         """
+        symbol_clean = symbol[:3].upper()
+        try:
+            safe_days = max(1, int(days))
+        except (TypeError, ValueError):
+            safe_days = 30
+
+        end_date = date.today()
+        start_date = end_date - timedelta(days=safe_days - 1)
+
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(frontend_executor, self._fetch_volume_history_sync, symbol, days)
+        result = await loop.run_in_executor(
+            frontend_executor,
+            self._fetch_volume_history_sync,
+            symbol_clean,
+            safe_days
+        )
+
+        if self._is_volume_history_stale(result.get('data', []), end_date):
+            async def _trigger_volume_backfill() -> None:
+                try:
+                    triggered = await self._trigger_price_history_sync(
+                        symbols=[symbol_clean],
+                        start_date=start_date,
+                        end_date=end_date,
+                        force=False
+                    )
+                    if triggered:
+                        logger.debug(
+                            f"Triggered background volume backfill for {symbol_clean} "
+                            f"({start_date} -> {end_date})"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to trigger background volume backfill for {symbol_clean}: {e}"
+                    )
+
+            asyncio.create_task(_trigger_volume_backfill())
+
+        return result
+
+    def _is_volume_history_stale(
+        self,
+        data: List[Dict[str, Any]],
+        end_date: date
+    ) -> bool:
+        """
+        Determine whether cached volume history is missing or too stale.
+        """
+        if not data:
+            return True
+
+        latest_date_str = data[-1].get('date')
+        try:
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return True
+
+        stale_threshold = end_date - timedelta(days=VOLUME_HISTORY_STALE_DAYS)
+        return latest_date < stale_threshold
 
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
-        from vnstock import Vnstock
-
-        symbol_clean = symbol[:3]
+        symbol_clean = symbol[:3].upper()
+        try:
+            safe_days = max(1, int(days))
+        except (TypeError, ValueError):
+            safe_days = 30
         company_name = symbol_clean
 
         # Use sync connection for DB lookup
@@ -392,7 +452,7 @@ class HistoryService:
 
                 # Calculate date range
                 end_date = datetime.now().date()
-                start_date = end_date - timedelta(days=days + 10)  # Extra buffer for weekends/holidays
+                start_date = end_date - timedelta(days=safe_days - 1)
 
                 # Query cached data
                 stmt = select(StockDailyPrice).where(
@@ -401,127 +461,37 @@ class HistoryService:
                         StockDailyPrice.date >= start_date,
                         StockDailyPrice.date <= end_date
                     )
-                ).order_by(StockDailyPrice.date.desc())
+                ).order_by(StockDailyPrice.date.asc())
 
                 cached_records = session.execute(stmt).scalars().all()
 
-                # If we have enough cached data, use it
-                if len(cached_records) >= days:
-                    data = []
-                    for record in sorted(cached_records[:days], key=lambda x: x.date):
-                        value = None
-                        if record.volume and record.close:
-                            # Calculate value in billion VND: (volume * close_price_in_1000_VND) / 1e6
-                            value = (record.volume * record.close) / 1e6
+                data = []
+                for record in cached_records:
+                    value = None
+                    if record.volume and record.close:
+                        # Calculate value in billion VND: (volume * close_price_in_1000_VND) / 1e6
+                        value = (record.volume * record.close) / 1e6
 
-                        data.append({
-                            'date': record.date.strftime('%Y-%m-%d'),
-                            'volume': record.volume if record.volume else 0,
-                            'value': round(value, 2) if value else None
-                        })
+                    data.append({
+                        'date': record.date.strftime('%Y-%m-%d'),
+                        'volume': record.volume if record.volume else 0,
+                        'value': round(value, 2) if value else None
+                    })
 
-                    engine.dispose()
-                    return {
-                        'symbol': symbol_clean,
-                        'company_name': company_name,
-                        'data': data
-                    }
-
-                # Otherwise, fetch from API and cache
-                # Check circuit breaker before making API call
-                if not api_circuit_breaker.can_proceed():
-                    raise CircuitOpenError(f"Circuit breaker open - cannot fetch volume history for {symbol_clean}")
-
-                try:
-                    s = Vnstock().stock(symbol=symbol_clean, source='VCI')
-                    hist = s.quote.history(
-                        start=start_date.strftime('%Y-%m-%d'),
-                        end=end_date.strftime('%Y-%m-%d'),
-                        interval='1D'
-                    )
-                    api_circuit_breaker.record_success()
-
-                    if hist is not None and not hist.empty:
-                        # Cache the data
-                        for _, row in hist.iterrows():
-                            try:
-                                price_date = pd.to_datetime(row['time']).date()
-
-                                # Check if already exists
-                                existing = session.execute(
-                                    select(StockDailyPrice).where(
-                                        and_(
-                                            StockDailyPrice.symbol == symbol_clean,
-                                            StockDailyPrice.date == price_date
-                                        )
-                                    )
-                                ).scalar_one_or_none()
-
-                                if not existing:
-                                    price_record = StockDailyPrice(
-                                        symbol=symbol_clean,
-                                        date=price_date,
-                                        open=float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
-                                        high=float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
-                                        low=float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
-                                        close=float(row['close']),
-                                        volume=int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
-                                    )
-                                    session.add(price_record)
-                            except Exception as e:
-                                bg_logger.error(f"Error caching price for {symbol_clean} on {row.get('time')}: {e}")
-                                continue
-
-                        session.commit()
-
-                        # Convert to response format
-                        data = []
-                        hist_sorted = hist.sort_values('time', ascending=True).tail(days)
-
-                        for _, row in hist_sorted.iterrows():
-                            volume = int(row.get('volume', 0)) if pd.notna(row.get('volume')) else 0
-                            close = float(row['close']) if pd.notna(row['close']) else 0
-                            value = None
-                            if volume and close:
-                                # Calculate value in billion VND
-                                value = (volume * close) / 1e6
-
-                            data.append({
-                                'date': pd.to_datetime(row['time']).strftime('%Y-%m-%d'),
-                                'volume': volume,
-                                'value': round(value, 2) if value else None
-                            })
-
-                        engine.dispose()
-                        return {
-                            'symbol': symbol_clean,
-                            'company_name': company_name,
-                            'data': data
-                        }
-
-                except (SystemExit, Exception) as e:
-                    if _is_rate_limit_error(e):
-                        _record_rate_limit(reset_seconds=30.0)
-                        raise CircuitOpenError(f"Rate limited fetching volume history for {symbol_clean}: {e}")
-                    logger.warning(f"Error fetching volume history for {symbol_clean}: {e}")
-
-                engine.dispose()
                 return {
                     'symbol': symbol_clean,
                     'company_name': company_name,
-                    'data': []
+                    'data': data
                 }
-
-        except CircuitOpenError:
-            raise  # Re-raise circuit breaker errors
         except Exception as e:
             logger.warning(f"Error in volume history fetch: {e}")
-            engine.dispose()
             return {
                 'symbol': symbol_clean,
                 'company_name': company_name,
                 'data': []
             }
+        finally:
+            engine.dispose()
 
     async def get_stocks_weekly_prices(
         self,

@@ -9,9 +9,10 @@ import pandas as pd
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 import app.services.vnstock_service.history as history_module
-from app.db.models import StockDailyPrice, StockPriceSyncState
+from app.db.models import StockDailyPrice, StockCompany, StockPriceSyncState
 from app.services.vnstock_service.history import HistoryService
 
 
@@ -555,6 +556,203 @@ def test_fetch_and_cache_history_sync_rolls_back_shared_session_on_symbol_error(
     service._fetch_and_cache_history_sync(shared_session, ["INC", "AAA"])
 
     assert shared_session.rollback_calls == 2
+
+
+def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol(monkeypatch):
+    service = HistoryService()
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    StockCompany.__table__.create(bind=engine, checkfirst=True)
+    StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 2, 11, 10, 0, 0)
+
+    monkeypatch.setattr(history_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(history_module, "get_sync_engine", lambda: engine)
+
+    with Session(engine) as session:
+        session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2025, 11, 13),
+                open=20.0,
+                high=21.0,
+                low=19.5,
+                close=20.5,
+                volume=100_000,
+            )
+        )  # Outside 90-day calendar window
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2025, 11, 14),
+                open=20.5,
+                high=21.5,
+                low=20.0,
+                close=21.11,
+                volume=1_000_000,
+            )
+        )
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2026, 2, 10),
+                open=22.0,
+                high=22.2,
+                low=21.7,
+                close=22.0,
+                volume=None,
+            )
+        )
+        session.commit()
+
+    result = service._fetch_volume_history_sync("tcbx", 90)
+
+    assert result["symbol"] == "TCB"
+    assert result["company_name"] == "Techcombank"
+    assert [point["date"] for point in result["data"]] == ["2025-11-14", "2026-02-10"]
+    assert result["data"][0]["volume"] == 1_000_000
+    assert result["data"][0]["value"] == 21.11
+    assert result["data"][1]["volume"] == 0
+    assert result["data"][1]["value"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_volume_history_triggers_background_sync_when_cache_missing(monkeypatch):
+    service = HistoryService()
+    trigger_calls = []
+    created_tasks = []
+    original_create_task = asyncio.create_task
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    class InlineLoop:
+        async def run_in_executor(self, _executor, func, *args):
+            return func(*args)
+
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(history_module.asyncio, "get_event_loop", lambda: InlineLoop())
+    monkeypatch.setattr(service, "_fetch_volume_history_sync", lambda _symbol, _days: {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [],
+    })
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    def _capture_task(coro):
+        task = original_create_task(coro)
+        created_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(history_module.asyncio, "create_task", _capture_task)
+
+    result = await service.get_volume_history("tcbx", 90)
+    await asyncio.gather(*created_tasks)
+
+    assert result["symbol"] == "TCB"
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0]["symbols"] == ["TCB"]
+    assert trigger_calls[0]["start_date"] == date(2025, 11, 14)
+    assert trigger_calls[0]["end_date"] == date(2026, 2, 11)
+    assert trigger_calls[0]["force"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_volume_history_triggers_background_sync_when_cache_stale(monkeypatch):
+    service = HistoryService()
+    trigger_calls = []
+    created_tasks = []
+    original_create_task = asyncio.create_task
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    class InlineLoop:
+        async def run_in_executor(self, _executor, func, *args):
+            return func(*args)
+
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(history_module.asyncio, "get_event_loop", lambda: InlineLoop())
+    monkeypatch.setattr(service, "_fetch_volume_history_sync", lambda _symbol, _days: {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2026-02-01", "volume": 1000, "value": 21.0}],
+    })
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    def _capture_task(coro):
+        task = original_create_task(coro)
+        created_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(history_module.asyncio, "create_task", _capture_task)
+
+    await service.get_volume_history("tcbx", 90)
+    await asyncio.gather(*created_tasks)
+
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0]["symbols"] == ["TCB"]
+
+
+@pytest.mark.asyncio
+async def test_get_volume_history_does_not_trigger_background_sync_when_cache_fresh(monkeypatch):
+    service = HistoryService()
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    class InlineLoop:
+        async def run_in_executor(self, _executor, func, *args):
+            return func(*args)
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(history_module.asyncio, "get_event_loop", lambda: InlineLoop())
+    monkeypatch.setattr(service, "_fetch_volume_history_sync", lambda _symbol, _days: {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2026-02-10", "volume": 1000, "value": 21.0}],
+    })
+    monkeypatch.setattr(
+        history_module.asyncio,
+        "create_task",
+        lambda _coro: (_ for _ in ()).throw(AssertionError("create_task should not be called")),
+    )
+
+    result = await service.get_volume_history("tcbx", 90)
+
+    assert result["symbol"] == "TCB"
 
 
 def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):

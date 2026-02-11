@@ -3,6 +3,13 @@ import { stockApi } from '../../../api/stockApi';
 import type { VolumeHistoryResponse } from '../../../api/stockApi';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+const VOLUME_RANGE_OPTIONS = [
+    { label: '30D', days: 30 },
+    { label: '90D', days: 90 },
+    { label: '180D', days: 180 },
+    { label: '365D', days: 365 },
+] as const;
+
 interface Position {
     x: number;
     y: number;
@@ -33,6 +40,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [volumeData, setVolumeData] = useState<VolumeHistoryResponse | null>(null);
+    const [selectedRangeDays, setSelectedRangeDays] = useState(90);
     const [position, setPosition] = useState<Position>(initialPosition);
     const [size, setSize] = useState<Size>({ width: 700, height: 450 });
     const isDragging = useRef(false);
@@ -46,7 +54,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
             setLoading(true);
             setError(null);
             try {
-                const response = await stockApi.getVolumeHistory(ticker, 90);
+                const response = await stockApi.getVolumeHistory(ticker, selectedRangeDays);
                 setVolumeData(response);
             } catch (err) {
                 console.error(`Error fetching volume history for ${ticker}:`, err);
@@ -57,7 +65,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
         };
 
         fetchVolumeData();
-    }, [ticker]);
+    }, [ticker, selectedRangeDays]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -187,7 +195,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                 onMouseDown={handleMouseDown}
             >
                 <div className="flex flex-col">
-                    <span className="text-sm font-bold uppercase">{ticker} - 3-Month Volume Chart</span>
+                    <span className="text-sm font-bold uppercase">{ticker} - {selectedRangeDays}-Day (Calendar) Volume Chart</span>
                     <span className="text-xs opacity-80 font-normal">{companyName}</span>
                 </div>
                 <button
@@ -237,6 +245,24 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                         No volume data available
                     </div>
                 )}
+            </div>
+
+            <div className="border-t border-base-300 bg-base-100 px-4 py-2 shrink-0 flex items-center justify-between gap-2">
+                <div className="text-xs text-base-content/70">Date range</div>
+                <div className="join">
+                    {VOLUME_RANGE_OPTIONS.map((option) => (
+                        <button
+                            key={option.days}
+                            type="button"
+                            className={`join-item btn btn-xs ${selectedRangeDays === option.days ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setSelectedRangeDays(option.days)}
+                            disabled={loading}
+                            title={`${option.days} calendar days`}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             <div className="p-2 border-t border-base-300 bg-base-200 text-[10px] text-base-content/50 text-right shrink-0 relative">

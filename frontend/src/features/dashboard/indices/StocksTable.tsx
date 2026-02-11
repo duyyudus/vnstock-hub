@@ -529,7 +529,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         <button
                                             className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
                                             onClick={() => (window as Window & { onVolumeClick?: (ticker: string, companyName: string) => void }).onVolumeClick?.(stock.ticker, stock.company_name)}
-                                            title={`View 30-day volume chart for ${stock.ticker}`}
+                                            title={`View 90-day (calendar) volume chart for ${stock.ticker}`}
                                         >
                                             {formatAccumulatedValue(stock.accumulated_value)}
                                         </button>
