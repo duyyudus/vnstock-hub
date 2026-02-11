@@ -101,6 +101,20 @@ class VolumeHistoryResponse(BaseModel):
     count: int
 
 
+class PriceDataPoint(BaseModel):
+    """A single data point for price history."""
+    date: str
+    close: float
+
+
+class PriceHistoryResponse(BaseModel):
+    """Response model for price history."""
+    symbol: str
+    company_name: str
+    data: List[PriceDataPoint]
+    count: int
+
+
 class WeeklyPricePoint(BaseModel):
     """A single weekly price data point."""
     date: str
@@ -452,6 +466,27 @@ async def get_volume_history(symbol: str, days: int = 30):
         symbol=result["symbol"],
         company_name=result["company_name"],
         data=[VolumeDataPoint(**point) for point in result["data"]],
+        count=len(result["data"])
+    )
+
+
+@router.get("/history/{symbol}/price", response_model=PriceHistoryResponse)
+async def get_price_history(symbol: str, days: int = 30):
+    """
+    Get price history for a specific stock.
+
+    Args:
+        symbol: Stock ticker symbol
+        days: Number of days to fetch (default: 30)
+
+    Returns:
+        Price history data points with date and close price in VND
+    """
+    result = await vnstock_service.get_price_history(symbol, days=days)
+    return PriceHistoryResponse(
+        symbol=result["symbol"],
+        company_name=result["company_name"],
+        data=[PriceDataPoint(**point) for point in result["data"]],
         count=len(result["data"])
     )
 

@@ -87,6 +87,21 @@ async def test_get_volume_history(client):
     assert data["symbol"] == "TCB"
     assert data["data"][0]["volume"] == 1000
 
+
+@pytest.mark.asyncio
+async def test_get_price_history(client):
+    mock_prices = {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2023-01-01", "close": 50100.0}]
+    }
+    with patch.object(vnstock_service, 'get_price_history', return_value=mock_prices):
+        response = await client.get("/api/v1/stocks/history/TCB/price")
+        assert response.status_code == 200
+        data = response.json()
+    assert data["symbol"] == "TCB"
+    assert data["data"][0]["close"] == 50100.0
+
 @pytest.mark.asyncio
 async def test_get_stock_quotes(client):
     mock_stocks = [

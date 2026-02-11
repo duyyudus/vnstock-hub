@@ -105,6 +105,9 @@ class VnstockService:
     async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         return await self.history.get_volume_history(symbol, days=days)
 
+    async def get_price_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+        return await self.history.get_price_history(symbol, days=days)
+
     async def get_stocks_weekly_prices(
         self,
         symbols: List[str],

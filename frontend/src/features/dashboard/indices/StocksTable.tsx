@@ -514,7 +514,13 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         </div>
                                     </td>
                                     <td className="text-right font-mono text-base-content">
-                                        {formatPrice(stock.price)}
+                                        <button
+                                            className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
+                                            onClick={() => (window as Window & { onPriceClick?: (ticker: string, companyName: string) => void }).onPriceClick?.(stock.ticker, stock.company_name)}
+                                            title={`View 90-day (calendar) price chart for ${stock.ticker}`}
+                                        >
+                                            {formatPrice(stock.price)}
+                                        </button>
                                     </td>
                                     <td className="text-right font-mono text-base-content">
                                         {formatMarketCap(stock.market_cap)}

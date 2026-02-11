@@ -351,6 +351,18 @@ export interface VolumeHistoryResponse {
     count: number;
 }
 
+export interface PriceDataPoint {
+    date: string;
+    close: number;
+}
+
+export interface PriceHistoryResponse {
+    symbol: string;
+    company_name: string;
+    data: PriceDataPoint[];
+    count: number;
+}
+
 // Weekly prices types for growth chart
 export interface WeeklyPricePoint {
     date: string;
@@ -704,6 +716,16 @@ export const stockApi = {
      */
     async getVolumeHistory(symbol: string, days: number = 30): Promise<VolumeHistoryResponse> {
         const response = await apiClient.get<VolumeHistoryResponse>(`/stocks/history/${symbol}/volume?days=${days}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch price history for a specific stock
+     * @param symbol Stock ticker symbol
+     * @param days Number of days to fetch (default: 30)
+     */
+    async getPriceHistory(symbol: string, days: number = 30): Promise<PriceHistoryResponse> {
+        const response = await apiClient.get<PriceHistoryResponse>(`/stocks/history/${symbol}/price?days=${days}`);
         return response.data;
     },
 

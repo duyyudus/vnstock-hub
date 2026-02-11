@@ -34,6 +34,7 @@ from .models import StockInfo
 HISTORY_COVERAGE_TOLERANCE_DAYS = 30
 WEEKLY_SYNC_LATEST_WINDOW_DAYS = 45
 VOLUME_HISTORY_STALE_DAYS = 7
+PRICE_HISTORY_STALE_DAYS = 7
 
 
 class HistoryService:
@@ -410,6 +411,50 @@ class HistoryService:
 
         return result
 
+    async def get_price_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Fetch price history for a given stock symbol.
+        """
+        symbol_clean = symbol[:3].upper()
+        try:
+            safe_days = max(1, int(days))
+        except (TypeError, ValueError):
+            safe_days = 30
+
+        end_date = date.today()
+        start_date = end_date - timedelta(days=safe_days - 1)
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            frontend_executor,
+            self._fetch_price_history_sync,
+            symbol_clean,
+            safe_days
+        )
+
+        if self._is_price_history_stale(result.get('data', []), end_date):
+            async def _trigger_price_sync() -> None:
+                try:
+                    triggered = await self._trigger_price_history_sync(
+                        symbols=[symbol_clean],
+                        start_date=start_date,
+                        end_date=end_date,
+                        force=False
+                    )
+                    if triggered:
+                        logger.debug(
+                            f"Triggered background price sync for {symbol_clean} "
+                            f"({start_date} -> {end_date})"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to trigger background price sync for {symbol_clean}: {e}"
+                    )
+
+            asyncio.create_task(_trigger_price_sync())
+
+        return result
+
     def _is_volume_history_stale(
         self,
         data: List[Dict[str, Any]],
@@ -428,6 +473,26 @@ class HistoryService:
             return True
 
         stale_threshold = end_date - timedelta(days=VOLUME_HISTORY_STALE_DAYS)
+        return latest_date < stale_threshold
+
+    def _is_price_history_stale(
+        self,
+        data: List[Dict[str, Any]],
+        end_date: date
+    ) -> bool:
+        """
+        Determine whether cached price history is missing or too stale.
+        """
+        if not data:
+            return True
+
+        latest_date_str = data[-1].get('date')
+        try:
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return True
+
+        stale_threshold = end_date - timedelta(days=PRICE_HISTORY_STALE_DAYS)
         return latest_date < stale_threshold
 
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
@@ -485,6 +550,65 @@ class HistoryService:
                 }
         except Exception as e:
             logger.warning(f"Error in volume history fetch: {e}")
+            return {
+                'symbol': symbol_clean,
+                'company_name': company_name,
+                'data': []
+            }
+        finally:
+            engine.dispose()
+
+    def _fetch_price_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
+        """Fetch price history synchronously."""
+        symbol_clean = symbol[:3].upper()
+        try:
+            safe_days = max(1, int(days))
+        except (TypeError, ValueError):
+            safe_days = 30
+        company_name = symbol_clean
+
+        # Use sync connection for DB lookup
+        engine = get_sync_engine()
+
+        try:
+            with Session(engine) as session:
+                # Get company name
+                stmt = select(StockCompany).where(StockCompany.symbol == symbol_clean)
+                company = session.execute(stmt).scalar_one_or_none()
+                if company:
+                    company_name = company.company_name
+
+                # Calculate date range
+                end_date = datetime.now().date()
+                start_date = end_date - timedelta(days=safe_days - 1)
+
+                # Query cached data
+                stmt = select(StockDailyPrice).where(
+                    and_(
+                        StockDailyPrice.symbol == symbol_clean,
+                        StockDailyPrice.date >= start_date,
+                        StockDailyPrice.date <= end_date
+                    )
+                ).order_by(StockDailyPrice.date.asc())
+
+                cached_records = session.execute(stmt).scalars().all()
+
+                data = [
+                    {
+                        'date': record.date.strftime('%Y-%m-%d'),
+                        # StockDailyPrice.close is stored in 1,000 VND; convert to VND for UI parity.
+                        'close': round(record.close * 1000, 2),
+                    }
+                    for record in cached_records
+                ]
+
+                return {
+                    'symbol': symbol_clean,
+                    'company_name': company_name,
+                    'data': data
+                }
+        except Exception as e:
+            logger.warning(f"Error in price history fetch: {e}")
             return {
                 'symbol': symbol_clean,
                 'company_name': company_name,
