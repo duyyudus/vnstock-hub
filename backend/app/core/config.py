@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import json
@@ -59,7 +60,10 @@ class Settings(BaseSettings):
         raw = json.loads(self.sync_admin_emails)
         return [str(email).strip().lower() for email in raw if str(email).strip()]
     
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=os.getenv("APP_ENV_FILE", ".env"),
+        env_file_encoding="utf-8",
+    )
 
 
 settings = Settings()

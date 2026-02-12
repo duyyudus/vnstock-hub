@@ -1,4 +1,3 @@
-import os
 import asyncio
 import threading
 import time
@@ -12,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 import app.services.vnstock_service.history as history_module
+from app.core.config import settings
 from app.db.models import StockDailyPrice, StockCompany, StockPriceSyncState
 from app.services.vnstock_service.history import HistoryService
 
@@ -951,13 +951,13 @@ async def test_get_price_history_does_not_trigger_background_sync_when_cache_fre
 
 
 def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
-    test_database_url = os.getenv("TEST_DATABASE_URL")
-    if not test_database_url:
-        pytest.skip("TEST_DATABASE_URL is not set")
-    if "postgresql" not in test_database_url:
-        pytest.skip("TEST_DATABASE_URL is not PostgreSQL")
+    database_url = settings.database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is not set")
+    if "postgresql" not in database_url:
+        pytest.skip("DATABASE_URL is not PostgreSQL")
 
-    sync_url = test_database_url.replace("+asyncpg", "+psycopg2")
+    sync_url = database_url.replace("+asyncpg", "+psycopg2")
     engine = create_engine(sync_url)
     service = HistoryService()
     symbol = "INC"

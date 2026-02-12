@@ -111,6 +111,19 @@ From repo root you can also use:
 ./run-server
 ```
 
+### Test Environment
+
+Backend tests are isolated to `backend/.env.test`.
+
+- Tests require `backend/.env.test` to exist.
+- Tests use `DATABASE_URL` from `.env.test`.
+- Tests do not read `backend/.env` when running via pytest.
+
+Run tests from the backend directory:
+```bash
+uv run pytest
+```
+
 ## 🔌 API Endpoints (v1)
 
 Base prefix: `/api/v1`

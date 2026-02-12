@@ -6,27 +6,21 @@ from typing import AsyncGenerator
 
 import pytest
 import asyncpg
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from httpx import AsyncClient, ASGITransport
 
 
-def _load_test_env() -> None:
+def _bootstrap_test_env() -> None:
     env_path = Path(__file__).resolve().parents[1] / ".env.test"
     if not env_path.exists():
-        return
+        raise RuntimeError(f"Missing required test environment file: {env_path}")
 
-    for raw_line in env_path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip("'").strip('"')
-        # Ensure environment variables are set before app imports load settings
-        os.environ[key] = value
+    os.environ["APP_ENV_FILE"] = str(env_path)
+    load_dotenv(dotenv_path=env_path, override=True)
 
 
-_load_test_env()
+_bootstrap_test_env()
 
 from app.db.database import Base, get_db, async_session as global_async_session
 from app.core.config import settings
@@ -79,7 +73,7 @@ async def test_engine():
     Initializes the schema (drop and create) once per test session.
     """
     global _db_initialized
-    database_url = os.getenv("TEST_DATABASE_URL", settings.database_url)
+    database_url = settings.database_url
 
     # Create engine for this test's loop
     engine = create_async_engine(database_url, echo=False)
