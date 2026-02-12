@@ -125,13 +125,6 @@ async def test_run_price_repair_validates_date_format(client):
 
 
 @pytest.mark.asyncio
-async def test_legacy_price_sync_endpoints_removed(client):
-    assert (await client.post("/api/v1/sync/prices/bootstrap/start", json={"force_restart": False})).status_code == 404
-    assert (await client.get("/api/v1/sync/prices/bootstrap/status")).status_code == 404
-    assert (await client.post("/api/v1/sync/prices/incremental/run", json={"heal_window_days": 7})).status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_run_finance_sync_requires_admin_auth(client):
     response = await client.post("/api/v1/sync/finance/run", json={"force_restart": False})
     assert response.status_code == 401

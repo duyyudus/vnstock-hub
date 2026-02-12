@@ -17,7 +17,7 @@ from app.db.models import StockCompany, StockDailyPrice, StockPriceSyncState
 from app.services.sync_status import sync_status
 
 from .core import (
-    bootstrap_logger,
+    price_sync_logger,
     api_circuit_breaker,
     CircuitOpenError,
     _is_rate_limit_error,
@@ -425,7 +425,7 @@ class PriceSyncService:
         await self._ensure_sync_state_rows(symbols_meta)
 
         await self._reset_sync_pacer()
-        bootstrap_logger.info(
+        price_sync_logger.info(
             "Price sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s "
             "fixed_wait=%.1fs max_wait=%.1fs",
             self._sync_max_workers,
@@ -471,7 +471,7 @@ class PriceSyncService:
                 except Exception as e:
                     symbol_failed = True
                     await self._mark_symbol_failed(meta.symbol, str(e))
-                    bootstrap_logger.error(
+                    price_sync_logger.error(
                         f"Price sync worker {worker_id} failed symbol {meta.symbol}: {e}"
                     )
                 finally:
@@ -569,7 +569,7 @@ class PriceSyncService:
         )
 
         elapsed = time.monotonic() - started
-        bootstrap_logger.info(
+        price_sync_logger.info(
             f"Price sync symbol {meta.symbol} completed: chunks={chunk_count}, "
             f"retries={retry_count}, elapsed={elapsed:.2f}s"
         )
@@ -611,7 +611,7 @@ class PriceSyncService:
             start_date=start_date,
             end_date=end_date,
             raise_on_error=True,
-            log=bootstrap_logger,
+            log=price_sync_logger,
         )
         return await loop.run_in_executor(sync_executor, upsert_call)
 
@@ -633,7 +633,7 @@ class PriceSyncService:
             try:
                 await self._execute_sync_chunk_upsert(symbol, start_date, end_date)
                 elapsed = time.monotonic() - started
-                bootstrap_logger.debug(
+                price_sync_logger.debug(
                     f"Price sync chunk synced for {symbol} ({start_date} -> {end_date}) "
                     f"attempt={attempt} elapsed={elapsed:.2f}s"
                 )
@@ -641,7 +641,7 @@ class PriceSyncService:
             except Exception as e:
                 elapsed = time.monotonic() - started
                 if not (_is_rate_limit_error(e) or isinstance(e, CircuitOpenError)):
-                    bootstrap_logger.debug(
+                    price_sync_logger.debug(
                         f"Price sync chunk failed for {symbol} ({start_date} -> {end_date}) "
                         f"attempt={attempt} elapsed={elapsed:.2f}s error={e}"
                     )
@@ -654,7 +654,7 @@ class PriceSyncService:
 
                 circuit_state = api_circuit_breaker.state.value
                 circuit_delay = api_circuit_breaker.time_until_half_open or 0.0
-                bootstrap_logger.warning(
+                price_sync_logger.warning(
                     "Price sync rate-limit pause symbol=%s start_date=%s end_date=%s attempt=%s "
                     "elapsed=%.2fs wait_seconds=%.2fs total_wait_seconds=%.2fs "
                     "circuit_state=%s circuit_time_until_half_open=%.2fs",
@@ -673,7 +673,7 @@ class PriceSyncService:
                     self._sync_rate_limit_max_wait_seconds > 0
                     and total_rate_limit_wait_seconds > self._sync_rate_limit_max_wait_seconds
                 ):
-                    bootstrap_logger.error(
+                    price_sync_logger.error(
                         "Price sync max rate-limit wait exceeded symbol=%s start_date=%s end_date=%s "
                         "total_wait_seconds=%.2fs cap_seconds=%.2fs attempts=%s",
                         symbol,
@@ -867,7 +867,7 @@ class PriceSyncService:
                 result[symbol] = listing_date
 
         except Exception as e:
-            bootstrap_logger.warning(f"Error fetching listing symbols for price sync: {e}")
+            price_sync_logger.warning(f"Error fetching listing symbols for price sync: {e}")
 
         return result
 
@@ -914,7 +914,7 @@ class PriceSyncService:
                 return None
             return times.min().date()
         except Exception as e:
-            bootstrap_logger.warning(f"Error discovering oldest history date for {symbol}: {e}")
+            price_sync_logger.warning(f"Error discovering oldest history date for {symbol}: {e}")
             return None
 
     async def _fetch_db_symbols(self) -> List[str]:
@@ -950,7 +950,7 @@ class PriceSyncService:
                         StockPriceSyncState(
                             symbol=symbol,
                             listing_date=listing_date,
-                            bootstrap_status='idle',
+                            sync_status='idle',
                             updated_at=now,
                         )
                     )
@@ -971,7 +971,7 @@ class PriceSyncService:
                 row = StockPriceSyncState(
                     symbol=symbol,
                     listing_date=listing_date,
-                    bootstrap_status='idle',
+                    sync_status='idle',
                     retry_count=0,
                 )
                 session.add(row)
@@ -997,8 +997,8 @@ class PriceSyncService:
                 session.add(row)
 
             row.listing_date = row.listing_date or listing_date
-            row.bootstrap_status = 'running'
-            row.bootstrap_started_at = now
+            row.sync_status = 'running'
+            row.sync_started_at = now
             row.last_error = None
             row.updated_at = now
             await session.commit()
@@ -1019,8 +1019,8 @@ class PriceSyncService:
                 session.add(row)
 
             row.listing_date = row.listing_date or listing_date
-            row.bootstrap_status = 'completed'
-            row.bootstrap_completed_at = now
+            row.sync_status = 'completed'
+            row.sync_completed_at = now
             row.earliest_synced_date = earliest_date
             row.latest_synced_date = latest_date
             row.last_incremental_sync_at = now
@@ -1037,7 +1037,7 @@ class PriceSyncService:
                 row = StockPriceSyncState(symbol=symbol)
                 session.add(row)
 
-            row.bootstrap_status = 'failed'
+            row.sync_status = 'failed'
             row.last_error = error_message[:500]
             row.retry_count = (row.retry_count or 0) + 1
             row.updated_at = now

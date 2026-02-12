@@ -48,15 +48,15 @@ class StockDailyPrice(Base):
 
 
 class StockPriceSyncState(Base):
-    """State tracking for deterministic price history bootstrap/incremental sync."""
+    """State tracking for deterministic price history full/incremental sync."""
     __tablename__ = "stock_price_sync_state"
 
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), unique=True, index=True, nullable=False)
     listing_date = Column(Date, nullable=True)
-    bootstrap_status = Column(String(20), nullable=False, default="idle")
-    bootstrap_started_at = Column(DateTime, nullable=True)
-    bootstrap_completed_at = Column(DateTime, nullable=True)
+    sync_status = Column(String(20), nullable=False, default="idle")
+    sync_started_at = Column(DateTime, nullable=True)
+    sync_completed_at = Column(DateTime, nullable=True)
     earliest_synced_date = Column(Date, nullable=True)
     latest_synced_date = Column(Date, nullable=True)
     last_incremental_sync_at = Column(DateTime, nullable=True)
@@ -66,7 +66,7 @@ class StockPriceSyncState(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        Index('ix_stock_price_sync_state_bootstrap_status', 'bootstrap_status'),
+        Index('ix_stock_price_sync_state_sync_status', 'sync_status'),
         Index('ix_stock_price_sync_state_latest_synced_date', 'latest_synced_date'),
     )
 

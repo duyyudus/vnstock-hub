@@ -17,7 +17,7 @@ MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 LLM_LOG_FILE = LOG_DIR / "llm.log"
-BOOTSTRAP_LOG_FILE = LOG_DIR / "price_sync.log"
+PRICE_SYNC_LOG_FILE = LOG_DIR / "price_sync.log"
 FINANCE_SYNC_LOG_FILE = LOG_DIR / "finance_sync.log"
 
 # Log formats
@@ -30,13 +30,13 @@ _main_logger = None
 _background_logger = None
 _portfolio_import_logger = None
 _llm_logger = None
-_bootstrap_logger = None
+_price_sync_logger = None
 _finance_sync_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _bootstrap_logger, _finance_sync_logger
+    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _price_sync_logger, _finance_sync_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
@@ -48,7 +48,7 @@ def setup_logging():
         SQL_LOG_FILE,
         PORTFOLIO_IMPORT_LOG_FILE,
         LLM_LOG_FILE,
-        BOOTSTRAP_LOG_FILE,
+        PRICE_SYNC_LOG_FILE,
         FINANCE_SYNC_LOG_FILE,
     ]:
         try:
@@ -166,25 +166,25 @@ def setup_logging():
     _llm_logger.addHandler(llm_file_handler)
 
     # === Price Sync Logger (file only + critical errors to console) ===
-    _bootstrap_logger = logging.getLogger("vnstock_hub.price_sync")
-    _bootstrap_logger.setLevel(logging.DEBUG)
-    _bootstrap_logger.propagate = False
-    _bootstrap_logger.handlers.clear()
+    _price_sync_logger = logging.getLogger("vnstock_hub.price_sync")
+    _price_sync_logger.setLevel(logging.DEBUG)
+    _price_sync_logger.propagate = False
+    _price_sync_logger.handlers.clear()
 
-    bootstrap_file_handler = RotatingFileHandler(
-        BOOTSTRAP_LOG_FILE,
+    price_sync_file_handler = RotatingFileHandler(
+        PRICE_SYNC_LOG_FILE,
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
     )
-    bootstrap_file_handler.setLevel(logging.DEBUG)
-    bootstrap_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
-    _bootstrap_logger.addHandler(bootstrap_file_handler)
+    price_sync_file_handler.setLevel(logging.DEBUG)
+    price_sync_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _price_sync_logger.addHandler(price_sync_file_handler)
 
-    bootstrap_console_error_handler = logging.StreamHandler()
-    bootstrap_console_error_handler.setLevel(logging.WARNING)
-    bootstrap_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
-    _bootstrap_logger.addHandler(bootstrap_console_error_handler)
+    price_sync_console_error_handler = logging.StreamHandler()
+    price_sync_console_error_handler.setLevel(logging.WARNING)
+    price_sync_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
+    _price_sync_logger.addHandler(price_sync_console_error_handler)
 
     # === Finance Sync Logger (file only + critical errors to console) ===
     _finance_sync_logger = logging.getLogger("vnstock_hub.finance_sync")
@@ -242,12 +242,12 @@ def get_llm_logger() -> logging.Logger:
     return _llm_logger
 
 
-def get_bootstrap_logger() -> logging.Logger:
-    """Get the bootstrap logger for price bootstrap tasks."""
-    global _bootstrap_logger
-    if _bootstrap_logger is None:
+def get_price_sync_logger() -> logging.Logger:
+    """Get the logger for price synchronization tasks."""
+    global _price_sync_logger
+    if _price_sync_logger is None:
         setup_logging()
-    return _bootstrap_logger
+    return _price_sync_logger
 
 
 def get_finance_sync_logger() -> logging.Logger:
