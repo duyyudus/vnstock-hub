@@ -15,15 +15,19 @@ from app.services.vnstock_service.price_sync import PriceSyncService, SymbolSync
 @pytest.mark.asyncio
 async def test_sync_chunk_rate_limit_then_success(monkeypatch):
     service = PriceSyncService(history=HistoryService())
-    service._sync_rate_limit_max_retries = 5
-    service._sync_retry_base_delay_seconds = 0.1
-    service._sync_retry_max_delay_seconds = 0.1
+    service._sync_rate_limit_fixed_wait_seconds = 0.1
 
     attempts = []
     sleeps = []
 
     async def _no_pace():
         return None
+
+    async def _no_pause():
+        return None
+
+    async def _fixed_wait(_fixed_wait_seconds: float):
+        return 0.1
 
     async def _fake_execute(symbol: str, start_date: date, end_date: date):
         attempts.append((symbol, start_date, end_date))
@@ -36,6 +40,16 @@ async def test_sync_chunk_rate_limit_then_success(monkeypatch):
 
     monkeypatch.setattr(service, "_acquire_sync_request_slot", _no_pace)
     monkeypatch.setattr(service, "_execute_sync_chunk_upsert", _fake_execute)
+    monkeypatch.setattr(
+        price_sync_module.shared_rate_limit_pause_controller,
+        "wait_if_paused",
+        _no_pause,
+    )
+    monkeypatch.setattr(
+        price_sync_module.shared_rate_limit_pause_controller,
+        "register_rate_limit_and_get_wait",
+        _fixed_wait,
+    )
     monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
 
     retries = await service._run_sync_chunk_with_retry(
@@ -48,6 +62,56 @@ async def test_sync_chunk_rate_limit_then_success(monkeypatch):
     assert len(attempts) == 3
     assert attempts[0][1:] == attempts[1][1:] == attempts[2][1:]
     assert len(sleeps) == 2
+
+
+@pytest.mark.asyncio
+async def test_sync_chunk_rate_limit_exceeds_max_wait_cap(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    service._sync_rate_limit_fixed_wait_seconds = 0.1
+    service._sync_rate_limit_max_wait_seconds = 0.25
+
+    attempts = []
+    sleeps = []
+
+    async def _no_pace():
+        return None
+
+    async def _no_pause():
+        return None
+
+    async def _fixed_wait(_fixed_wait_seconds: float):
+        return 0.1
+
+    async def _fake_execute(symbol: str, start_date: date, end_date: date):
+        attempts.append((symbol, start_date, end_date))
+        raise RuntimeError("Rate limit exceeded")
+
+    async def _fake_sleep(seconds: float):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(service, "_acquire_sync_request_slot", _no_pace)
+    monkeypatch.setattr(service, "_execute_sync_chunk_upsert", _fake_execute)
+    monkeypatch.setattr(
+        price_sync_module.shared_rate_limit_pause_controller,
+        "wait_if_paused",
+        _no_pause,
+    )
+    monkeypatch.setattr(
+        price_sync_module.shared_rate_limit_pause_controller,
+        "register_rate_limit_and_get_wait",
+        _fixed_wait,
+    )
+    monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
+
+    with pytest.raises(RuntimeError, match=r"Rate limit persisted for AAA .*cap=0.2s"):
+        await service._run_sync_chunk_with_retry(
+            symbol="AAA",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 12, 31),
+        )
+
+    assert len(attempts) == 3
+    assert sleeps == [0.1, 0.1]
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 import asyncio
-import random
 import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -24,6 +23,7 @@ from .core import (
     _is_rate_limit_error,
 )
 from .history import HistoryService
+from .rate_limit_pause import shared_rate_limit_pause_controller
 from .symbols import VALID_GROUPS, get_group_code_for_index
 
 
@@ -49,14 +49,13 @@ class PriceSyncService:
         self._sync_chunk_days = max(1, int(settings.sync_chunk_days))
         self._sync_target_rpm = max(1, int(settings.sync_target_rpm))
         self._sync_max_workers = max(1, int(settings.sync_max_workers))
-        self._sync_rate_limit_max_retries = max(0, int(settings.sync_rate_limit_max_retries))
-        self._sync_retry_base_delay_seconds = max(
+        self._sync_rate_limit_fixed_wait_seconds = max(
             0.1,
-            float(settings.sync_retry_base_delay_seconds),
+            float(settings.sync_rate_limit_fixed_wait_seconds),
         )
-        self._sync_retry_max_delay_seconds = max(
-            self._sync_retry_base_delay_seconds,
-            float(settings.sync_retry_max_delay_seconds),
+        self._sync_rate_limit_max_wait_seconds = max(
+            0.0,
+            float(settings.sync_rate_limit_max_wait_seconds),
         )
         self._sync_executor: ThreadPoolExecutor | None = None
         self._operation_worker_semaphore = asyncio.Semaphore(self._sync_max_workers)
@@ -427,10 +426,13 @@ class PriceSyncService:
 
         await self._reset_sync_pacer()
         bootstrap_logger.info(
-            "Price sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s",
+            "Price sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s "
+            "fixed_wait=%.1fs max_wait=%.1fs",
             self._sync_max_workers,
             self._sync_target_rpm,
             self._sync_chunk_days,
+            self._sync_rate_limit_fixed_wait_seconds,
+            self._sync_rate_limit_max_wait_seconds,
         )
 
         work_queue: asyncio.Queue[SymbolSyncMeta] = asyncio.Queue()
@@ -613,10 +615,6 @@ class PriceSyncService:
         )
         return await loop.run_in_executor(sync_executor, upsert_call)
 
-    def _compute_sync_retry_delay(self, retry_number: int) -> float:
-        delay = self._sync_retry_base_delay_seconds * (2 ** max(0, retry_number - 1))
-        return min(delay, self._sync_retry_max_delay_seconds)
-
     async def _run_sync_chunk_with_retry(
         self,
         symbol: str,
@@ -624,9 +622,11 @@ class PriceSyncService:
         end_date: date,
     ) -> int:
         attempt = 0
+        total_rate_limit_wait_seconds = 0.0
         while True:
             attempt += 1
             retries_so_far = attempt - 1
+            await shared_rate_limit_pause_controller.wait_if_paused()
             await self._acquire_sync_request_slot()
             started = time.monotonic()
 
@@ -647,23 +647,48 @@ class PriceSyncService:
                     )
                     raise
 
-                if retries_so_far >= self._sync_rate_limit_max_retries:
+                sleep_seconds = await shared_rate_limit_pause_controller.register_rate_limit_and_get_wait(
+                    self._sync_rate_limit_fixed_wait_seconds
+                )
+                total_rate_limit_wait_seconds += sleep_seconds
+
+                circuit_state = api_circuit_breaker.state.value
+                circuit_delay = api_circuit_breaker.time_until_half_open or 0.0
+                bootstrap_logger.warning(
+                    "Price sync rate-limit pause symbol=%s start_date=%s end_date=%s attempt=%s "
+                    "elapsed=%.2fs wait_seconds=%.2fs total_wait_seconds=%.2fs "
+                    "circuit_state=%s circuit_time_until_half_open=%.2fs",
+                    symbol,
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                    attempt,
+                    elapsed,
+                    sleep_seconds,
+                    total_rate_limit_wait_seconds,
+                    circuit_state,
+                    circuit_delay,
+                )
+
+                if (
+                    self._sync_rate_limit_max_wait_seconds > 0
+                    and total_rate_limit_wait_seconds > self._sync_rate_limit_max_wait_seconds
+                ):
+                    bootstrap_logger.error(
+                        "Price sync max rate-limit wait exceeded symbol=%s start_date=%s end_date=%s "
+                        "total_wait_seconds=%.2fs cap_seconds=%.2fs attempts=%s",
+                        symbol,
+                        start_date.isoformat(),
+                        end_date.isoformat(),
+                        total_rate_limit_wait_seconds,
+                        self._sync_rate_limit_max_wait_seconds,
+                        attempt,
+                    )
                     raise RuntimeError(
                         f"Rate limit persisted for {symbol} ({start_date} -> {end_date}) "
-                        f"after {attempt} attempts"
+                        f"for {total_rate_limit_wait_seconds:.1f}s "
+                        f"(cap={self._sync_rate_limit_max_wait_seconds:.1f}s)"
                     ) from e
 
-                backoff_delay = self._compute_sync_retry_delay(retries_so_far + 1)
-                status_delay = sync_status.rate_limit_seconds_remaining or 0.0
-                circuit_delay = api_circuit_breaker.time_until_half_open or 0.0
-                wait_base = max(backoff_delay, status_delay, circuit_delay)
-                jitter = random.uniform(0.0, min(1.0, wait_base * 0.2))
-                sleep_seconds = wait_base + jitter
-
-                bootstrap_logger.debug(
-                    f"Price sync chunk rate-limited for {symbol} ({start_date} -> {end_date}) "
-                    f"attempt={attempt} elapsed={elapsed:.2f}s sleep={sleep_seconds:.2f}s"
-                )
                 await asyncio.sleep(sleep_seconds)
 
     async def _repair_missing_dates(self, symbol: str, missing_dates: List[date]) -> int:

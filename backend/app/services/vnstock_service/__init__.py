@@ -80,17 +80,17 @@ class VnstockService:
         return await self.stocks.get_symbol_stocks(symbols, limit)
 
     # Finance
-    async def get_income_statement(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
-        return await self.finance.get_income_statement(symbol, period=period, lang=lang)
+    async def get_income_statement(self, symbol: str, lang: str = 'en') -> List[Dict[str, Any]]:
+        return await self.finance.get_income_statement(symbol, lang=lang)
 
-    async def get_balance_sheet(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
-        return await self.finance.get_balance_sheet(symbol, period=period, lang=lang)
+    async def get_balance_sheet(self, symbol: str, lang: str = 'en') -> List[Dict[str, Any]]:
+        return await self.finance.get_balance_sheet(symbol, lang=lang)
 
-    async def get_cash_flow(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
-        return await self.finance.get_cash_flow(symbol, period=period, lang=lang)
+    async def get_cash_flow(self, symbol: str, lang: str = 'en') -> List[Dict[str, Any]]:
+        return await self.finance.get_cash_flow(symbol, lang=lang)
 
-    async def get_financial_ratios(self, symbol: str, period: str = 'quarter', lang: str = 'en') -> List[Dict[str, Any]]:
-        return await self.finance.get_financial_ratios(symbol, period=period, lang=lang)
+    async def get_financial_ratios(self, symbol: str, lang: str = 'en') -> List[Dict[str, Any]]:
+        return await self.finance.get_financial_ratios(symbol, lang=lang)
 
     # Company
     async def get_company_overview(self, symbol: str, source: str = "auto") -> List[Dict[str, Any]]:
@@ -172,11 +172,13 @@ class VnstockService:
         force_restart: bool = False,
         symbols: List[str] | None = None,
         index_symbol: str | None = None,
+        quick_sync: bool = False,
     ) -> Dict[str, Any]:
         return await self.finance_data_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,
+            quick_sync=quick_sync,
         )
 
     # Funds

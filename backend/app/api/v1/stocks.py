@@ -329,15 +329,14 @@ class FinancialDataResponse(BaseModel):
 
 
 @router.get("/finance/{symbol}/income-statement", response_model=FinancialDataResponse)
-async def get_income_statement(symbol: str, period: str = "quarter"):
+async def get_income_statement(symbol: str):
     """
     Get income statement data for a specific stock.
     
     Args:
         symbol: Stock ticker symbol (e.g., 'VIC', 'VNM')
-        period: 'quarter' or 'year'
     """
-    data = await vnstock_service.get_income_statement(symbol, period=period, lang='en')
+    data = await vnstock_service.get_income_statement(symbol, lang='en')
     return FinancialDataResponse(
         symbol=symbol,
         data=data,
@@ -346,15 +345,14 @@ async def get_income_statement(symbol: str, period: str = "quarter"):
 
 
 @router.get("/finance/{symbol}/balance-sheet", response_model=FinancialDataResponse)
-async def get_balance_sheet(symbol: str, period: str = "quarter"):
+async def get_balance_sheet(symbol: str):
     """
     Get balance sheet data for a specific stock.
     
     Args:
         symbol: Stock ticker symbol
-        period: 'quarter' or 'year'
     """
-    data = await vnstock_service.get_balance_sheet(symbol, period=period, lang='en')
+    data = await vnstock_service.get_balance_sheet(symbol, lang='en')
     return FinancialDataResponse(
         symbol=symbol,
         data=data,
@@ -363,15 +361,14 @@ async def get_balance_sheet(symbol: str, period: str = "quarter"):
 
 
 @router.get("/finance/{symbol}/cash-flow", response_model=FinancialDataResponse)
-async def get_cash_flow(symbol: str, period: str = "quarter"):
+async def get_cash_flow(symbol: str):
     """
     Get cash flow statement data for a specific stock.
     
     Args:
         symbol: Stock ticker symbol
-        period: 'quarter' or 'year'
     """
-    data = await vnstock_service.get_cash_flow(symbol, period=period, lang='en')
+    data = await vnstock_service.get_cash_flow(symbol, lang='en')
     return FinancialDataResponse(
         symbol=symbol,
         data=data,
@@ -380,16 +377,15 @@ async def get_cash_flow(symbol: str, period: str = "quarter"):
 
 
 @router.get("/finance/{symbol}/ratios", response_model=FinancialDataResponse)
-async def get_financial_ratios(symbol: str, period: str = "quarter"):
+async def get_financial_ratios(symbol: str):
     """
     Get financial ratios for a specific stock.
     Includes P/E, P/B, P/S, ROE, ROA, etc.
     
     Args:
         symbol: Stock ticker symbol
-        period: 'quarter' or 'year'
     """
-    data = await vnstock_service.get_financial_ratios(symbol, period=period, lang='en')
+    data = await vnstock_service.get_financial_ratios(symbol, lang='en')
     return FinancialDataResponse(
         symbol=symbol,
         data=data,

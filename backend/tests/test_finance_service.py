@@ -20,7 +20,7 @@ async def test_get_income_statement_uses_fresh_cache(monkeypatch):
     refresh_mock = AsyncMock(return_value=[{"metric": "Revenue", "value": 999}])
     monkeypatch.setattr(service, "refresh_financial_dataset", refresh_mock)
 
-    result = await service.get_income_statement("AAA", period="quarter", lang="en")
+    result = await service.get_income_statement("AAA", lang="en")
 
     assert result == [{"metric": "Revenue", "value": 123}]
     refresh_mock.assert_not_called()
@@ -42,7 +42,6 @@ async def test_refresh_financial_dataset_fetches_and_upserts_on_cache_miss(monke
     result = await service.refresh_financial_dataset(
         symbol="AAA",
         data_type=FinanceService.DATA_TYPE_INCOME,
-        period="quarter",
         lang="en",
         raise_on_failure=True,
     )
@@ -71,7 +70,6 @@ async def test_refresh_financial_dataset_refreshes_when_stale(monkeypatch):
     result = await service.refresh_financial_dataset(
         symbol="AAA",
         data_type=FinanceService.DATA_TYPE_INCOME,
-        period="quarter",
         lang="en",
         raise_on_failure=False,
     )
@@ -98,7 +96,6 @@ async def test_refresh_financial_dataset_fallbacks_to_stale_cache_on_refresh_err
     result = await service.refresh_financial_dataset(
         symbol="AAA",
         data_type=FinanceService.DATA_TYPE_INCOME,
-        period="quarter",
         lang="en",
         raise_on_failure=False,
     )
@@ -120,7 +117,6 @@ async def test_refresh_financial_dataset_returns_empty_when_no_cache_and_refresh
     result = await service.refresh_financial_dataset(
         symbol="AAA",
         data_type=FinanceService.DATA_TYPE_INCOME,
-        period="quarter",
         lang="en",
         raise_on_failure=False,
     )
@@ -143,7 +139,6 @@ async def test_refresh_financial_dataset_raises_when_configured(monkeypatch):
         await service.refresh_financial_dataset(
             symbol="AAA",
             data_type=FinanceService.DATA_TYPE_INCOME,
-            period="quarter",
             lang="en",
             raise_on_failure=True,
         )
@@ -168,10 +163,36 @@ async def test_refresh_financial_dataset_raises_even_with_stale_cache_when_confi
         await service.refresh_financial_dataset(
             symbol="AAA",
             data_type=FinanceService.DATA_TYPE_INCOME,
-            period="quarter",
             lang="en",
             raise_on_failure=True,
         )
+
+
+def test_last_completed_quarter_start_handles_year_boundary():
+    service = FinanceService()
+
+    result = service._last_completed_quarter_start(datetime(2026, 2, 11, 8, 30, 0))
+
+    assert result == datetime(2025, 10, 1)
+
+
+def test_last_completed_quarter_start_handles_regular_boundary():
+    service = FinanceService()
+
+    result = service._last_completed_quarter_start(datetime(2026, 5, 10, 8, 30, 0))
+
+    assert result == datetime(2026, 1, 1)
+
+
+def test_is_stale_uses_last_completed_quarter_start(monkeypatch):
+    service = FinanceService()
+    boundary = datetime(2025, 10, 1)
+
+    monkeypatch.setattr(service, "_last_completed_quarter_start", lambda reference=None: boundary)
+
+    assert service._is_stale(datetime(2025, 9, 30, 23, 59, 59)) is True
+    assert service._is_stale(datetime(2025, 10, 1, 0, 0, 0)) is False
+    assert service._is_stale(datetime(2025, 12, 31, 23, 59, 59)) is False
 
 
 def test_normalize_finance_dataframe_keeps_shape_and_json_safe_values():

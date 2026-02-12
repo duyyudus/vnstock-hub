@@ -649,32 +649,32 @@ export const stockApi = {
     /**
      * Fetch income statement for a specific stock
      */
-    async getIncomeStatement(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/income-statement?period=${period}`);
+    async getIncomeStatement(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/income-statement`);
         return response.data;
     },
 
     /**
      * Fetch balance sheet for a specific stock
      */
-    async getBalanceSheet(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/balance-sheet?period=${period}`);
+    async getBalanceSheet(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/balance-sheet`);
         return response.data;
     },
 
     /**
      * Fetch cash flow for a specific stock
      */
-    async getCashFlow(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/cash-flow?period=${period}`);
+    async getCashFlow(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/cash-flow`);
         return response.data;
     },
 
     /**
      * Fetch financial ratios for a specific stock
      */
-    async getFinancialRatios(symbol: string, period: string = 'quarter'): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/ratios?period=${period}`);
+    async getFinancialRatios(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/finance/${symbol}/ratios`);
         return response.data;
     },
 
@@ -858,12 +858,14 @@ export const stockApi = {
     async runFinanceSync(
         forceRestart: boolean = false,
         symbols?: string[],
-        indexSymbol?: string
+        indexSymbol?: string,
+        quickSync: boolean = false
     ): Promise<PriceSyncActionResponse> {
         const response = await apiClient.post<PriceSyncActionResponse>('/sync/finance/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
+            quick_sync: quickSync,
         });
         return response.data;
     },

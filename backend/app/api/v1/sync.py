@@ -60,6 +60,7 @@ class FinanceSyncRunRequest(BaseModel):
     force_restart: bool = False
     symbols: Optional[List[str]] = None
     index_symbol: Optional[str] = None
+    quick_sync: bool = False
 
 
 class PriceAuditRunRequest(BaseModel):
@@ -270,6 +271,7 @@ async def run_finance_sync(
             force_restart=payload.force_restart,
             symbols=payload.symbols,
             index_symbol=payload.index_symbol,
+            quick_sync=payload.quick_sync,
         )
     except ValueError as e:
         raise HTTPException(

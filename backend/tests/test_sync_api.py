@@ -151,7 +151,7 @@ async def test_run_finance_sync_with_admin_calls_service(client):
         ) as mock_run:
             response = await client.post(
                 "/api/v1/sync/finance/run",
-                json={"force_restart": False, "index_symbol": "VN30"},
+                json={"force_restart": False, "index_symbol": "VN30", "quick_sync": True},
             )
     finally:
         app.dependency_overrides.pop(get_current_admin_user, None)
@@ -163,6 +163,7 @@ async def test_run_finance_sync_with_admin_calls_service(client):
     mock_run.assert_awaited_once()
     called_kwargs = mock_run.await_args.kwargs
     assert called_kwargs["index_symbol"] == "VN30"
+    assert called_kwargs["quick_sync"] is True
 
 
 @pytest.mark.asyncio

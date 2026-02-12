@@ -254,7 +254,6 @@ class StockMetadataService:
             ratio_records = asyncio.run(
                 self._finance_service.get_financial_ratios(
                     symbol=symbol[:3],
-                    period='quarter',
                     lang='en',
                 )
             )

@@ -21,9 +21,8 @@ class Settings(BaseSettings):
     sync_target_rpm: int = 150
     sync_max_workers: int = 6
     sync_chunk_days: int = 1095
-    sync_rate_limit_max_retries: int = 12
-    sync_retry_base_delay_seconds: float = 5.0
-    sync_retry_max_delay_seconds: float = 60.0
+    sync_rate_limit_fixed_wait_seconds: float = 30.0
+    sync_rate_limit_max_wait_seconds: float = 1200.0
 
     # LLM providers (OpenAI-compatible) in JSON list format
     llm_providers: str = "[]"

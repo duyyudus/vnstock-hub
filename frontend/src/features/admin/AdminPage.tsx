@@ -72,6 +72,7 @@ export const AdminPage: React.FC = () => {
     const [financeSymbols, setFinanceSymbols] = useState('');
     const [financeIndexSymbol, setFinanceIndexSymbol] = useState('');
     const [financeForceRestart, setFinanceForceRestart] = useState(false);
+    const [financeQuickSync, setFinanceQuickSync] = useState(false);
 
     const [syncRunning, setSyncRunning] = useState(false);
     const [auditRunning, setAuditRunning] = useState(false);
@@ -209,6 +210,7 @@ export const AdminPage: React.FC = () => {
                 financeForceRestart,
                 symbols.length > 0 ? symbols : undefined,
                 financeIndexSymbol || undefined,
+                financeQuickSync,
             ),
             setFinanceRunning,
         );
@@ -617,6 +619,15 @@ export const AdminPage: React.FC = () => {
                                         onChange={(event) => setFinanceForceRestart(event.target.checked)}
                                     />
                                     <span className="label-text">Force restart if already running</span>
+                                </label>
+                                <label className="label cursor-pointer justify-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox"
+                                        checked={financeQuickSync}
+                                        onChange={(event) => setFinanceQuickSync(event.target.checked)}
+                                    />
+                                    <span className="label-text">Quick sync</span>
                                 </label>
                                 <button
                                     className="btn btn-info"
