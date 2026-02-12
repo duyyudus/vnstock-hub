@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, patch
+from app.core.circuit_breaker import CircuitState
 from app.services.vnstock_service.core import (
     _is_rate_limit_error,
     retry_with_backoff,
@@ -71,3 +72,15 @@ async def test_async_retry_with_backoff_rate_limit_retry():
                 mock_sleep.assert_called_once_with(1.0)
                 assert mock_cb.record_failure.call_count == 1
                 assert mock_cb.record_success.call_count == 1
+
+
+def test_is_rate_limit_error_half_open_non_rate_limit_error():
+    with patch("app.services.vnstock_service.core.api_circuit_breaker") as mock_cb:
+        mock_cb.state = CircuitState.HALF_OPEN
+        assert _is_rate_limit_error(Exception("database exploded")) is True
+
+
+def test_is_rate_limit_error_closed_non_rate_limit_error_stays_false():
+    with patch("app.services.vnstock_service.core.api_circuit_breaker") as mock_cb:
+        mock_cb.state = CircuitState.CLOSED
+        assert _is_rate_limit_error(Exception("database exploded")) is False

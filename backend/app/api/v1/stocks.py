@@ -394,11 +394,11 @@ async def get_financial_ratios(symbol: str):
 
 
 @router.get("/company/{symbol}/overview", response_model=FinancialDataResponse)
-async def get_company_overview(symbol: str, source: str = "auto"):
+async def get_company_overview(symbol: str):
     """
     Get company overview for a specific stock.
     """
-    data = await vnstock_service.get_company_overview(symbol, source=source)
+    data = await vnstock_service.get_company_overview(symbol)
     return FinancialDataResponse(
         symbol=symbol,
         data=data,

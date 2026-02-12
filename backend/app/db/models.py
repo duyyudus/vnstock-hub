@@ -102,6 +102,31 @@ class StockFinancialDataCache(Base):
     )
 
 
+class StockCompanyDataCache(Base):
+    """Cached company profile data snapshots from vnstock."""
+    __tablename__ = "stock_company_data_cache"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False)
+    data_type = Column(String(30), nullable=False)  # overview | shareholders | officers | subsidiaries
+    data = Column(JSON, nullable=False, default=list)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'symbol',
+            'data_type',
+            name='uq_stock_company_data_cache_key',
+        ),
+        Index(
+            'ix_stock_company_data_cache_lookup',
+            'symbol',
+            'data_type',
+        ),
+        Index('ix_stock_company_data_cache_symbol_updated_at', 'symbol', 'updated_at'),
+    )
+
+
 class FundNav(Base):
     """Historical NAV data for mutual funds."""
     __tablename__ = "fund_navs"

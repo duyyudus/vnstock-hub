@@ -11,7 +11,7 @@ import {
 
 const REFRESH_INTERVAL_MS = 5000;
 
-type AdminTab = 'settings' | 'price' | 'finance';
+type AdminTab = 'settings' | 'price' | 'finance' | 'company';
 
 const getErrorMessage = (error: unknown) => {
     if (typeof error === 'object' && error && 'response' in error) {
@@ -73,11 +73,16 @@ export const AdminPage: React.FC = () => {
     const [financeIndexSymbol, setFinanceIndexSymbol] = useState('');
     const [financeForceRestart, setFinanceForceRestart] = useState(false);
     const [financeQuickSync, setFinanceQuickSync] = useState(false);
+    const [companySymbols, setCompanySymbols] = useState('');
+    const [companyIndexSymbol, setCompanyIndexSymbol] = useState('');
+    const [companyForceRestart, setCompanyForceRestart] = useState(false);
+    const [companyQuickSync, setCompanyQuickSync] = useState(false);
 
     const [syncRunning, setSyncRunning] = useState(false);
     const [auditRunning, setAuditRunning] = useState(false);
     const [repairRunning, setRepairRunning] = useState(false);
     const [financeRunning, setFinanceRunning] = useState(false);
+    const [companyRunning, setCompanyRunning] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
@@ -216,16 +221,31 @@ export const AdminPage: React.FC = () => {
         );
     };
 
+    const handleRunCompanySync = async () => {
+        const symbols = parseSymbolsInput(companySymbols);
+        await runAction(
+            () => stockApi.runCompanySync(
+                companyForceRestart,
+                symbols.length > 0 ? symbols : undefined,
+                companyIndexSymbol || undefined,
+                companyQuickSync,
+            ),
+            setCompanyRunning,
+        );
+    };
+
     const runtimeSync = syncStatus?.price_sync.sync;
     const runtimeAudit = syncStatus?.price_sync.audit;
     const runtimeRepair = syncStatus?.price_sync.repair;
     const runtimeFinance = syncStatus?.finance_sync;
+    const runtimeCompany = syncStatus?.company_sync;
 
     const syncActive = syncRunning || Boolean(runtimeSync?.is_running);
     const auditActive = auditRunning || Boolean(runtimeAudit?.is_running);
     const repairActive = repairRunning || Boolean(runtimeRepair?.is_running);
     const financeActive = financeRunning || Boolean(runtimeFinance?.is_running);
-    const anyJobActive = syncActive || auditActive || repairActive || financeActive;
+    const companyActive = companyRunning || Boolean(runtimeCompany?.is_running);
+    const anyJobActive = syncActive || auditActive || repairActive || financeActive || companyActive;
 
     const syncProgressPercent = useMemo(() => {
         const value = runtimeSync?.progress ?? 0;
@@ -236,6 +256,11 @@ export const AdminPage: React.FC = () => {
         const value = runtimeFinance?.progress ?? 0;
         return Math.max(0, Math.min(100, Math.round(value * 100)));
     }, [runtimeFinance?.progress]);
+
+    const companyProgressPercent = useMemo(() => {
+        const value = runtimeCompany?.progress ?? 0;
+        return Math.max(0, Math.min(100, Math.round(value * 100)));
+    }, [runtimeCompany?.progress]);
 
     if (!canAccess) {
         return (
@@ -311,6 +336,13 @@ export const AdminPage: React.FC = () => {
                         onClick={() => setActiveTab('finance')}
                     >
                         Finance Sync
+                    </button>
+                    <button
+                        role="tab"
+                        className={`tab ${activeTab === 'company' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('company')}
+                    >
+                        Company Sync
                     </button>
                 </div>
 
@@ -656,6 +688,87 @@ export const AdminPage: React.FC = () => {
                                         : anyJobActive
                                             ? 'Waiting for current job...'
                                             : 'Run Finance Sync'}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                ) : null}
+
+                {activeTab === 'company' ? (
+                    <section className="grid gap-4 lg:grid-cols-2">
+                        <div className="card bg-base-100 shadow-lg">
+                            <div className="card-body">
+                                <h2 className="card-title text-base">Company Sync Status</h2>
+                                <p>Running: <strong>{runtimeCompany?.is_running ? 'Yes' : 'No'}</strong></p>
+                                <p>Progress: <strong>{companyProgressPercent}%</strong></p>
+                                <progress className="progress progress-warning w-full" value={companyProgressPercent} max={100}></progress>
+                                <p>Processed: {runtimeCompany?.processed_symbols ?? 0} / {runtimeCompany?.total_symbols ?? 0}</p>
+                                <p>Success: {runtimeCompany?.success_symbols ?? 0}</p>
+                                <p>Failed: {runtimeCompany?.failed_symbols ?? 0}</p>
+                                <p>Current symbol: {runtimeCompany?.current_symbol ?? '-'}</p>
+                                <p>Last run: {formatDateTime(runtimeCompany?.last_run_at)}</p>
+                                <p>Started: {formatDateTime(runtimeCompany?.started_at)}</p>
+                                <p>Error: {runtimeCompany?.error ?? '-'}</p>
+                            </div>
+                        </div>
+
+                        <div className="card bg-base-100 shadow-lg">
+                            <div className="card-body space-y-3">
+                                <h2 className="card-title">Run Company Sync</h2>
+                                <label className="form-control">
+                                    <span className="label-text">Index scope (optional)</span>
+                                    <select
+                                        className="select select-bordered"
+                                        value={companyIndexSymbol}
+                                        onChange={(event) => setCompanyIndexSymbol(event.target.value)}
+                                    >
+                                        <option value="">All indices</option>
+                                        {indexOptions.map((index) => (
+                                            <option key={index.symbol} value={index.symbol}>
+                                                {index.symbol} - {index.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label className="form-control">
+                                    <span className="label-text">Symbols (optional, comma/space separated)</span>
+                                    <input
+                                        type="text"
+                                        className="input input-bordered"
+                                        value={companySymbols}
+                                        onChange={(event) => setCompanySymbols(event.target.value)}
+                                        placeholder="All symbols if empty"
+                                    />
+                                </label>
+                                <label className="label cursor-pointer justify-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox"
+                                        checked={companyForceRestart}
+                                        onChange={(event) => setCompanyForceRestart(event.target.checked)}
+                                    />
+                                    <span className="label-text">Force restart if already running</span>
+                                </label>
+                                <label className="label cursor-pointer justify-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox"
+                                        checked={companyQuickSync}
+                                        onChange={(event) => setCompanyQuickSync(event.target.checked)}
+                                    />
+                                    <span className="label-text">Quick sync</span>
+                                </label>
+                                <button
+                                    className="btn btn-warning"
+                                    onClick={handleRunCompanySync}
+                                    disabled={loadingStatus || anyJobActive}
+                                >
+                                    {companyActive ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                    {companyActive
+                                        ? 'Syncing...'
+                                        : anyJobActive
+                                            ? 'Waiting for current job...'
+                                            : 'Run Company Sync'}
                                 </button>
                             </div>
                         </div>

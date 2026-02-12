@@ -101,6 +101,18 @@ class GlobalSyncStatus:
         self._finance_sync_error: Optional[str] = None
         self._finance_sync_progress: float = 0.0
 
+        # Company sync status
+        self._company_sync_is_running = False
+        self._company_sync_total_symbols = 0
+        self._company_sync_processed_symbols = 0
+        self._company_sync_success_symbols = 0
+        self._company_sync_failed_symbols = 0
+        self._company_sync_current_symbol: Optional[str] = None
+        self._company_sync_last_run_at: Optional[str] = None
+        self._company_sync_started_at: Optional[str] = None
+        self._company_sync_error: Optional[str] = None
+        self._company_sync_progress: float = 0.0
+
         # Rate limit status
         self._is_rate_limited = False
         self._rate_limit_reset_at: Optional[datetime] = None
@@ -187,6 +199,23 @@ class GlobalSyncStatus:
                 started_at=self._finance_sync_started_at,
                 error=self._finance_sync_error,
                 progress=self._finance_sync_progress,
+            )
+
+    @property
+    def company_sync(self) -> PriceJobStatusData:
+        """Get company sync runtime status as immutable snapshot."""
+        with self._lock:
+            return PriceJobStatusData(
+                is_running=self._company_sync_is_running,
+                total_symbols=self._company_sync_total_symbols,
+                processed_symbols=self._company_sync_processed_symbols,
+                success_symbols=self._company_sync_success_symbols,
+                failed_symbols=self._company_sync_failed_symbols,
+                current_symbol=self._company_sync_current_symbol,
+                last_run_at=self._company_sync_last_run_at,
+                started_at=self._company_sync_started_at,
+                error=self._company_sync_error,
+                progress=self._company_sync_progress,
             )
 
     @property
@@ -416,6 +445,33 @@ class GlobalSyncStatus:
         with self._lock:
             self._complete_price_job("finance_sync", success, error)
 
+    def start_company_sync(self, total_symbols: int) -> None:
+        """Mark company sync as started."""
+        with self._lock:
+            self._start_price_job("company_sync", total_symbols)
+
+    def update_company_sync_progress(
+        self,
+        processed_symbols: int,
+        success_symbols: int,
+        failed_symbols: int,
+        current_symbol: Optional[str],
+    ) -> None:
+        """Update company sync progress."""
+        with self._lock:
+            self._update_price_job_progress(
+                "company_sync",
+                processed_symbols,
+                success_symbols,
+                failed_symbols,
+                current_symbol,
+            )
+
+    def complete_company_sync(self, success: bool, error: Optional[str] = None) -> None:
+        """Mark company sync as completed."""
+        with self._lock:
+            self._complete_price_job("company_sync", success, error)
+
     def set_rate_limited(self, reset_in_seconds: float = 60.0) -> None:
         """
         Mark the system as rate limited with auto-expiry. Thread-safe.
@@ -498,6 +554,18 @@ class GlobalSyncStatus:
                     "started_at": self._finance_sync_started_at,
                     "error": self._finance_sync_error,
                     "progress": self._finance_sync_progress,
+                },
+                "company_sync": {
+                    "is_running": self._company_sync_is_running,
+                    "total_symbols": self._company_sync_total_symbols,
+                    "processed_symbols": self._company_sync_processed_symbols,
+                    "success_symbols": self._company_sync_success_symbols,
+                    "failed_symbols": self._company_sync_failed_symbols,
+                    "current_symbol": self._company_sync_current_symbol,
+                    "last_run_at": self._company_sync_last_run_at,
+                    "started_at": self._company_sync_started_at,
+                    "error": self._company_sync_error,
+                    "progress": self._company_sync_progress,
                 },
                 "rate_limit": {
                     "is_limited": self._is_rate_limited,

@@ -13,6 +13,7 @@ from .stock_metadata import StockMetadataService
 from .history import HistoryService
 from .price_sync import PriceSyncService
 from .finance_sync import FinanceDataSyncService
+from .company_sync import CompanyDataSyncService
 from .finance import FinanceService
 from .company import CompanyService
 from .funds import FundsService
@@ -36,12 +37,13 @@ class VnstockService:
 
         self.history = HistoryService()
         self.finance = FinanceService()
+        self.company = CompanyService()
         self.metadata = StockMetadataService(finance_service=self.finance)
         self.price_sync = PriceSyncService(history=self.history)
         self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
+        self.company_data_sync = CompanyDataSyncService(company=self.company)
         self.indices = IndicesService()
         self.funds = FundsService()
-        self.company = CompanyService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
 
     async def start_background_tasks(self) -> None:
@@ -49,9 +51,11 @@ class VnstockService:
         await self.history.start_background_workers()
         await self.price_sync.start_background_tasks()
         await self.finance_data_sync.start_background_tasks()
+        await self.company_data_sync.start_background_tasks()
 
     async def stop_background_tasks(self) -> None:
         """Stop long-running background workers."""
+        await self.company_data_sync.stop_background_tasks()
         await self.finance_data_sync.stop_background_tasks()
         await self.price_sync.stop_background_tasks()
         await self.history.stop_background_workers()
@@ -93,8 +97,8 @@ class VnstockService:
         return await self.finance.get_financial_ratios(symbol, lang=lang)
 
     # Company
-    async def get_company_overview(self, symbol: str, source: str = "auto") -> List[Dict[str, Any]]:
-        return await self.company.get_company_overview(symbol, source=source)
+    async def get_company_overview(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_company_overview(symbol)
 
     async def get_shareholders(self, symbol: str) -> List[Dict[str, Any]]:
         return await self.company.get_shareholders(symbol)
@@ -175,6 +179,21 @@ class VnstockService:
         quick_sync: bool = False,
     ) -> Dict[str, Any]:
         return await self.finance_data_sync.run_sync(
+            force_restart=force_restart,
+            symbols=symbols,
+            index_symbol=index_symbol,
+            quick_sync=quick_sync,
+        )
+
+    # Company Sync
+    async def run_company_sync(
+        self,
+        force_restart: bool = False,
+        symbols: List[str] | None = None,
+        index_symbol: str | None = None,
+        quick_sync: bool = False,
+    ) -> Dict[str, Any]:
+        return await self.company_data_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,

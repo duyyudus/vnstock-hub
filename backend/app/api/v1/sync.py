@@ -46,6 +46,7 @@ class SyncStatusResponse(BaseModel):
     fund_performance: SyncStatusItem
     price_sync: PriceSyncStatusResponse
     finance_sync: PriceJobStatusResponse
+    company_sync: PriceJobStatusResponse
     is_rate_limited: bool = False
     rate_limit_reset_at: Optional[str] = None
 
@@ -57,6 +58,13 @@ class PriceSyncRunRequest(BaseModel):
 
 
 class FinanceSyncRunRequest(BaseModel):
+    force_restart: bool = False
+    symbols: Optional[List[str]] = None
+    index_symbol: Optional[str] = None
+    quick_sync: bool = False
+
+
+class CompanySyncRunRequest(BaseModel):
     force_restart: bool = False
     symbols: Optional[List[str]] = None
     index_symbol: Optional[str] = None
@@ -115,6 +123,7 @@ async def get_sync_status():
     price_audit_runtime = sync_status.price_audit
     price_repair_runtime = sync_status.price_repair
     finance_sync_runtime = sync_status.finance_sync
+    company_sync_runtime = sync_status.company_sync
 
     return SyncStatusResponse(
         fund_performance=SyncStatusItem(
@@ -172,6 +181,18 @@ async def get_sync_status():
             started_at=finance_sync_runtime.started_at,
             error=finance_sync_runtime.error,
             progress=finance_sync_runtime.progress,
+        ),
+        company_sync=PriceJobStatusResponse(
+            is_running=company_sync_runtime.is_running,
+            total_symbols=company_sync_runtime.total_symbols,
+            processed_symbols=company_sync_runtime.processed_symbols,
+            success_symbols=company_sync_runtime.success_symbols,
+            failed_symbols=company_sync_runtime.failed_symbols,
+            current_symbol=company_sync_runtime.current_symbol,
+            last_run_at=company_sync_runtime.last_run_at,
+            started_at=company_sync_runtime.started_at,
+            error=company_sync_runtime.error,
+            progress=company_sync_runtime.progress,
         ),
         is_rate_limited=sync_status.is_rate_limited,
         rate_limit_reset_at=sync_status.rate_limit_reset_at,
@@ -268,6 +289,26 @@ async def run_finance_sync(
 ):
     try:
         result = await vnstock_service.run_finance_sync(
+            force_restart=payload.force_restart,
+            symbols=payload.symbols,
+            index_symbol=payload.index_symbol,
+            quick_sync=payload.quick_sync,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    return PriceSyncActionResponse(**result)
+
+
+@router.post("/company/run", response_model=PriceSyncActionResponse)
+async def run_company_sync(
+    payload: CompanySyncRunRequest,
+    _current_admin=Depends(get_current_admin_user),
+):
+    try:
+        result = await vnstock_service.run_company_sync(
             force_restart=payload.force_restart,
             symbols=payload.symbols,
             index_symbol=payload.index_symbol,

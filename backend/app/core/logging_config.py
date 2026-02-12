@@ -19,6 +19,7 @@ PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 LLM_LOG_FILE = LOG_DIR / "llm.log"
 PRICE_SYNC_LOG_FILE = LOG_DIR / "price_sync.log"
 FINANCE_SYNC_LOG_FILE = LOG_DIR / "finance_sync.log"
+COMPANY_SYNC_LOG_FILE = LOG_DIR / "company_sync.log"
 
 # Log formats
 CONSOLE_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
@@ -32,11 +33,12 @@ _portfolio_import_logger = None
 _llm_logger = None
 _price_sync_logger = None
 _finance_sync_logger = None
+_company_sync_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _price_sync_logger, _finance_sync_logger
+    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _price_sync_logger, _finance_sync_logger, _company_sync_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
@@ -50,6 +52,7 @@ def setup_logging():
         LLM_LOG_FILE,
         PRICE_SYNC_LOG_FILE,
         FINANCE_SYNC_LOG_FILE,
+        COMPANY_SYNC_LOG_FILE,
     ]:
         try:
             with open(log_path, 'w') as f:
@@ -207,6 +210,27 @@ def setup_logging():
     finance_sync_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
     _finance_sync_logger.addHandler(finance_sync_console_error_handler)
 
+    # === Company Sync Logger (file only + critical errors to console) ===
+    _company_sync_logger = logging.getLogger("vnstock_hub.company_sync")
+    _company_sync_logger.setLevel(logging.DEBUG)
+    _company_sync_logger.propagate = False
+    _company_sync_logger.handlers.clear()
+
+    company_sync_file_handler = RotatingFileHandler(
+        COMPANY_SYNC_LOG_FILE,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    company_sync_file_handler.setLevel(logging.DEBUG)
+    company_sync_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _company_sync_logger.addHandler(company_sync_file_handler)
+
+    company_sync_console_error_handler = logging.StreamHandler()
+    company_sync_console_error_handler.setLevel(logging.WARNING)
+    company_sync_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
+    _company_sync_logger.addHandler(company_sync_console_error_handler)
+
     return _main_logger, _background_logger
 
 
@@ -256,6 +280,14 @@ def get_finance_sync_logger() -> logging.Logger:
     if _finance_sync_logger is None:
         setup_logging()
     return _finance_sync_logger
+
+
+def get_company_sync_logger() -> logging.Logger:
+    """Get the company sync logger for company synchronization tasks."""
+    global _company_sync_logger
+    if _company_sync_logger is None:
+        setup_logging()
+    return _company_sync_logger
 
 
 def log_background_start(task_name: str, details: str = ""):

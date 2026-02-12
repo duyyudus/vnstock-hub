@@ -11,13 +11,14 @@ import os
 import time
 import pandas as pd
 
-from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
+from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError, CircuitState
 from app.core.config import settings
 from app.core.logging_config import (
     get_main_logger,
     get_background_logger,
     get_price_sync_logger,
     get_finance_sync_logger,
+    get_company_sync_logger,
 )
 from app.services.sync_status import sync_status
 
@@ -26,6 +27,7 @@ logger = get_main_logger()
 bg_logger = get_background_logger()
 price_sync_logger = get_price_sync_logger()
 finance_sync_logger = get_finance_sync_logger()
+company_sync_logger = get_company_sync_logger()
 
 # Determine worker counts based on CPU cores
 _cpu_count = os.cpu_count() or 4
@@ -82,7 +84,18 @@ def _is_rate_limit_error(error: BaseException) -> bool:
     if isinstance(error, SystemExit):
         return True
     error_msg = str(error)
-    return any(keyword in error_msg for keyword in RATE_LIMIT_KEYWORDS)
+    if any(keyword in error_msg for keyword in RATE_LIMIT_KEYWORDS):
+        return True
+
+    # Any probe failure while circuit is half-open should be treated as rate-limit
+    # semantics so the circuit reopens and avoids half-open deadlock.
+    try:
+        if api_circuit_breaker.state == CircuitState.HALF_OPEN:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def _record_rate_limit(reset_seconds: float = 30.0) -> None:

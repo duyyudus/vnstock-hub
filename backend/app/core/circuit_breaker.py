@@ -33,6 +33,7 @@ class CircuitBreakerConfig:
     failure_threshold: int = 2      # Failures before opening circuit
     recovery_timeout: float = 30.0  # Seconds before transitioning to half-open
     half_open_max_calls: int = 1    # Test calls allowed in half-open state
+    half_open_probe_timeout: Optional[float] = None  # Max seconds to wait for half-open probe outcome
 
 
 T = TypeVar('T')
@@ -84,6 +85,8 @@ class CircuitBreaker:
         self._failure_count = 0
         self._last_failure_time: Optional[float] = None
         self._half_open_calls = 0
+        self._half_open_entered_at: Optional[float] = None
+        self._half_open_probe_started_at: Optional[float] = None
         self._success_count = 0
 
     @property
@@ -91,6 +94,7 @@ class CircuitBreaker:
         """Get current state, potentially transitioning to HALF_OPEN."""
         with self._lock:
             self._maybe_transition_to_half_open()
+            self._maybe_recover_stale_half_open_probe()
             return self._state
 
     @property
@@ -120,12 +124,15 @@ class CircuitBreaker:
         """
         with self._lock:
             self._maybe_transition_to_half_open()
+            self._maybe_recover_stale_half_open_probe()
 
             if self._state == CircuitState.CLOSED:
                 return True
             elif self._state == CircuitState.HALF_OPEN:
                 if self._half_open_calls < self.config.half_open_max_calls:
                     self._half_open_calls += 1
+                    if self._half_open_probe_started_at is None:
+                        self._half_open_probe_started_at = time.time()
                     return True
                 return False
             else:  # OPEN
@@ -147,6 +154,8 @@ class CircuitBreaker:
                 self._state = CircuitState.CLOSED
                 self._failure_count = 0
                 self._half_open_calls = 0
+                self._half_open_entered_at = None
+                self._half_open_probe_started_at = None
             elif self._state == CircuitState.CLOSED:
                 # Reset failure count on success
                 self._failure_count = 0
@@ -172,6 +181,8 @@ class CircuitBreaker:
                 logger.warning(f"Circuit breaker [{self.name}]: HALF_OPEN -> OPEN (failure in half-open)")
                 self._state = CircuitState.OPEN
                 self._half_open_calls = 0
+                self._half_open_entered_at = None
+                self._half_open_probe_started_at = None
             elif self._failure_count >= self.config.failure_threshold:
                 if self._state != CircuitState.OPEN:
                     logger.warning(
@@ -193,6 +204,9 @@ class CircuitBreaker:
                 logger.warning(f"Circuit breaker [{self.name}]: Forced OPEN for {duration or self.config.recovery_timeout}s")
             self._state = CircuitState.OPEN
             self._last_failure_time = time.time()
+            self._half_open_calls = 0
+            self._half_open_entered_at = None
+            self._half_open_probe_started_at = None
             if duration:
                 self.config.recovery_timeout = duration
 
@@ -204,6 +218,8 @@ class CircuitBreaker:
             self._failure_count = 0
             self._last_failure_time = None
             self._half_open_calls = 0
+            self._half_open_entered_at = None
+            self._half_open_probe_started_at = None
 
     def _maybe_transition_to_half_open(self) -> None:
         """
@@ -219,6 +235,45 @@ class CircuitBreaker:
                 )
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_calls = 0
+                self._half_open_entered_at = time.time()
+                self._half_open_probe_started_at = None
+
+    def _half_open_probe_timeout_seconds(self) -> float:
+        """Resolve timeout used to recover from stuck HALF_OPEN probe state."""
+        timeout = self.config.half_open_probe_timeout
+        if timeout is None:
+            timeout = self.config.recovery_timeout
+        return max(0.0, float(timeout))
+
+    def _maybe_recover_stale_half_open_probe(self) -> None:
+        """
+        Recover from stale HALF_OPEN probes that never recorded success/failure.
+
+        If all half-open slots were consumed and no outcome was recorded within
+        half_open_probe_timeout, reopen the circuit and restart cooldown.
+        """
+        if self._state != CircuitState.HALF_OPEN:
+            return
+        if self._half_open_calls < self.config.half_open_max_calls:
+            return
+        if self._half_open_probe_started_at is None:
+            return
+
+        timeout = self._half_open_probe_timeout_seconds()
+        elapsed = time.time() - self._half_open_probe_started_at
+        if elapsed < timeout:
+            return
+
+        self._failure_count += 1
+        self._state = CircuitState.OPEN
+        self._last_failure_time = time.time()
+        self._half_open_calls = 0
+        self._half_open_entered_at = None
+        self._half_open_probe_started_at = None
+        logger.warning(
+            f"Circuit breaker [{self.name}]: HALF_OPEN -> OPEN "
+            f"(probe timeout; elapsed={elapsed:.1f}s >= timeout={timeout:.1f}s)"
+        )
 
     def get_stats(self) -> dict:
         """Get circuit breaker statistics for monitoring."""
@@ -230,6 +285,7 @@ class CircuitBreaker:
                 "success_count": self._success_count,
                 "failure_threshold": self.config.failure_threshold,
                 "recovery_timeout": self.config.recovery_timeout,
+                "half_open_probe_timeout": self.config.half_open_probe_timeout,
                 "time_until_half_open": self.time_until_half_open
             }
 

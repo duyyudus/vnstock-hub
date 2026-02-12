@@ -560,6 +560,7 @@ export interface SyncStatusResponse {
     fund_performance: SyncStatusItem;
     price_sync: PriceSyncStatus;
     finance_sync: PriceJobStatus;
+    company_sync: PriceJobStatus;
     is_rate_limited: boolean;
     rate_limit_reset_at: string | null;
 }
@@ -681,8 +682,8 @@ export const stockApi = {
     /**
      * Fetch company overview for a specific stock
      */
-    async getCompanyOverview(symbol: string, source: string = 'vci'): Promise<FinancialDataResponse> {
-        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/overview?source=${encodeURIComponent(source)}`);
+    async getCompanyOverview(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/overview`);
         return response.data;
     },
 
@@ -862,6 +863,21 @@ export const stockApi = {
         quickSync: boolean = false
     ): Promise<PriceSyncActionResponse> {
         const response = await apiClient.post<PriceSyncActionResponse>('/sync/finance/run', {
+            force_restart: forceRestart,
+            symbols: symbols && symbols.length > 0 ? symbols : undefined,
+            index_symbol: indexSymbol || undefined,
+            quick_sync: quickSync,
+        });
+        return response.data;
+    },
+
+    async runCompanySync(
+        forceRestart: boolean = false,
+        symbols?: string[],
+        indexSymbol?: string,
+        quickSync: boolean = false
+    ): Promise<PriceSyncActionResponse> {
+        const response = await apiClient.post<PriceSyncActionResponse>('/sync/company/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
