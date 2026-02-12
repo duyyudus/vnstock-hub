@@ -11,7 +11,7 @@ import {
 
 const REFRESH_INTERVAL_MS = 5000;
 
-type AdminTab = 'price' | 'finance';
+type AdminTab = 'settings' | 'price' | 'finance';
 
 const getErrorMessage = (error: unknown) => {
     if (typeof error === 'object' && error && 'response' in error) {
@@ -47,7 +47,7 @@ const parseSymbolsInput = (value: string): string[] => {
 export const AdminPage: React.FC = () => {
     const user = useAuthUser();
 
-    const [activeTab, setActiveTab] = useState<AdminTab>('price');
+    const [activeTab, setActiveTab] = useState<AdminTab>('settings');
 
     const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
     const [loadingStatus, setLoadingStatus] = useState(false);
@@ -265,7 +265,7 @@ export const AdminPage: React.FC = () => {
                 <div className="max-w-[100rem] mx-auto w-full flex items-center gap-3">
                     <div className="flex-1 flex items-center gap-2">
                         <a href="/" className="btn btn-ghost btn-sm">← Dashboard</a>
-                        <h1 className="text-xl font-bold">Admin Sync Control</h1>
+                        <h1 className="text-xl font-bold">Control Panel</h1>
                     </div>
                     <AuthWidget />
                 </div>
@@ -293,6 +293,13 @@ export const AdminPage: React.FC = () => {
                 <div role="tablist" className="tabs tabs-boxed w-fit">
                     <button
                         role="tab"
+                        className={`tab ${activeTab === 'settings' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('settings')}
+                    >
+                        Settings
+                    </button>
+                    <button
+                        role="tab"
                         className={`tab ${activeTab === 'price' ? 'tab-active' : ''}`}
                         onClick={() => setActiveTab('price')}
                     >
@@ -306,6 +313,15 @@ export const AdminPage: React.FC = () => {
                         Finance Sync
                     </button>
                 </div>
+
+                {activeTab === 'settings' ? (
+                    <section className="card bg-base-100 shadow-lg">
+                        <div className="card-body space-y-2">
+                            <h2 className="card-title">Personal Settings</h2>
+                            <p className="text-base-content/70">Coming soon.</p>
+                        </div>
+                    </section>
+                ) : null}
 
                 {activeTab === 'price' ? (
                     <>
