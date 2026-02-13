@@ -154,7 +154,6 @@ class StockMetadataService:
                                     "Metadata Enrichment",
                                     f"{len(tickers_to_fetch)}/{len(tickers_needing_finance)} stocks"
                                 )
-                                loop = asyncio.get_event_loop()
 
                                 # Fetch one by one and commit incrementally
                                 for symbol in tickers_to_fetch:
@@ -174,7 +173,7 @@ class StockMetadataService:
                                     try:
                                         # Add a small delay between symbols
                                         await asyncio.sleep(1.0)
-                                        data = await loop.run_in_executor(background_executor, self._fetch_stock_finance_sync, symbol)
+                                        data = await self._fetch_stock_finance(symbol)
 
                                         if data and symbol in cached_data:
                                             cached_data[symbol].pe_ratio = data.get('pe_ratio')
@@ -243,7 +242,7 @@ class StockMetadataService:
 
         return stocks
 
-    def _fetch_stock_finance_sync(self, symbol: str) -> Dict | None:
+    async def _fetch_stock_finance(self, symbol: str) -> Dict | None:
         """
         Fetch financial metadata for a single symbol via DB-first finance service.
         """
@@ -251,11 +250,9 @@ class StockMetadataService:
             return None
 
         try:
-            ratio_records = asyncio.run(
-                self._finance_service.get_financial_ratios(
-                    symbol=symbol[:3],
-                    lang='en',
-                )
+            ratio_records = await self._finance_service.get_financial_ratios(
+                symbol=symbol[:3],
+                lang='en',
             )
             pe_ratio = self._finance_service.extract_latest_pe_ratio(ratio_records)
             if pe_ratio is None:

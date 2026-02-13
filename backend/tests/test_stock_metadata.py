@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
 from app.services.vnstock_service.stock_metadata import StockMetadataService
@@ -65,7 +64,7 @@ async def test_enrich_stocks_everything_cached(metadata_service, mock_db_session
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         with patch.object(metadata_service, "_fetch_all_symbols") as mock_fetch_symbols:
-            with patch.object(metadata_service, "_fetch_stock_finance_sync") as mock_fetch_finance:
+            with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock()) as mock_fetch_finance:
                 enriched = await metadata_service.enrich_stocks_with_metadata(stocks)
                 
                 assert enriched[0].company_name == "Techcombank"
@@ -97,7 +96,7 @@ async def test_enrich_stocks_missing_data_triggers_api(metadata_service, mock_db
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         with patch.object(metadata_service, "_fetch_all_symbols", return_value=mock_symbols_df):
-            with patch.object(metadata_service, "_fetch_stock_finance_sync", return_value=mock_finance_data):
+            with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock(return_value=mock_finance_data)):
                 # Use a small sleep to avoid long waits in tests
                 with patch("asyncio.sleep", return_value=None):
                     enriched = await metadata_service.enrich_stocks_with_metadata(stocks)
@@ -121,7 +120,7 @@ async def test_enrich_stocks_missing_data_uses_upsert(metadata_service, mock_db_
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         with patch.object(metadata_service, "_fetch_all_symbols", return_value=mock_symbols_df):
-            with patch.object(metadata_service, "_fetch_stock_finance_sync", return_value=None):
+            with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock(return_value=None)):
                 with patch("asyncio.sleep", return_value=None):
                     await metadata_service.enrich_stocks_with_metadata(stocks)
 
@@ -146,7 +145,7 @@ async def test_enrich_stocks_rate_limited_skips_api(metadata_service, mock_db_se
             mock_sync.is_rate_limited = True
             
             with patch.object(metadata_service, "_fetch_all_symbols", side_effect=CircuitOpenError("Mock limit")):
-                with patch.object(metadata_service, "_fetch_stock_finance_sync") as mock_fetch_finance:
+                with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock()) as mock_fetch_finance:
                     await metadata_service.enrich_stocks_with_metadata(stocks)
 
                     # Finance calls should be skipped due to sync_status
@@ -168,7 +167,7 @@ async def test_metadata_enrichment_logs_completed_on_success(metadata_service, m
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         with patch("app.services.vnstock_service.stock_metadata.api_circuit_breaker.can_proceed", return_value=True):
-            with patch.object(metadata_service, "_fetch_stock_finance_sync", return_value={"pe_ratio": 6.0}):
+            with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock(return_value={"pe_ratio": 6.0})):
                 with patch("asyncio.sleep", return_value=None):
                     with patch("app.services.vnstock_service.stock_metadata.log_background_start") as mock_start:
                         with patch("app.services.vnstock_service.stock_metadata.log_background_complete") as mock_complete:
@@ -213,7 +212,11 @@ async def test_metadata_enrichment_logs_completed_partial_on_rate_limit_stop(met
             "app.services.vnstock_service.stock_metadata.api_circuit_breaker.can_proceed",
             side_effect=[True, False]
         ):
-            with patch.object(metadata_service, "_fetch_stock_finance_sync", return_value={"pe_ratio": 7.0}) as mock_fetch:
+            with patch.object(
+                metadata_service,
+                "_fetch_stock_finance",
+                new=AsyncMock(return_value={"pe_ratio": 7.0})
+            ) as mock_fetch:
                 with patch("asyncio.sleep", return_value=None):
                     with patch("app.services.vnstock_service.stock_metadata.log_background_start") as mock_start:
                         with patch("app.services.vnstock_service.stock_metadata.log_background_complete") as mock_complete:
@@ -247,7 +250,7 @@ async def test_metadata_enrichment_logs_failed_on_unexpected_batch_exception(met
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         with patch("app.services.vnstock_service.stock_metadata.api_circuit_breaker.can_proceed", return_value=True):
-            with patch.object(metadata_service, "_fetch_stock_finance_sync", return_value={"pe_ratio": 6.0}):
+            with patch.object(metadata_service, "_fetch_stock_finance", new=AsyncMock(return_value={"pe_ratio": 6.0})):
                 with patch("asyncio.sleep", return_value=None):
                     with patch("app.services.vnstock_service.stock_metadata.log_background_start") as mock_start:
                         with patch("app.services.vnstock_service.stock_metadata.log_background_complete") as mock_complete:
@@ -285,15 +288,15 @@ async def test_metadata_enrichment_no_terminal_log_when_not_started(metadata_ser
     mock_error.assert_not_called()
 
 
-def test_fetch_stock_finance_sync_uses_finance_service_not_direct_vnstock():
+@pytest.mark.asyncio
+async def test_fetch_stock_finance_uses_finance_service_not_direct_vnstock():
     finance_service = MagicMock()
     finance_service.get_financial_ratios = AsyncMock(return_value=[{"P/E": 8.2}])
     finance_service.extract_latest_pe_ratio.return_value = 8.2
     metadata_service = StockMetadataService(finance_service=finance_service)
 
-    with patch("app.services.vnstock_service.stock_metadata.asyncio.run", return_value=[{"P/E": 8.2}]) as mock_run:
-        result = metadata_service._fetch_stock_finance_sync("TCB")
+    result = await metadata_service._fetch_stock_finance("TCB")
 
     assert result == {"pe_ratio": 8.2}
-    mock_run.assert_called_once()
+    finance_service.get_financial_ratios.assert_awaited_once_with(symbol="TCB", lang="en")
     finance_service.extract_latest_pe_ratio.assert_called_once_with([{"P/E": 8.2}])
