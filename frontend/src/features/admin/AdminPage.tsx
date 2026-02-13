@@ -17,6 +17,7 @@ import { SettingsTab } from './tabs/SettingsTab';
 const REFRESH_INTERVAL_MS = 5000;
 
 type AdminTab = 'settings' | 'price' | 'finance' | 'company';
+type TransientJobType = 'price' | 'finance' | 'company';
 
 export const AdminPage: React.FC = () => {
     const user = useAuthUser();
@@ -58,6 +59,9 @@ export const AdminPage: React.FC = () => {
     const [financeRunning, setFinanceRunning] = useState(false);
     const [companyRunning, setCompanyRunning] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
+    const [isActionMessageTransient, setIsActionMessageTransient] = useState(false);
+    const [transientJobType, setTransientJobType] = useState<TransientJobType | null>(null);
+    const [hasSeenTransientRuntimeActive, setHasSeenTransientRuntimeActive] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
 
     const canAccess = Boolean(user);
@@ -113,14 +117,22 @@ export const AdminPage: React.FC = () => {
         fn: () => Promise<T>,
         setLoading: React.Dispatch<React.SetStateAction<boolean>>,
         onSuccess?: (result: T) => void,
+        jobType?: TransientJobType,
     ) => {
         setLoading(true);
         setActionMessage(null);
+        setIsActionMessageTransient(false);
+        setTransientJobType(null);
+        setHasSeenTransientRuntimeActive(false);
         setActionError(null);
 
         try {
             const result = await fn();
+            const isTransient = result.state === 'running' && Boolean(jobType);
             setActionMessage(result.message);
+            setIsActionMessageTransient(isTransient);
+            setTransientJobType(isTransient ? jobType ?? null : null);
+            setHasSeenTransientRuntimeActive(false);
             onSuccess?.(result);
             await loadStatuses();
         } catch (error) {
@@ -139,6 +151,8 @@ export const AdminPage: React.FC = () => {
                 syncIndexSymbol || undefined,
             ),
             setSyncRunning,
+            undefined,
+            'price',
         );
     };
 
@@ -192,6 +206,8 @@ export const AdminPage: React.FC = () => {
                 financeQuickSync,
             ),
             setFinanceRunning,
+            undefined,
+            'finance',
         );
     };
 
@@ -205,6 +221,8 @@ export const AdminPage: React.FC = () => {
                 companyQuickSync,
             ),
             setCompanyRunning,
+            undefined,
+            'company',
         );
     };
 
@@ -214,13 +232,49 @@ export const AdminPage: React.FC = () => {
     const runtimeFinance = syncStatus?.finance_sync;
     const runtimeCompany = syncStatus?.company_sync;
 
-    const syncActive = syncRunning || Boolean(runtimeSync?.is_running);
-    const auditActive = auditRunning || Boolean(runtimeAudit?.is_running);
-    const repairActive = repairRunning || Boolean(runtimeRepair?.is_running);
-    const financeActive = financeRunning || Boolean(runtimeFinance?.is_running);
-    const companyActive = companyRunning || Boolean(runtimeCompany?.is_running);
+    const runtimeSyncActive = Boolean(runtimeSync?.is_running);
+    const runtimeAuditActive = Boolean(runtimeAudit?.is_running);
+    const runtimeRepairActive = Boolean(runtimeRepair?.is_running);
+    const runtimeFinanceActive = Boolean(runtimeFinance?.is_running);
+    const runtimeCompanyActive = Boolean(runtimeCompany?.is_running);
+
+    const syncActive = syncRunning || runtimeSyncActive;
+    const auditActive = auditRunning || runtimeAuditActive;
+    const repairActive = repairRunning || runtimeRepairActive;
+    const financeActive = financeRunning || runtimeFinanceActive;
+    const companyActive = companyRunning || runtimeCompanyActive;
     const anyJobActive = syncActive || auditActive || repairActive || financeActive || companyActive;
     const actionDisabled = loadingStatus || anyJobActive;
+
+    useEffect(() => {
+        if (!isActionMessageTransient || !transientJobType) {
+            return;
+        }
+        const transientRuntimeActive = transientJobType === 'price'
+            ? runtimeSyncActive
+            : transientJobType === 'finance'
+                ? runtimeFinanceActive
+                : runtimeCompanyActive;
+
+        if (transientRuntimeActive) {
+            setHasSeenTransientRuntimeActive(true);
+            return;
+        }
+        if (!hasSeenTransientRuntimeActive) {
+            return;
+        }
+        setActionMessage(null);
+        setIsActionMessageTransient(false);
+        setTransientJobType(null);
+        setHasSeenTransientRuntimeActive(false);
+    }, [
+        hasSeenTransientRuntimeActive,
+        isActionMessageTransient,
+        runtimeCompanyActive,
+        runtimeFinanceActive,
+        runtimeSyncActive,
+        transientJobType,
+    ]);
 
     const syncProgressPercent = useMemo(() => {
         const value = runtimeSync?.progress ?? 0;
