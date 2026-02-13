@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.deps import get_current_user
 from app.core.security import create_access_token
 from app.db.database import get_db
 from app.services.auth_service import create_user, authenticate_user, get_user_by_email
@@ -28,9 +29,18 @@ class LoginRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
+    download_folder: str | None = None
     is_active: bool
     created_at: str
     last_login: str | None = None
+
+
+class UserSettingsResponse(BaseModel):
+    download_folder: str | None = None
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    download_folder: str | None = Field(default=None, max_length=512)
 
 
 class AuthResponse(BaseModel):
@@ -38,6 +48,13 @@ class AuthResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserResponse
+
+
+def _normalize_download_folder(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _build_auth_response(user) -> AuthResponse:
@@ -53,6 +70,7 @@ def _build_auth_response(user) -> AuthResponse:
         user=UserResponse(
             id=user.id,
             email=user.email,
+            download_folder=user.download_folder,
             is_active=user.is_active,
             created_at=user.created_at.isoformat(),
             last_login=user.last_login.isoformat() if user.last_login else None
@@ -87,3 +105,24 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     return _build_auth_response(user)
+
+
+@router.get("/settings", response_model=UserSettingsResponse)
+async def get_user_settings(current_user=Depends(get_current_user)):
+    return UserSettingsResponse(
+        download_folder=current_user.download_folder
+    )
+
+
+@router.patch("/settings", response_model=UserSettingsResponse)
+async def update_user_settings(
+    payload: UserSettingsUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    current_user.download_folder = _normalize_download_folder(payload.download_folder)
+    await db.commit()
+    await db.refresh(current_user)
+    return UserSettingsResponse(
+        download_folder=current_user.download_folder
+    )

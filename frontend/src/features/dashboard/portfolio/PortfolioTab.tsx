@@ -10,6 +10,7 @@ import {
 import { useAuthUser } from '../../auth/useAuthUser';
 import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
 import { StockAllocationChart } from '../components/StockAllocationChart';
+import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 
 interface FormState {
     ticker: string;
@@ -25,6 +26,11 @@ interface StockAllocationItem {
     ticker: string;
     allocation: number;
     companyName?: string;
+}
+
+interface CsvExportNotice {
+    kind: 'success' | 'warning';
+    message: string;
 }
 
 const emptyFormState: FormState = {
@@ -77,6 +83,7 @@ export const PortfolioTab: React.FC = () => {
     const [importError, setImportError] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<PortfolioImportResponse | null>(null);
     const [csvExportLoading, setCsvExportLoading] = useState(false);
+    const [csvExportNotice, setCsvExportNotice] = useState<CsvExportNotice | null>(null);
     const [freshImportLoading, setFreshImportLoading] = useState(false);
     const [freshImportError, setFreshImportError] = useState<string | null>(null);
     const [freshImportResult, setFreshImportResult] = useState<PortfolioFreshImportResponse | null>(null);
@@ -653,17 +660,33 @@ export const PortfolioTab: React.FC = () => {
     const handleExportCsv = async () => {
         if (csvExportLoading) return;
         setFreshImportError(null);
+        setCsvExportNotice(null);
         setCsvExportLoading(true);
         try {
             const response = await stockApi.exportPortfolioCsv();
-            const blobUrl = window.URL.createObjectURL(response.blob);
-            const anchor = document.createElement('a');
-            anchor.href = blobUrl;
-            anchor.download = response.filename;
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-            window.URL.revokeObjectURL(blobUrl);
+            const result = await downloadBlobWithPreference({
+                blob: response.blob,
+                filename: response.filename,
+                userId: user?.id,
+                downloadFolder: user?.download_folder,
+            });
+            const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
+            if (result.mode === 'custom-folder') {
+                setCsvExportNotice({
+                    kind: 'success',
+                    message: 'CSV exported to your custom download folder.',
+                });
+            } else if (hasCustomFolderPreference) {
+                setCsvExportNotice({
+                    kind: 'warning',
+                    message: 'Custom folder was unavailable. CSV was downloaded to your browser default location.',
+                });
+            } else {
+                setCsvExportNotice({
+                    kind: 'success',
+                    message: 'CSV download started with browser default location.',
+                });
+            }
         } catch (err) {
             setFreshImportError(getErrorMessage(err));
         } finally {
@@ -806,6 +829,11 @@ export const PortfolioTab: React.FC = () => {
                                         Fresh import completed. Deleted {freshImportResult.deleted_count} existing position
                                         {freshImportResult.deleted_count === 1 ? '' : 's'} and created {freshImportResult.created_count}.
                                     </span>
+                                </div>
+                            ) : null}
+                            {csvExportNotice ? (
+                                <div className={`alert text-sm ${csvExportNotice.kind === 'warning' ? 'alert-warning' : 'alert-success'}`}>
+                                    <span>{csvExportNotice.message}</span>
                                 </div>
                             ) : null}
                             {freshImportError ? (

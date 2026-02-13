@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { stockApi } from '../../../api/stockApi';
 import type { FinancialDataResponse } from '../../../api/stockApi';
+import useAuthUser from '../../auth/useAuthUser';
+import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 
 interface Position {
     x: number;
@@ -22,6 +24,11 @@ interface CompanyFinancialPopupProps {
 }
 
 type TabType = 'overview' | 'income' | 'balance' | 'cashflow' | 'ratios' | 'shareholders' | 'officers' | 'subsidiaries';
+
+interface ExportFeedback {
+    kind: 'success' | 'warning';
+    message: string;
+}
 
 const EXPORTABLE_TAB_SUFFIX: Partial<Record<TabType, string>> = {
     income: 'income',
@@ -96,6 +103,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     zIndex,
     onFocus,
 }) => {
+    const user = useAuthUser();
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -103,6 +111,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const [position, setPosition] = useState<Position>(initialPosition);
     const [size, setSize] = useState<Size>({ width: 900, height: 550 });
     const [attributeWidth, setAttributeWidth] = useState(200);
+    const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
     const isDragging = useRef(false);
     const isResizing = useRef(false);
     const isResizingColumn = useRef(false);
@@ -118,6 +127,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
         const fetchData = async () => {
             setLoading(true);
             setError(null);
+            setExportFeedback(null);
             try {
                 let response: FinancialDataResponse;
                 switch (activeTab) {
@@ -296,10 +306,11 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
         return result;
     };
 
-    const handleExportCurrentTabCsv = () => {
+    const handleExportCurrentTabCsv = async () => {
         if (!isExportableTab || isExportDisabled || !exportSuffix) {
             return;
         }
+        setExportFeedback(null);
 
         const csvContent = rowsToCsv(data, (value, key) => {
             if (value === null || value === undefined) {
@@ -331,14 +342,29 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
             .replace(/^[._-]+|[._-]+$/g, '') || 'TICKER';
         const filename = `${normalizedTicker}_${exportSuffix}.csv`;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-        const blobUrl = window.URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = blobUrl;
-        anchor.download = filename;
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        window.URL.revokeObjectURL(blobUrl);
+        const result = await downloadBlobWithPreference({
+            blob,
+            filename,
+            userId: user?.id,
+            downloadFolder: user?.download_folder,
+        });
+        const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
+        if (result.mode === 'custom-folder') {
+            setExportFeedback({
+                kind: 'success',
+                message: 'Export saved to custom download folder.',
+            });
+        } else if (hasCustomFolderPreference) {
+            setExportFeedback({
+                kind: 'warning',
+                message: 'Custom folder unavailable; exported to browser default location.',
+            });
+        } else {
+            setExportFeedback({
+                kind: 'success',
+                message: 'Export downloaded using browser default location.',
+            });
+        }
     };
 
     // Render Overview tab with a nice layout
@@ -408,7 +434,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                                         </div>
                                     ))}
                             </div>
-                        ) : content}
+                        ) : String(content ?? '-')}
                     </div>
                 </section>
             );
@@ -419,7 +445,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 items-start">
                     {/* Company Profile - Priority 1 */}
                     <div className="lg:col-span-6">
-                        {item['company_profile'] && renderDetailedSection('company_profile')}
+                        {Boolean(item['company_profile']) && renderDetailedSection('company_profile')}
                     </div>
 
                     {/* General Information - Priority 2 */}
@@ -665,7 +691,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                 )}
             </div>
 
-            <div className="p-2 border-t border-base-300 bg-base-200 text-[10px] text-base-content/50 shrink-0 relative flex items-center justify-start pr-6">
+            <div className="p-2 border-t border-base-300 bg-base-200 text-[10px] text-base-content/50 shrink-0 relative flex items-center justify-start gap-2 pr-6">
                 {isExportableTab && (
                     <button
                         type="button"
@@ -677,6 +703,11 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                         Export
                     </button>
                 )}
+                {exportFeedback ? (
+                    <span className={exportFeedback.kind === 'warning' ? 'text-warning' : 'text-success'}>
+                        {exportFeedback.message}
+                    </span>
+                ) : null}
                 {/* Resize Handle */}
                 <div
                     className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize resize-handle flex items-end justify-end p-0.5"

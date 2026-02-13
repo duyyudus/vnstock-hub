@@ -28,11 +28,12 @@ const formatPercent = (value: number) => {
     return `${value.toFixed(1)}%`;
 };
 
-const formatLabelPercent = (value: number) => {
-    if (!Number.isFinite(value)) {
+const formatLabelPercent = (value: number | string | boolean | undefined | null) => {
+    const numericValue = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numericValue)) {
         return '';
     }
-    return `${value.toFixed(1)}%`;
+    return `${numericValue.toFixed(1)}%`;
 };
 
 const StockAllocationTooltip: React.FC<StockAllocationTooltipProps> = ({ active, payload }) => {

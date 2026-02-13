@@ -120,6 +120,13 @@ const notifyAuthChange = () => {
     window.dispatchEvent(new CustomEvent(AUTH_EVENT));
 };
 
+const normalizeAuthUser = (user: AuthUser): AuthUser => {
+    return {
+        ...user,
+        download_folder: user.download_folder ?? null,
+    };
+};
+
 export const authStorage = {
     getToken() {
         return getStoredToken();
@@ -141,9 +148,10 @@ export const authStorage = {
         if (typeof window === 'undefined') {
             return;
         }
+        const normalizedUser = normalizeAuthUser(user);
         const expiresAt = Date.now() + expiresInSeconds * 1000;
         window.localStorage.setItem(AUTH_TOKEN_KEY, token);
-        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
         window.localStorage.setItem(AUTH_EXPIRES_AT_KEY, String(expiresAt));
         scheduleLogout(expiresAt);
         notifyAuthChange();
@@ -166,7 +174,7 @@ export const authStorage = {
             return null;
         }
         try {
-            return JSON.parse(raw) as AuthUser;
+            return normalizeAuthUser(JSON.parse(raw) as AuthUser);
         } catch {
             return null;
         }
@@ -175,7 +183,7 @@ export const authStorage = {
         if (typeof window === 'undefined') {
             return;
         }
-        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizeAuthUser(user)));
         notifyAuthChange();
     },
     clearUser() {
@@ -439,6 +447,7 @@ export interface FundPerformanceData {
 export interface AuthUser {
     id: number;
     email: string;
+    download_folder: string | null;
     is_active: boolean;
     created_at: string;
     last_login: string | null;
@@ -459,6 +468,14 @@ export interface RegisterRequest {
 export interface LoginRequest {
     email: string;
     password: string;
+}
+
+export interface UserSettingsResponse {
+    download_folder: string | null;
+}
+
+export interface UpdateUserSettingsRequest {
+    download_folder: string | null;
 }
 
 // Portfolio types
@@ -611,6 +628,16 @@ export const stockApi = {
 
     async login(payload: LoginRequest): Promise<AuthResponse> {
         const response = await apiClient.post<AuthResponse>('/auth/login', payload);
+        return response.data;
+    },
+
+    async getUserSettings(): Promise<UserSettingsResponse> {
+        const response = await apiClient.get<UserSettingsResponse>('/auth/settings');
+        return response.data;
+    },
+
+    async updateUserSettings(payload: UpdateUserSettingsRequest): Promise<UserSettingsResponse> {
+        const response = await apiClient.patch<UserSettingsResponse>('/auth/settings', payload);
         return response.data;
     },
 
