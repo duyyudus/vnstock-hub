@@ -30,6 +30,8 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     download_folder: str | None = None
+    company_export_category: str | None = None
+    finance_export_category: str | None = None
     is_active: bool
     created_at: str
     last_login: str | None = None
@@ -37,10 +39,14 @@ class UserResponse(BaseModel):
 
 class UserSettingsResponse(BaseModel):
     download_folder: str | None = None
+    company_export_category: str | None = None
+    finance_export_category: str | None = None
 
 
 class UserSettingsUpdateRequest(BaseModel):
     download_folder: str | None = Field(default=None, max_length=512)
+    company_export_category: str | None = Field(default=None, max_length=120)
+    finance_export_category: str | None = Field(default=None, max_length=120)
 
 
 class AuthResponse(BaseModel):
@@ -50,7 +56,7 @@ class AuthResponse(BaseModel):
     user: UserResponse
 
 
-def _normalize_download_folder(value: str | None) -> str | None:
+def _normalize_user_setting_value(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip()
@@ -71,6 +77,8 @@ def _build_auth_response(user) -> AuthResponse:
             id=user.id,
             email=user.email,
             download_folder=user.download_folder,
+            company_export_category=user.company_export_category,
+            finance_export_category=user.finance_export_category,
             is_active=user.is_active,
             created_at=user.created_at.isoformat(),
             last_login=user.last_login.isoformat() if user.last_login else None
@@ -110,7 +118,9 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/settings", response_model=UserSettingsResponse)
 async def get_user_settings(current_user=Depends(get_current_user)):
     return UserSettingsResponse(
-        download_folder=current_user.download_folder
+        download_folder=current_user.download_folder,
+        company_export_category=current_user.company_export_category,
+        finance_export_category=current_user.finance_export_category,
     )
 
 
@@ -120,9 +130,19 @@ async def update_user_settings(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    current_user.download_folder = _normalize_download_folder(payload.download_folder)
+    payload_data = payload.model_dump(exclude_unset=True)
+
+    if "download_folder" in payload_data:
+        current_user.download_folder = _normalize_user_setting_value(payload.download_folder)
+    if "company_export_category" in payload_data:
+        current_user.company_export_category = _normalize_user_setting_value(payload.company_export_category)
+    if "finance_export_category" in payload_data:
+        current_user.finance_export_category = _normalize_user_setting_value(payload.finance_export_category)
+
     await db.commit()
     await db.refresh(current_user)
     return UserSettingsResponse(
-        download_folder=current_user.download_folder
+        download_folder=current_user.download_folder,
+        company_export_category=current_user.company_export_category,
+        finance_export_category=current_user.finance_export_category,
     )

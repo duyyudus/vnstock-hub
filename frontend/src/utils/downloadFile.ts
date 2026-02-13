@@ -5,6 +5,7 @@ export type DownloadMode = 'custom-folder' | 'browser-default';
 interface DownloadBlobWithPreferenceInput {
     blob: Blob;
     filename: string;
+    subdirectories?: string[];
     userId: number | null | undefined;
     downloadFolder: string | null | undefined;
 }
@@ -12,6 +13,11 @@ interface DownloadBlobWithPreferenceInput {
 const normalizeFilename = (value: string) => {
     const normalized = value.replace(/[\\/]+/g, '_').trim();
     return normalized || 'download.bin';
+};
+
+const normalizePathSegment = (value: string) => {
+    const normalized = value.replace(/[\\/]+/g, '_').replace(/[^A-Za-z0-9._-]+/g, '_').trim();
+    return normalized.replace(/^[._-]+|[._-]+$/g, '');
 };
 
 const downloadViaBrowser = (blob: Blob, filename: string): DownloadMode => {
@@ -67,7 +73,15 @@ export const downloadBlobWithPreference = async (
             return { mode: downloadViaBrowser(input.blob, input.filename) };
         }
 
-        const fileHandle = await handle.getFileHandle(normalizeFilename(input.filename), { create: true });
+        let targetDirectory = handle;
+        const segments = (input.subdirectories ?? [])
+            .map(normalizePathSegment)
+            .filter((segment) => segment.length > 0);
+        for (const segment of segments) {
+            targetDirectory = await targetDirectory.getDirectoryHandle(segment, { create: true });
+        }
+
+        const fileHandle = await targetDirectory.getFileHandle(normalizeFilename(input.filename), { create: true });
         const writable = await fileHandle.createWritable();
         await writable.write(input.blob);
         await writable.close();

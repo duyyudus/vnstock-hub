@@ -1,7 +1,15 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { stockApi } from '../../../api/stockApi';
-import type { Stock, BookmarkGroup } from '../../../api/stockApi';
+import type { Stock, BookmarkGroup, FinancialDataResponse } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
+import { downloadBlobWithPreference } from '../../../utils/downloadFile';
+import {
+    resolveCompanyExportCategory,
+    resolveFinanceExportCategory,
+    resolveTickerFolder,
+    rowsToCsv,
+    transformFinanceCsvValue,
+} from '../../../utils/exportCsv';
 
 interface StocksTableProps {
     /** List of stocks to display */
@@ -21,6 +29,37 @@ interface SortConfig {
     key: SortKey;
     direction: SortDirection;
 }
+
+interface ContextMenuState {
+    stock: Stock;
+    x: number;
+    y: number;
+}
+
+interface ExportNotice {
+    kind: 'success' | 'warning';
+    message: string;
+}
+
+interface ExportDefinition {
+    suffix: string;
+    fetch: (ticker: string) => Promise<FinancialDataResponse>;
+    transformValue?: (value: unknown, key: string, row: Record<string, unknown>) => unknown;
+}
+
+const COMPANY_EXPORT_DEFINITIONS: ExportDefinition[] = [
+    { suffix: 'overview', fetch: stockApi.getCompanyOverview },
+    { suffix: 'shareholders', fetch: stockApi.getShareholders },
+    { suffix: 'officers', fetch: stockApi.getOfficers },
+    { suffix: 'subsidiaries', fetch: stockApi.getSubsidiaries },
+];
+
+const FINANCE_EXPORT_DEFINITIONS: ExportDefinition[] = [
+    { suffix: 'income', fetch: stockApi.getIncomeStatement, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
+    { suffix: 'balance', fetch: stockApi.getBalanceSheet, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
+    { suffix: 'cashflow', fetch: stockApi.getCashFlow, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
+    { suffix: 'ratios', fetch: stockApi.getFinancialRatios, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
+];
 
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
@@ -42,6 +81,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const [bookmarkLoading, setBookmarkLoading] = useState(false);
     const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
     const [editingGroupName, setEditingGroupName] = useState('');
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [exportingContextMenu, setExportingContextMenu] = useState(false);
+    const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
     const groupTickerMap = useMemo(() => {
         const map = new Map<number, Set<string>>();
         bookmarkGroups.forEach((group) => {
@@ -110,7 +152,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         return { text, className };
     };
 
-    const getErrorMessage = (error: unknown) => {
+    const getErrorMessage = (error: unknown, fallback: string) => {
         if (typeof error === 'object' && error && 'response' in error) {
             const response = (error as { response?: { data?: { detail?: string } } }).response;
             if (response?.data?.detail) {
@@ -120,7 +162,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         if (error instanceof Error) {
             return error.message;
         }
-        return 'Unable to update bookmarks.';
+        return fallback;
     };
 
     const openBookmarkDialog = (stock: Stock) => {
@@ -155,7 +197,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             }
             onBookmarksUpdated?.(groupId);
         } catch (err) {
-            setBookmarkError(getErrorMessage(err));
+            setBookmarkError(getErrorMessage(err, 'Unable to update bookmarks.'));
         } finally {
             setBookmarkLoading(false);
         }
@@ -179,7 +221,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             setNewGroupName('');
             onBookmarksUpdated?.(group.id);
         } catch (err) {
-            setBookmarkError(getErrorMessage(err));
+            setBookmarkError(getErrorMessage(err, 'Unable to update bookmarks.'));
         } finally {
             setBookmarkLoading(false);
         }
@@ -213,7 +255,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             setEditingGroupId(null);
             setEditingGroupName('');
         } catch (err) {
-            setBookmarkError(getErrorMessage(err));
+            setBookmarkError(getErrorMessage(err, 'Unable to update bookmarks.'));
         } finally {
             setBookmarkLoading(false);
         }
@@ -236,10 +278,132 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                 cancelEditGroup();
             }
         } catch (err) {
-            setBookmarkError(getErrorMessage(err));
+            setBookmarkError(getErrorMessage(err, 'Unable to update bookmarks.'));
         } finally {
             setBookmarkLoading(false);
         }
+    };
+
+    useEffect(() => {
+        if (!contextMenu) {
+            return;
+        }
+
+        const handlePointerDown = () => {
+            setContextMenu(null);
+        };
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setContextMenu(null);
+            }
+        };
+        const handleScroll = () => {
+            setContextMenu(null);
+        };
+
+        window.addEventListener('mousedown', handlePointerDown);
+        window.addEventListener('keydown', handleEscape);
+        window.addEventListener('scroll', handleScroll, true);
+
+        return () => {
+            window.removeEventListener('mousedown', handlePointerDown);
+            window.removeEventListener('keydown', handleEscape);
+            window.removeEventListener('scroll', handleScroll, true);
+        };
+    }, [contextMenu]);
+
+    const handleTickerContextMenu = (event: React.MouseEvent<HTMLButtonElement>, stock: Stock) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setExportNotice(null);
+        setContextMenu({
+            stock,
+            x: event.clientX,
+            y: event.clientY,
+        });
+    };
+
+    const runTickerExport = async (
+        stock: Stock,
+        datasetName: 'company' | 'finance',
+        exportDefinitions: ExportDefinition[],
+        category: string,
+    ) => {
+        if (exportingContextMenu) {
+            return;
+        }
+
+        setExportingContextMenu(true);
+        setContextMenu(null);
+        setExportNotice(null);
+
+        const tickerFolder = resolveTickerFolder(stock.ticker);
+        const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
+        let successCount = 0;
+        let failedCount = 0;
+        let browserFallbackCount = 0;
+
+        for (const definition of exportDefinitions) {
+            try {
+                const response = await definition.fetch(stock.ticker);
+                const csvContent = rowsToCsv(response.data, definition.transformValue);
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+                const result = await downloadBlobWithPreference({
+                    blob,
+                    filename: `${definition.suffix}.csv`,
+                    subdirectories: [tickerFolder, category],
+                    userId: user?.id,
+                    downloadFolder: user?.download_folder,
+                });
+                successCount += 1;
+                if (result.mode === 'browser-default') {
+                    browserFallbackCount += 1;
+                }
+            } catch (error) {
+                failedCount += 1;
+                console.error(`Failed to export ${datasetName} ${definition.suffix} for ${stock.ticker}:`, error);
+            }
+        }
+
+        const total = exportDefinitions.length;
+        if (failedCount === 0) {
+            if (hasCustomFolderPreference && browserFallbackCount > 0) {
+                setExportNotice({
+                    kind: 'warning',
+                    message: `Exported ${total}/${total} ${datasetName} files. ${browserFallbackCount} saved to browser default location.`,
+                });
+            } else if (hasCustomFolderPreference) {
+                setExportNotice({
+                    kind: 'success',
+                    message: `Exported ${total} ${datasetName} files to ${tickerFolder}/${category}.`,
+                });
+            } else {
+                setExportNotice({
+                    kind: 'success',
+                    message: `Exported ${total} ${datasetName} files using browser default location.`,
+                });
+            }
+        } else {
+            const fallbackMessage = hasCustomFolderPreference && browserFallbackCount > 0
+                ? ` ${browserFallbackCount} saved to browser default location.`
+                : '';
+            setExportNotice({
+                kind: 'warning',
+                message: `Exported ${successCount}/${total} ${datasetName} files. ${failedCount} failed.${fallbackMessage}`,
+            });
+        }
+
+        setExportingContextMenu(false);
+    };
+
+    const handleExportCompanyData = async (stock: Stock) => {
+        const category = resolveCompanyExportCategory(user?.company_export_category);
+        await runTickerExport(stock, 'company', COMPANY_EXPORT_DEFINITIONS, category);
+    };
+
+    const handleExportFinanceData = async (stock: Stock) => {
+        const category = resolveFinanceExportCategory(user?.finance_export_category);
+        await runTickerExport(stock, 'finance', FINANCE_EXPORT_DEFINITIONS, category);
     };
 
     const handleSort = (key: SortKey) => {
@@ -299,6 +463,11 @@ export const StocksTable: React.FC<StocksTableProps> = ({
 
     return (
         <div className="overflow-x-auto rounded-xl">
+            {exportNotice ? (
+                <div className={`alert mb-2 text-sm ${exportNotice.kind === 'warning' ? 'alert-warning' : 'alert-success'}`}>
+                    <span>{exportNotice.message}</span>
+                </div>
+            ) : null}
             <table className="table table-zebra table-sm">
                 <thead className="bg-base-200">
                     <tr>
@@ -507,6 +676,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                                     isInPortfolio ? 'text-accent' : 'text-primary'
                                                 }`}
                                                 onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
+                                                onContextMenu={(event) => handleTickerContextMenu(event, stock)}
                                                 title={`View financial details for ${stock.ticker}`}
                                             >
                                                 {stock.ticker.slice(0, 3)}
@@ -567,6 +737,32 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     )}
                 </tbody>
             </table>
+
+            {contextMenu ? (
+                <div
+                    className="fixed z-[80] min-w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => event.preventDefault()}
+                >
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm w-full justify-start"
+                        onClick={() => void handleExportCompanyData(contextMenu.stock)}
+                        disabled={exportingContextMenu}
+                    >
+                        {exportingContextMenu ? 'Exporting...' : 'Export all company data'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm w-full justify-start"
+                        onClick={() => void handleExportFinanceData(contextMenu.stock)}
+                        disabled={exportingContextMenu}
+                    >
+                        {exportingContextMenu ? 'Exporting...' : 'Export all finance data'}
+                    </button>
+                </div>
+            ) : null}
 
             {isLoggedIn ? (
                 <dialog ref={dialogRef} className="modal">

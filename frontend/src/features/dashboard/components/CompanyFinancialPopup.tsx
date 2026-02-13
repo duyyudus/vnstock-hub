@@ -3,6 +3,12 @@ import { stockApi } from '../../../api/stockApi';
 import type { FinancialDataResponse } from '../../../api/stockApi';
 import useAuthUser from '../../auth/useAuthUser';
 import { downloadBlobWithPreference } from '../../../utils/downloadFile';
+import {
+    resolveFinanceExportCategory,
+    resolveTickerFolder,
+    rowsToCsv,
+    transformFinanceCsvValue,
+} from '../../../utils/exportCsv';
 
 interface Position {
     x: number;
@@ -37,64 +43,6 @@ const EXPORTABLE_TAB_SUFFIX: Partial<Record<TabType, string>> = {
     ratios: 'ratios',
 };
 
-type CsvRow = Record<string, unknown>;
-
-const CSV_ESCAPE_PATTERN = /[",\r\n]/;
-
-const escapeCsvValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-        return '';
-    }
-
-    const serialized = String(value);
-    if (!CSV_ESCAPE_PATTERN.test(serialized)) {
-        return serialized;
-    }
-
-    return `"${serialized.replace(/"/g, '""')}"`;
-};
-
-const rowsToCsv = (
-    rows: CsvRow[],
-    transformValue?: (value: unknown, key: string, row: CsvRow) => unknown
-) => {
-    if (rows.length === 0) {
-        return '';
-    }
-
-    const headers: string[] = [];
-    const seenHeaders = new Set<string>();
-
-    rows.forEach((row) => {
-        Object.keys(row).forEach((key) => {
-            if (!seenHeaders.has(key)) {
-                seenHeaders.add(key);
-                headers.push(key);
-            }
-        });
-    });
-
-    if (headers.length === 0) {
-        return '';
-    }
-
-    const lines = [headers.map((header) => escapeCsvValue(header)).join(',')];
-
-    rows.forEach((row) => {
-        lines.push(
-            headers
-                .map((header) => {
-                    const rawValue = row[header];
-                    const transformedValue = transformValue ? transformValue(rawValue, header, row) : rawValue;
-                    return escapeCsvValue(transformedValue);
-                })
-                .join(',')
-        );
-    });
-
-    return lines.join('\r\n');
-};
-
 export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     ticker,
     companyName,
@@ -107,7 +55,7 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [data, setData] = useState<CsvRow[]>([]);
+    const [data, setData] = useState<Record<string, unknown>[]>([]);
     const [position, setPosition] = useState<Position>(initialPosition);
     const [size, setSize] = useState<Size>({ width: 900, height: 550 });
     const [attributeWidth, setAttributeWidth] = useState(200);
@@ -312,39 +260,15 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
         }
         setExportFeedback(null);
 
-        const csvContent = rowsToCsv(data, (value, key) => {
-            if (value === null || value === undefined) {
-                return '';
-            }
-            if (typeof value !== 'number') {
-                return value;
-            }
-
-            const lowerKey = key.toLowerCase();
-            const isNonCurrencyMetric = lowerKey.includes('percent')
-                || lowerKey.includes('quantity')
-                || lowerKey.includes('volume')
-                || lowerKey.includes('share');
-
-            if (isNonCurrencyMetric) {
-                return value;
-            }
-
-            if (Math.abs(value) > 1e6) {
-                return Math.round(value / 1e6) / 1000;
-            }
-
-            return value;
-        });
-        const normalizedTicker = ticker
-            .toUpperCase()
-            .replace(/[^A-Za-z0-9._-]+/g, '_')
-            .replace(/^[._-]+|[._-]+$/g, '') || 'TICKER';
-        const filename = `${normalizedTicker}_${exportSuffix}.csv`;
+        const csvContent = rowsToCsv(data, transformFinanceCsvValue);
+        const tickerFolder = resolveTickerFolder(ticker);
+        const financeCategory = resolveFinanceExportCategory(user?.finance_export_category);
+        const filename = `${exportSuffix}.csv`;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
         const result = await downloadBlobWithPreference({
             blob,
             filename,
+            subdirectories: [tickerFolder, financeCategory],
             userId: user?.id,
             downloadFolder: user?.download_folder,
         });

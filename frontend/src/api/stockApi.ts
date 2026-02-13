@@ -124,6 +124,8 @@ const normalizeAuthUser = (user: AuthUser): AuthUser => {
     return {
         ...user,
         download_folder: user.download_folder ?? null,
+        company_export_category: user.company_export_category ?? null,
+        finance_export_category: user.finance_export_category ?? null,
     };
 };
 
@@ -458,6 +460,8 @@ export interface AuthUser {
     id: number;
     email: string;
     download_folder: string | null;
+    company_export_category: string | null;
+    finance_export_category: string | null;
     is_active: boolean;
     created_at: string;
     last_login: string | null;
@@ -482,10 +486,14 @@ export interface LoginRequest {
 
 export interface UserSettingsResponse {
     download_folder: string | null;
+    company_export_category: string | null;
+    finance_export_category: string | null;
 }
 
 export interface UpdateUserSettingsRequest {
-    download_folder: string | null;
+    download_folder?: string | null;
+    company_export_category?: string | null;
+    finance_export_category?: string | null;
 }
 
 // Portfolio types

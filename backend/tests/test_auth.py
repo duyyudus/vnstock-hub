@@ -22,6 +22,8 @@ async def test_register_user(client: AsyncClient):
     data = response.json()
     assert data["user"]["email"] == "test_register@example.com"
     assert data["user"]["download_folder"] is None
+    assert data["user"]["company_export_category"] is None
+    assert data["user"]["finance_export_category"] is None
     assert "access_token" in data
     assert data["token_type"] == "bearer"
 
@@ -59,6 +61,8 @@ async def test_login_user(client: AsyncClient):
     data = response.json()
     assert data["user"]["email"] == "login_user@example.com"
     assert data["user"]["download_folder"] is None
+    assert data["user"]["company_export_category"] is None
+    assert data["user"]["finance_export_category"] is None
     assert "access_token" in data
 
 
@@ -102,24 +106,42 @@ async def test_auth_settings_update_and_get(client: AsyncClient):
     )
     assert register_response.status_code == 201
     assert register_response.json()["user"]["download_folder"] is None
+    assert register_response.json()["user"]["company_export_category"] is None
+    assert register_response.json()["user"]["finance_export_category"] is None
 
     headers = await _login_and_get_auth_headers(client, email, password)
 
     get_response = await client.get("/api/v1/auth/settings", headers=headers)
     assert get_response.status_code == 200
-    assert get_response.json() == {"download_folder": None}
+    assert get_response.json() == {
+        "download_folder": None,
+        "company_export_category": None,
+        "finance_export_category": None,
+    }
 
     update_response = await client.patch(
         "/api/v1/auth/settings",
-        json={"download_folder": "Reports/Exports"},
+        json={
+            "download_folder": "Reports/Exports",
+            "company_export_category": "company_data",
+            "finance_export_category": "finance_data",
+        },
         headers=headers,
     )
     assert update_response.status_code == 200
-    assert update_response.json() == {"download_folder": "Reports/Exports"}
+    assert update_response.json() == {
+        "download_folder": "Reports/Exports",
+        "company_export_category": "company_data",
+        "finance_export_category": "finance_data",
+    }
 
     get_after_update_response = await client.get("/api/v1/auth/settings", headers=headers)
     assert get_after_update_response.status_code == 200
-    assert get_after_update_response.json() == {"download_folder": "Reports/Exports"}
+    assert get_after_update_response.json() == {
+        "download_folder": "Reports/Exports",
+        "company_export_category": "company_data",
+        "finance_export_category": "finance_data",
+    }
 
     login_after_set = await client.post(
         "/api/v1/auth/login",
@@ -127,14 +149,24 @@ async def test_auth_settings_update_and_get(client: AsyncClient):
     )
     assert login_after_set.status_code == 200
     assert login_after_set.json()["user"]["download_folder"] == "Reports/Exports"
+    assert login_after_set.json()["user"]["company_export_category"] == "company_data"
+    assert login_after_set.json()["user"]["finance_export_category"] == "finance_data"
 
     clear_response = await client.patch(
         "/api/v1/auth/settings",
-        json={"download_folder": "   "},
+        json={
+            "download_folder": "   ",
+            "company_export_category": "   ",
+            "finance_export_category": "",
+        },
         headers=headers,
     )
     assert clear_response.status_code == 200
-    assert clear_response.json() == {"download_folder": None}
+    assert clear_response.json() == {
+        "download_folder": None,
+        "company_export_category": None,
+        "finance_export_category": None,
+    }
 
     login_after_update = await client.post(
         "/api/v1/auth/login",
@@ -142,3 +174,5 @@ async def test_auth_settings_update_and_get(client: AsyncClient):
     )
     assert login_after_update.status_code == 200
     assert login_after_update.json()["user"]["download_folder"] is None
+    assert login_after_update.json()["user"]["company_export_category"] is None
+    assert login_after_update.json()["user"]["finance_export_category"] is None
