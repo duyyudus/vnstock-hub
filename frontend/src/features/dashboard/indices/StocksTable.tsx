@@ -105,6 +105,19 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         return new Set(portfolioTickers.map((ticker) => ticker.toUpperCase()));
     }, [portfolioTickers]);
 
+    useEffect(() => {
+        if (!exportNotice) {
+            return;
+        }
+        const timeoutId = window.setTimeout(() => {
+            setExportNotice(null);
+        }, 2000);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [exportNotice]);
+
     // Formatters
     const formatPrice = (price: number): string => {
         return new Intl.NumberFormat('en-US').format(price);

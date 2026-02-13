@@ -447,6 +447,19 @@ export const PortfolioTab: React.FC = () => {
         };
     }, [positions]);
 
+    useEffect(() => {
+        if (!csvExportNotice) {
+            return;
+        }
+        const timeoutId = window.setTimeout(() => {
+            setCsvExportNotice(null);
+        }, 2000);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [csvExportNotice]);
+
     const handleAddInputChange = (field: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) => {
         setAddFormState((prev) => ({
             ...prev,

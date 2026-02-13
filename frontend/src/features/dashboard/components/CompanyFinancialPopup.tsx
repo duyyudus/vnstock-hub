@@ -119,6 +119,19 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     }, [ticker, activeTab]);
 
     useEffect(() => {
+        if (!exportFeedback) {
+            return;
+        }
+        const timeoutId = window.setTimeout(() => {
+            setExportFeedback(null);
+        }, 2000);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [exportFeedback]);
+
+    useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 // Find all open popups
