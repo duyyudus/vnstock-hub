@@ -33,6 +33,24 @@ class SymbolSyncMeta:
     listing_date: date | None
 
 
+@dataclass(frozen=True)
+class RequestHistorySyncResult:
+    sync_performed: bool = False
+    sync_timed_out: bool = False
+    sync_error: str | None = None
+    updated_through: str | None = None
+    repaired_missing_dates: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "sync_performed": self.sync_performed,
+            "sync_timed_out": self.sync_timed_out,
+            "sync_error": self.sync_error,
+            "updated_through": self.updated_through,
+            "repaired_missing_dates": self.repaired_missing_dates,
+        }
+
+
 class PriceSyncService:
     """Deterministic stock price synchronization and gap-audit orchestration."""
 
@@ -45,6 +63,9 @@ class PriceSyncService:
         self._sync_lock = asyncio.Lock()
         self._sync_pacer_lock = asyncio.Lock()
         self._sync_last_request_monotonic: float | None = None
+        self._request_sync_tasks: Dict[str, asyncio.Task[RequestHistorySyncResult]] = {}
+        self._request_sync_tasks_lock = asyncio.Lock()
+        self._request_sync_timeout_default_seconds = 12.0
 
         self._sync_chunk_days = max(1, int(settings.sync_chunk_days))
         self._sync_target_rpm = max(1, int(settings.sync_target_rpm))
@@ -66,6 +87,18 @@ class PriceSyncService:
 
     async def stop_background_tasks(self) -> None:
         """Cancel running sync task on shutdown."""
+        request_tasks_to_cancel: List[asyncio.Task[RequestHistorySyncResult]] = []
+        async with self._request_sync_tasks_lock:
+            request_tasks_to_cancel = [
+                task for task in self._request_sync_tasks.values()
+                if not task.done()
+            ]
+            self._request_sync_tasks.clear()
+        for task in request_tasks_to_cancel:
+            task.cancel()
+        if request_tasks_to_cancel:
+            await asyncio.gather(*request_tasks_to_cancel, return_exceptions=True)
+
         async with self._sync_lock:
             if self._sync_task and not self._sync_task.done():
                 self._sync_task.cancel()
@@ -113,6 +146,160 @@ class PriceSyncService:
             "message": "Price sync started",
             "state": "running",
         }
+
+    async def sync_symbol_history_for_request(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        timeout_seconds: float | None = None,
+    ) -> Dict[str, Any]:
+        symbol_clean = self._normalize_symbol(symbol)
+        if not symbol_clean:
+            return RequestHistorySyncResult(
+                sync_error="Invalid symbol",
+            ).to_dict()
+
+        safe_timeout = self._request_sync_timeout_default_seconds
+        if timeout_seconds is not None:
+            try:
+                safe_timeout = float(timeout_seconds)
+            except (TypeError, ValueError):
+                safe_timeout = self._request_sync_timeout_default_seconds
+            if safe_timeout <= 0:
+                safe_timeout = self._request_sync_timeout_default_seconds
+
+        task = await self._get_or_create_request_sync_task(
+            symbol=symbol_clean,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        try:
+            result = await asyncio.wait_for(asyncio.shield(task), timeout=safe_timeout)
+            return result.to_dict()
+        except asyncio.TimeoutError:
+            return RequestHistorySyncResult(
+                sync_timed_out=True,
+                updated_through=await self._get_symbol_latest_date_iso(symbol_clean),
+            ).to_dict()
+        except Exception as e:
+            message = str(e)[:500]
+            price_sync_logger.warning(
+                "Request-path price sync failed for %s (%s -> %s): %s",
+                symbol_clean,
+                start_date,
+                end_date,
+                message,
+            )
+            return RequestHistorySyncResult(
+                sync_error=message,
+                updated_through=await self._get_symbol_latest_date_iso(symbol_clean),
+            ).to_dict()
+
+    async def _get_or_create_request_sync_task(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> asyncio.Task[RequestHistorySyncResult]:
+        async with self._request_sync_tasks_lock:
+            existing_task = self._request_sync_tasks.get(symbol)
+            if existing_task and not existing_task.done():
+                return existing_task
+
+            task = asyncio.create_task(
+                self._sync_symbol_history_for_request_task(
+                    symbol=symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+            self._request_sync_tasks[symbol] = task
+
+            def _cleanup(done_task: asyncio.Task[RequestHistorySyncResult]) -> None:
+                current_task = self._request_sync_tasks.get(symbol)
+                if current_task is done_task:
+                    self._request_sync_tasks.pop(symbol, None)
+
+            task.add_done_callback(_cleanup)
+            return task
+
+    async def _sync_symbol_history_for_request_task(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> RequestHistorySyncResult:
+        try:
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+
+            today = date.today()
+            bounded_end = min(end_date, today)
+            bounded_start = min(start_date, bounded_end)
+
+            state = await self._get_or_create_symbol_state(symbol, listing_date=None)
+            symbol_start_date = state.listing_date
+            _, latest_local = await self._get_symbol_bounds(symbol)
+
+            if latest_local is None:
+                if symbol_start_date is None:
+                    loop = asyncio.get_event_loop()
+                    sync_executor = self._ensure_sync_executor()
+                    symbol_start_date = await loop.run_in_executor(
+                        sync_executor,
+                        self._discover_oldest_history_date,
+                        symbol,
+                    )
+                if symbol_start_date is None:
+                    raise RuntimeError("Unable to determine symbol start date")
+                incremental_start = symbol_start_date
+            else:
+                overlap_days = max(0, self.SYNC_OVERLAP_DAYS - 1)
+                incremental_start = latest_local - timedelta(days=overlap_days)
+                if symbol_start_date is not None:
+                    incremental_start = max(symbol_start_date, incremental_start)
+
+            await self._set_symbol_sync_running(
+                symbol=symbol,
+                listing_date=symbol_start_date or bounded_start,
+            )
+
+            cursor = incremental_start
+            while cursor <= today:
+                chunk_end = min(cursor + timedelta(days=self._sync_chunk_days - 1), today)
+                await self._run_sync_chunk_with_retry(symbol, cursor, chunk_end)
+                cursor = chunk_end + timedelta(days=1)
+
+            local_dates = await self._get_local_history_dates(symbol, bounded_start, bounded_end)
+            upstream_dates = await self._fetch_remote_history_dates(symbol, bounded_start, bounded_end)
+            missing_dates = sorted(upstream_dates - local_dates)
+
+            repaired_missing_dates = 0
+            if missing_dates:
+                repaired_missing_dates = await self._repair_missing_dates(symbol, missing_dates)
+            else:
+                await self._mark_symbol_sync_result(symbol)
+
+            return RequestHistorySyncResult(
+                sync_performed=True,
+                updated_through=await self._get_symbol_latest_date_iso(symbol),
+                repaired_missing_dates=repaired_missing_dates,
+            )
+        except Exception as e:
+            message = str(e)[:500]
+            await self._mark_symbol_error(symbol, f"Request sync failed: {message}")
+            price_sync_logger.warning(
+                "Request-path price sync task failed for %s (%s -> %s): %s",
+                symbol,
+                start_date,
+                end_date,
+                message,
+            )
+            return RequestHistorySyncResult(
+                sync_error=message,
+                updated_through=await self._get_symbol_latest_date_iso(symbol),
+            )
 
     async def run_audit_sync(
         self,
@@ -1086,6 +1273,12 @@ class PriceSyncService:
             result = await session.execute(stmt)
             row = result.one()
             return row[0], row[1]
+
+    async def _get_symbol_latest_date_iso(self, symbol: str) -> str | None:
+        _, latest = await self._get_symbol_bounds(symbol)
+        if latest is None:
+            return None
+        return latest.isoformat()
 
     def _normalize_symbol(self, symbol: Any) -> str:
         if symbol is None:

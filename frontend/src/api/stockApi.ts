@@ -357,6 +357,11 @@ export interface VolumeHistoryResponse {
     company_name: string;
     data: VolumeDataPoint[];
     count: number;
+    sync_performed: boolean;
+    sync_timed_out: boolean;
+    sync_error: string | null;
+    updated_through: string | null;
+    repaired_missing_dates: number;
 }
 
 export interface PriceDataPoint {
@@ -369,6 +374,11 @@ export interface PriceHistoryResponse {
     company_name: string;
     data: PriceDataPoint[];
     count: number;
+    sync_performed: boolean;
+    sync_timed_out: boolean;
+    sync_error: string | null;
+    updated_through: string | null;
+    repaired_missing_dates: number;
 }
 
 // Weekly prices types for growth chart

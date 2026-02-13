@@ -40,6 +40,9 @@ class VnstockService:
         self.company = CompanyService()
         self.metadata = StockMetadataService(finance_service=self.finance)
         self.price_sync = PriceSyncService(history=self.history)
+        self.history.set_on_demand_history_sync_handler(
+            self.price_sync.sync_symbol_history_for_request
+        )
         self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
         self.company_data_sync = CompanyDataSyncService(company=self.company)
         self.indices = IndicesService()

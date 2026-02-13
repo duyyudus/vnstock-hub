@@ -99,6 +99,11 @@ class VolumeHistoryResponse(BaseModel):
     company_name: str
     data: List[VolumeDataPoint]
     count: int
+    sync_performed: bool = False
+    sync_timed_out: bool = False
+    sync_error: Optional[str] = None
+    updated_through: Optional[str] = None
+    repaired_missing_dates: int = 0
 
 
 class PriceDataPoint(BaseModel):
@@ -113,6 +118,11 @@ class PriceHistoryResponse(BaseModel):
     company_name: str
     data: List[PriceDataPoint]
     count: int
+    sync_performed: bool = False
+    sync_timed_out: bool = False
+    sync_error: Optional[str] = None
+    updated_through: Optional[str] = None
+    repaired_missing_dates: int = 0
 
 
 class WeeklyPricePoint(BaseModel):
@@ -462,7 +472,12 @@ async def get_volume_history(symbol: str, days: int = 30):
         symbol=result["symbol"],
         company_name=result["company_name"],
         data=[VolumeDataPoint(**point) for point in result["data"]],
-        count=len(result["data"])
+        count=len(result["data"]),
+        sync_performed=bool(result.get("sync_performed", False)),
+        sync_timed_out=bool(result.get("sync_timed_out", False)),
+        sync_error=result.get("sync_error"),
+        updated_through=result.get("updated_through"),
+        repaired_missing_dates=int(result.get("repaired_missing_dates", 0)),
     )
 
 
@@ -483,7 +498,12 @@ async def get_price_history(symbol: str, days: int = 30):
         symbol=result["symbol"],
         company_name=result["company_name"],
         data=[PriceDataPoint(**point) for point in result["data"]],
-        count=len(result["data"])
+        count=len(result["data"]),
+        sync_performed=bool(result.get("sync_performed", False)),
+        sync_timed_out=bool(result.get("sync_timed_out", False)),
+        sync_error=result.get("sync_error"),
+        updated_through=result.get("updated_through"),
+        repaired_missing_dates=int(result.get("repaired_missing_dates", 0)),
     )
 
 

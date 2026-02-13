@@ -29,6 +29,11 @@ interface VolumeChartPopupProps {
     onFocus: () => void;
 }
 
+interface CustomTooltipProps {
+    active?: boolean;
+    payload?: Array<{ payload: { date: string; volume: number; value: number | null } }>;
+}
+
 export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
     ticker,
     companyName,
@@ -158,7 +163,7 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
         return `${value.toFixed(2)} B VND`;
     };
 
-    const CustomTooltip = ({ active, payload }: any) => {
+    const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
             const data = payload[0].payload;
             return (
@@ -175,6 +180,18 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
         }
         return null;
     };
+
+    const syncBanner = volumeData?.sync_error
+        ? {
+            className: 'alert alert-warning mb-3 py-2',
+            text: `Background sync issue: ${volumeData.sync_error}`,
+        }
+        : volumeData?.sync_timed_out
+            ? {
+                className: 'alert alert-info mb-3 py-2',
+                text: 'Showing cached data while background sync continues.',
+            }
+            : null;
 
     return (
         <div
@@ -220,26 +237,35 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                         <span>{error}</span>
                     </div>
                 ) : volumeData && volumeData.data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={volumeData.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-                            <XAxis
-                                dataKey="date"
-                                tickFormatter={formatDate}
-                                tick={{ fontSize: 12 }}
-                                stroke="currentColor"
-                                opacity={0.5}
-                            />
-                            <YAxis
-                                tickFormatter={formatVolume}
-                                tick={{ fontSize: 12 }}
-                                stroke="currentColor"
-                                opacity={0.5}
-                            />
-                            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
-                            <Bar dataKey="volume" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                    <div className="h-full flex flex-col">
+                        {syncBanner ? (
+                            <div className={syncBanner.className}>
+                                <span className="text-xs">{syncBanner.text}</span>
+                            </div>
+                        ) : null}
+                        <div className="flex-1 min-h-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={volumeData.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
+                                    <XAxis
+                                        dataKey="date"
+                                        tickFormatter={formatDate}
+                                        tick={{ fontSize: 12 }}
+                                        stroke="currentColor"
+                                        opacity={0.5}
+                                    />
+                                    <YAxis
+                                        tickFormatter={formatVolume}
+                                        tick={{ fontSize: 12 }}
+                                        stroke="currentColor"
+                                        opacity={0.5}
+                                    />
+                                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                                    <Bar dataKey="volume" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
                 ) : (
                     <div className="flex items-center justify-center h-full text-base-content/50">
                         No volume data available

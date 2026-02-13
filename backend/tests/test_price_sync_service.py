@@ -9,7 +9,11 @@ import pytest
 import app.services.vnstock_service.price_sync as price_sync_module
 from app.services.sync_status import sync_status
 from app.services.vnstock_service.history import HistoryService
-from app.services.vnstock_service.price_sync import PriceSyncService, SymbolSyncMeta
+from app.services.vnstock_service.price_sync import (
+    PriceSyncService,
+    RequestHistorySyncResult,
+    SymbolSyncMeta,
+)
 
 
 @pytest.mark.asyncio
@@ -440,7 +444,7 @@ async def test_sync_symbol_uses_db_max_date_with_two_day_overlap(monkeypatch):
     bounds_calls = {"count": 0}
     chunk_starts = []
 
-    async def _fake_get_or_create_symbol_state(_symbol, _listing_date):
+    async def _fake_get_or_create_symbol_state(_symbol, listing_date=None):
         return SimpleNamespace(listing_date=date(2020, 1, 1))
 
     async def _fake_set_running(_symbol, _listing_date):
@@ -534,3 +538,141 @@ async def test_resolve_symbols_filter_returns_none_without_filters():
         index_symbol=None,
     )
     assert symbols is None
+
+
+@pytest.mark.asyncio
+async def test_request_sync_runs_incremental_overlap_and_repairs_requested_range(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    service._sync_chunk_days = 30
+    chunk_calls = []
+    repaired_calls = []
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    async def _fake_get_or_create_symbol_state(_symbol, listing_date=None):
+        return SimpleNamespace(listing_date=date(2020, 1, 1))
+
+    async def _fake_get_symbol_bounds(_symbol):
+        return date(2020, 1, 1), date(2026, 2, 8)
+
+    async def _fake_set_symbol_sync_running(symbol, listing_date):
+        return None
+
+    async def _fake_run_sync_chunk_with_retry(_symbol, start_date: date, end_date: date):
+        chunk_calls.append((start_date, end_date))
+        return 0
+
+    async def _fake_get_local_history_dates(_symbol, _start_date, _end_date):
+        return {date(2026, 2, 5)}
+
+    async def _fake_fetch_remote_history_dates(_symbol, _start_date, _end_date):
+        return {date(2026, 2, 5), date(2026, 2, 6)}
+
+    async def _fake_repair_missing_dates(_symbol, missing_dates):
+        repaired_calls.append(list(missing_dates))
+        return len(missing_dates)
+
+    async def _fake_latest_iso(_symbol):
+        return "2026-02-11"
+
+    monkeypatch.setattr(price_sync_module, "date", FixedDate)
+    monkeypatch.setattr(service, "_get_or_create_symbol_state", _fake_get_or_create_symbol_state)
+    monkeypatch.setattr(service, "_get_symbol_bounds", _fake_get_symbol_bounds)
+    monkeypatch.setattr(service, "_set_symbol_sync_running", _fake_set_symbol_sync_running)
+    monkeypatch.setattr(service, "_run_sync_chunk_with_retry", _fake_run_sync_chunk_with_retry)
+    monkeypatch.setattr(service, "_get_local_history_dates", _fake_get_local_history_dates)
+    monkeypatch.setattr(service, "_fetch_remote_history_dates", _fake_fetch_remote_history_dates)
+    monkeypatch.setattr(service, "_repair_missing_dates", _fake_repair_missing_dates)
+    monkeypatch.setattr(service, "_get_symbol_latest_date_iso", _fake_latest_iso)
+
+    result = await service.sync_symbol_history_for_request(
+        symbol="aaax",
+        start_date=date(2026, 2, 1),
+        end_date=date(2026, 2, 11),
+        timeout_seconds=5.0,
+    )
+
+    assert result["sync_performed"] is True
+    assert result["sync_timed_out"] is False
+    assert result["sync_error"] is None
+    assert result["updated_through"] == "2026-02-11"
+    assert result["repaired_missing_dates"] == 1
+    assert chunk_calls == [(date(2026, 2, 7), date(2026, 2, 11))]
+    assert repaired_calls == [[date(2026, 2, 6)]]
+
+
+@pytest.mark.asyncio
+async def test_request_sync_deduplicates_concurrent_requests_for_same_symbol(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    executions = {"count": 0}
+
+    async def _fake_request_task(symbol, start_date, end_date):
+        executions["count"] += 1
+        await asyncio.sleep(0.03)
+        return RequestHistorySyncResult(
+            sync_performed=True,
+            updated_through="2026-02-11",
+        )
+
+    monkeypatch.setattr(service, "_sync_symbol_history_for_request_task", _fake_request_task)
+
+    first, second = await asyncio.gather(
+        service.sync_symbol_history_for_request(
+            symbol="AAA",
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 2, 11),
+            timeout_seconds=1.0,
+        ),
+        service.sync_symbol_history_for_request(
+            symbol="AAA",
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 2, 11),
+            timeout_seconds=1.0,
+        ),
+    )
+
+    assert executions["count"] == 1
+    assert first["sync_performed"] is True
+    assert second["sync_performed"] is True
+
+
+@pytest.mark.asyncio
+async def test_request_sync_timeout_returns_fallback_and_task_continues(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    started = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def _fake_request_task(symbol, start_date, end_date):
+        started.set()
+        await asyncio.sleep(0.05)
+        finished.set()
+        return RequestHistorySyncResult(
+            sync_performed=True,
+            updated_through="2026-02-11",
+        )
+
+    async def _fake_latest_iso(_symbol):
+        return "2026-02-10"
+
+    monkeypatch.setattr(service, "_sync_symbol_history_for_request_task", _fake_request_task)
+    monkeypatch.setattr(service, "_get_symbol_latest_date_iso", _fake_latest_iso)
+
+    result = await service.sync_symbol_history_for_request(
+        symbol="AAA",
+        start_date=date(2026, 2, 1),
+        end_date=date(2026, 2, 11),
+        timeout_seconds=0.01,
+    )
+
+    assert started.is_set()
+    assert result["sync_performed"] is False
+    assert result["sync_timed_out"] is True
+    assert result["sync_error"] is None
+    assert result["updated_through"] == "2026-02-10"
+
+    await asyncio.wait_for(finished.wait(), timeout=1.0)
+    await asyncio.sleep(0)
+    assert "AAA" not in service._request_sync_tasks

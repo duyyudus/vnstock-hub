@@ -78,7 +78,12 @@ async def test_get_volume_history(client):
     mock_volume = {
         "symbol": "TCB",
         "company_name": "Techcombank",
-        "data": [{"date": "2023-01-01", "volume": 1000, "value": 50.0}]
+        "data": [{"date": "2023-01-01", "volume": 1000, "value": 50.0}],
+        "sync_performed": True,
+        "sync_timed_out": False,
+        "sync_error": None,
+        "updated_through": "2023-01-01",
+        "repaired_missing_dates": 2,
     }
     with patch.object(vnstock_service, 'get_volume_history', return_value=mock_volume):
         response = await client.get("/api/v1/stocks/history/TCB/volume")
@@ -86,6 +91,11 @@ async def test_get_volume_history(client):
         data = response.json()
     assert data["symbol"] == "TCB"
     assert data["data"][0]["volume"] == 1000
+    assert data["sync_performed"] is True
+    assert data["sync_timed_out"] is False
+    assert data["sync_error"] is None
+    assert data["updated_through"] == "2023-01-01"
+    assert data["repaired_missing_dates"] == 2
 
 
 @pytest.mark.asyncio
@@ -93,7 +103,12 @@ async def test_get_price_history(client):
     mock_prices = {
         "symbol": "TCB",
         "company_name": "Techcombank",
-        "data": [{"date": "2023-01-01", "close": 50100.0}]
+        "data": [{"date": "2023-01-01", "close": 50100.0}],
+        "sync_performed": False,
+        "sync_timed_out": True,
+        "sync_error": None,
+        "updated_through": "2022-12-30",
+        "repaired_missing_dates": 0,
     }
     with patch.object(vnstock_service, 'get_price_history', return_value=mock_prices):
         response = await client.get("/api/v1/stocks/history/TCB/price")
@@ -101,6 +116,11 @@ async def test_get_price_history(client):
         data = response.json()
     assert data["symbol"] == "TCB"
     assert data["data"][0]["close"] == 50100.0
+    assert data["sync_performed"] is False
+    assert data["sync_timed_out"] is True
+    assert data["sync_error"] is None
+    assert data["updated_through"] == "2022-12-30"
+    assert data["repaired_missing_dates"] == 0
 
 @pytest.mark.asyncio
 async def test_get_stock_quotes(client):

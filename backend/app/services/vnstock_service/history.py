@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Awaitable
 import asyncio
 import threading
 from datetime import datetime, date, timedelta
@@ -33,8 +33,7 @@ from .models import StockInfo
 # Weekly price history defaults
 HISTORY_COVERAGE_TOLERANCE_DAYS = 30
 WEEKLY_SYNC_LATEST_WINDOW_DAYS = 45
-VOLUME_HISTORY_STALE_DAYS = 7
-PRICE_HISTORY_STALE_DAYS = 7
+REQUEST_HISTORY_SYNC_TIMEOUT_SECONDS = 12.0
 
 
 class HistoryService:
@@ -47,6 +46,13 @@ class HistoryService:
         self._weekly_prices_retry_cooldown = timedelta(minutes=10)
         self._symbol_sync_locks: Dict[str, threading.Lock] = {}
         self._symbol_sync_locks_guard = threading.Lock()
+        self._request_sync_handler: Callable[[str, date, date, float], Awaitable[Dict[str, Any]]] | None = None
+
+    def set_on_demand_history_sync_handler(
+        self,
+        handler: Callable[[str, date, date, float], Awaitable[Dict[str, Any]]]
+    ) -> None:
+        self._request_sync_handler = handler
 
     def _get_symbol_sync_lock(self, symbol: str) -> threading.Lock:
         symbol_key = symbol[:3].upper()
@@ -367,6 +373,47 @@ class HistoryService:
                 bg_logger.error(f"Error syncing history for {symbol}: {e}")
                 continue
 
+    @staticmethod
+    def _default_request_sync_metadata() -> Dict[str, Any]:
+        return {
+            "sync_performed": False,
+            "sync_timed_out": False,
+            "sync_error": None,
+            "updated_through": None,
+            "repaired_missing_dates": 0,
+        }
+
+    async def _sync_history_for_request(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date
+    ) -> Dict[str, Any]:
+        if self._request_sync_handler is None:
+            return self._default_request_sync_metadata()
+
+        try:
+            result = await self._request_sync_handler(
+                symbol,
+                start_date,
+                end_date,
+                REQUEST_HISTORY_SYNC_TIMEOUT_SECONDS,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Error running request-path history sync for {symbol}: {e}"
+            )
+            fallback = self._default_request_sync_metadata()
+            fallback["sync_error"] = str(e)[:500]
+            return fallback
+
+        merged = self._default_request_sync_metadata()
+        if isinstance(result, dict):
+            for key in merged.keys():
+                if key in result:
+                    merged[key] = result[key]
+        return merged
+
     async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         """
         Fetch volume history for a given stock symbol.
@@ -379,6 +426,11 @@ class HistoryService:
 
         end_date = date.today()
         start_date = end_date - timedelta(days=safe_days - 1)
+        sync_meta = await self._sync_history_for_request(
+            symbol=symbol_clean,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -387,28 +439,7 @@ class HistoryService:
             symbol_clean,
             safe_days
         )
-
-        if self._is_volume_history_stale(result.get('data', []), end_date):
-            async def _trigger_volume_backfill() -> None:
-                try:
-                    triggered = await self._trigger_price_history_sync(
-                        symbols=[symbol_clean],
-                        start_date=start_date,
-                        end_date=end_date,
-                        force=False
-                    )
-                    if triggered:
-                        logger.debug(
-                            f"Triggered background volume backfill for {symbol_clean} "
-                            f"({start_date} -> {end_date})"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to trigger background volume backfill for {symbol_clean}: {e}"
-                    )
-
-            asyncio.create_task(_trigger_volume_backfill())
-
+        result.update(sync_meta)
         return result
 
     async def get_price_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
@@ -423,6 +454,11 @@ class HistoryService:
 
         end_date = date.today()
         start_date = end_date - timedelta(days=safe_days - 1)
+        sync_meta = await self._sync_history_for_request(
+            symbol=symbol_clean,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -431,69 +467,8 @@ class HistoryService:
             symbol_clean,
             safe_days
         )
-
-        if self._is_price_history_stale(result.get('data', []), end_date):
-            async def _trigger_price_sync() -> None:
-                try:
-                    triggered = await self._trigger_price_history_sync(
-                        symbols=[symbol_clean],
-                        start_date=start_date,
-                        end_date=end_date,
-                        force=False
-                    )
-                    if triggered:
-                        logger.debug(
-                            f"Triggered background price sync for {symbol_clean} "
-                            f"({start_date} -> {end_date})"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to trigger background price sync for {symbol_clean}: {e}"
-                    )
-
-            asyncio.create_task(_trigger_price_sync())
-
+        result.update(sync_meta)
         return result
-
-    def _is_volume_history_stale(
-        self,
-        data: List[Dict[str, Any]],
-        end_date: date
-    ) -> bool:
-        """
-        Determine whether cached volume history is missing or too stale.
-        """
-        if not data:
-            return True
-
-        latest_date_str = data[-1].get('date')
-        try:
-            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
-        except (TypeError, ValueError):
-            return True
-
-        stale_threshold = end_date - timedelta(days=VOLUME_HISTORY_STALE_DAYS)
-        return latest_date < stale_threshold
-
-    def _is_price_history_stale(
-        self,
-        data: List[Dict[str, Any]],
-        end_date: date
-    ) -> bool:
-        """
-        Determine whether cached price history is missing or too stale.
-        """
-        if not data:
-            return True
-
-        latest_date_str = data[-1].get('date')
-        try:
-            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
-        except (TypeError, ValueError):
-            return True
-
-        stale_threshold = end_date - timedelta(days=PRICE_HISTORY_STALE_DAYS)
-        return latest_date < stale_threshold
 
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
