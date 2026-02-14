@@ -267,6 +267,8 @@ async def get_group_stocks(
                 accumulated_value=stock.accumulated_value,
                 foreign_buy_value=stock.foreign_buy_value,
                 foreign_sell_value=stock.foreign_sell_value,
+                current_room=stock.current_room,
+                total_room=stock.total_room,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,

@@ -192,6 +192,8 @@ async def test_get_group_stocks_details(client: AsyncClient, auth_headers):
         accumulated_value=None,
         foreign_buy_value=12.3,
         foreign_sell_value=9.8,
+        current_room=1234567,
+        total_room=2000000,
         price_change_24h=1.5, 
         price_change_1w=None,
         price_change_1m=None, 
@@ -213,6 +215,8 @@ async def test_get_group_stocks_details(client: AsyncClient, auth_headers):
         assert stock["price"] == 50000.0
         assert stock["foreign_buy_value"] == 12.3
         assert stock["foreign_sell_value"] == 9.8
+        assert stock["current_room"] == 1234567
+        assert stock["total_room"] == 2000000
 
 @pytest.mark.asyncio
 async def test_unauthorized_access(client: AsyncClient, auth_headers):

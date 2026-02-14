@@ -41,6 +41,8 @@ async def test_get_stocks_by_index(client):
             company_name="Techcombank",
             foreign_buy_value=65.01,
             foreign_sell_value=34.01,
+            current_room=1234567,
+            total_room=8765432,
         ),
         StockInfo(
             ticker="VCB",
@@ -49,6 +51,8 @@ async def test_get_stocks_by_index(client):
             company_name="Vietcombank",
             foreign_buy_value=None,
             foreign_sell_value=None,
+            current_room=None,
+            total_room=None,
         )
     ]
 
@@ -62,8 +66,12 @@ async def test_get_stocks_by_index(client):
         assert data["stocks"][0]["ticker"] == "TCB"
         assert data["stocks"][0]["foreign_buy_value"] == 65.01
         assert data["stocks"][0]["foreign_sell_value"] == 34.01
+        assert data["stocks"][0]["current_room"] == 1234567
+        assert data["stocks"][0]["total_room"] == 8765432
         assert data["stocks"][1]["foreign_buy_value"] is None
         assert data["stocks"][1]["foreign_sell_value"] is None
+        assert data["stocks"][1]["current_room"] is None
+        assert data["stocks"][1]["total_room"] is None
 
 @pytest.mark.asyncio
 async def test_get_industries(client):
@@ -150,6 +158,8 @@ async def test_get_stock_quotes(client):
             company_name="Techcombank",
             foreign_buy_value=10.0,
             foreign_sell_value=8.0,
+            current_room=300000,
+            total_room=600000,
         ),
         StockInfo(
             ticker="VCB",
@@ -158,6 +168,8 @@ async def test_get_stock_quotes(client):
             company_name="Vietcombank",
             foreign_buy_value=None,
             foreign_sell_value=None,
+            current_room=None,
+            total_room=None,
         )
     ]
 
@@ -176,5 +188,9 @@ async def test_get_stock_quotes(client):
         second_stock = next(stock for stock in data["stocks"] if stock["ticker"] == "VCB")
         assert first_stock["foreign_buy_value"] == 10.0
         assert first_stock["foreign_sell_value"] == 8.0
+        assert first_stock["current_room"] == 300000
+        assert first_stock["total_room"] == 600000
         assert second_stock["foreign_buy_value"] is None
         assert second_stock["foreign_sell_value"] is None
+        assert second_stock["current_room"] is None
+        assert second_stock["total_room"] is None

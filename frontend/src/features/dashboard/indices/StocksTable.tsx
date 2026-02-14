@@ -22,7 +22,7 @@ interface StocksTableProps {
     onBookmarksUpdated?: (groupId?: number) => void;
 }
 
-type SortKey = keyof Stock | 'foreign_net_value';
+type SortKey = keyof Stock | 'foreign_net_value' | 'room_ratio';
 type SortDirection = 'asc' | 'desc';
 
 interface SortConfig {
@@ -159,6 +159,31 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(value);
+    };
+
+    const getRemainingRoomRatio = (
+        currentRoom: number | null | undefined,
+        totalRoom: number | null | undefined
+    ): number | null => {
+        if (currentRoom == null || totalRoom == null || totalRoom <= 0) {
+            return null;
+        }
+        return currentRoom / totalRoom;
+    };
+
+    const formatRemainingRoomRatio = (
+        currentRoom: number | null | undefined,
+        totalRoom: number | null | undefined
+    ): string => {
+        const ratio = getRemainingRoomRatio(currentRoom, totalRoom);
+        if (ratio == null) {
+            return '-';
+        }
+        return new Intl.NumberFormat('en-US', {
+            style: 'percent',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(ratio);
     };
 
     const formatPriceChange = (change: number | null): { text: string; className: string } => {
@@ -447,11 +472,15 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     ? (a.foreign_buy_value != null && a.foreign_sell_value != null
                         ? a.foreign_buy_value - a.foreign_sell_value
                         : null)
+                    : sortConfig.key === 'room_ratio'
+                        ? getRemainingRoomRatio(a.current_room, a.total_room)
                     : a[sortConfig.key as keyof Stock];
                 const bValue = sortConfig.key === 'foreign_net_value'
                     ? (b.foreign_buy_value != null && b.foreign_sell_value != null
                         ? b.foreign_buy_value - b.foreign_sell_value
                         : null)
+                    : sortConfig.key === 'room_ratio'
+                        ? getRemainingRoomRatio(b.current_room, b.total_room)
                     : b[sortConfig.key as keyof Stock];
 
                 if (aValue == null) return 1;
@@ -488,7 +517,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         );
     };
 
-    const totalColumns = isLoggedIn ? 17 : 16;
+    const totalColumns = isLoggedIn ? 18 : 17;
 
     return (
         <div className="overflow-x-auto rounded-xl">
@@ -596,6 +625,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     Foreign<br />(B VND)
                                 </div>
                                 {renderSortIcon('foreign_net_value')}
+                            </div>
+                        </th>
+                        <th
+                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                            onClick={() => handleSort('room_ratio')}
+                        >
+                            <div className="flex items-center justify-end">
+                                <div className="text-right">
+                                Room<br />(%)
+                                </div>
+                                {renderSortIcon('room_ratio')}
                             </div>
                         </th>
                         <th
@@ -760,6 +800,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         ) : (
                                             <span className="text-base-content/50">-|-</span>
                                         )}
+                                    </td>
+                                    <td className="text-right font-mono whitespace-nowrap text-base-content">
+                                        {formatRemainingRoomRatio(stock.current_room, stock.total_room)}
                                     </td>
                                     <td className={`text-right font-mono ${change24h.className}`}>
                                         {change24h.text}

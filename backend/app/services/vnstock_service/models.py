@@ -26,6 +26,8 @@ class StockInfo:
     accumulated_value: float | None = None  # In billion VND
     foreign_buy_value: float | None = None  # In billion VND
     foreign_sell_value: float | None = None  # In billion VND
+    current_room: int | None = None
+    total_room: int | None = None
     price_change_24h: float | None = None  # Percentage
     price_change_1w: float | None = None  # Percentage
     price_change_1m: float | None = None  # Percentage

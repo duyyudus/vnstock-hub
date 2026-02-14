@@ -353,6 +353,25 @@ class StocksService:
                                 except (ValueError, TypeError):
                                     pass
 
+                            # Get foreign room values (raw shares)
+                            current_room = None
+                            if 'match_current_room' in row.index:
+                                try:
+                                    current_room_value = row['match_current_room']
+                                    if pd.notna(current_room_value):
+                                        current_room = int(float(current_room_value))
+                                except (ValueError, TypeError):
+                                    pass
+
+                            total_room = None
+                            if 'match_total_room' in row.index:
+                                try:
+                                    total_room_value = row['match_total_room']
+                                    if pd.notna(total_room_value):
+                                        total_room = int(float(total_room_value))
+                                except (ValueError, TypeError):
+                                    pass
+
                             # Get 24h price change percentage
                             price_change_24h = None
                             if 'match_price_change_ratio' in row.index:
@@ -400,6 +419,8 @@ class StocksService:
                                     accumulated_value=round(accumulated_value, 2) if accumulated_value is not None else None,
                                     foreign_buy_value=round(foreign_buy_value, 2) if foreign_buy_value is not None else None,
                                     foreign_sell_value=round(foreign_sell_value, 2) if foreign_sell_value is not None else None,
+                                    current_room=current_room,
+                                    total_room=total_room,
                                     price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None,
                                     industry=industry
                                 ))

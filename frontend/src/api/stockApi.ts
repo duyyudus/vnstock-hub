@@ -259,6 +259,8 @@ export interface Stock {
     accumulated_value: number | null;  // In billion VND
     foreign_buy_value: number | null;  // In billion VND
     foreign_sell_value: number | null;  // In billion VND
+    current_room: number | null;
+    total_room: number | null;
     price_change_24h: number | null;
     price_change_1w: number | null;
     price_change_1m: number | null;
