@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { stockApi } from '../../../api/stockApi';
-import type { Stock, BookmarkGroup, FinancialDataResponse } from '../../../api/stockApi';
+import type { Stock, BookmarkGroup } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
-import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 import {
     resolveCompanyExportCategory,
     resolveFinanceExportCategory,
-    resolveTickerFolder,
-    rowsToCsv,
-    transformFinanceCsvValue,
 } from '../../../utils/exportCsv';
+import {
+    COMPANY_EXPORT_DEFINITIONS,
+    FINANCE_EXPORT_DEFINITIONS,
+    type ExportDefinition,
+    runTickerExportDefinitions,
+} from './stockExport';
 
 interface StocksTableProps {
     /** List of stocks to display */
@@ -40,26 +42,6 @@ interface ExportNotice {
     kind: 'success' | 'warning';
     message: string;
 }
-
-interface ExportDefinition {
-    suffix: string;
-    fetch: (ticker: string) => Promise<FinancialDataResponse>;
-    transformValue?: (value: unknown, key: string, row: Record<string, unknown>) => unknown;
-}
-
-const COMPANY_EXPORT_DEFINITIONS: ExportDefinition[] = [
-    { suffix: 'overview', fetch: stockApi.getCompanyOverview },
-    { suffix: 'shareholders', fetch: stockApi.getShareholders },
-    { suffix: 'officers', fetch: stockApi.getOfficers },
-    { suffix: 'subsidiaries', fetch: stockApi.getSubsidiaries },
-];
-
-const FINANCE_EXPORT_DEFINITIONS: ExportDefinition[] = [
-    { suffix: 'income', fetch: stockApi.getIncomeStatement, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
-    { suffix: 'balance', fetch: stockApi.getBalanceSheet, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
-    { suffix: 'cashflow', fetch: stockApi.getCashFlow, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
-    { suffix: 'ratios', fetch: stockApi.getFinancialRatios, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
-];
 
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
@@ -383,63 +365,51 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         setContextMenu(null);
         setExportNotice(null);
 
-        const tickerFolder = resolveTickerFolder(stock.ticker);
-        const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
-        let successCount = 0;
-        let failedCount = 0;
-        let browserFallbackCount = 0;
+        try {
+            const {
+                tickerFolder,
+                total,
+                successCount,
+                failedCount,
+                browserFallbackCount,
+            } = await runTickerExportDefinitions({
+                ticker: stock.ticker,
+                datasetName,
+                exportDefinitions,
+                category,
+                user,
+            });
+            const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
 
-        for (const definition of exportDefinitions) {
-            try {
-                const response = await definition.fetch(stock.ticker);
-                const csvContent = rowsToCsv(response.data, definition.transformValue);
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-                const result = await downloadBlobWithPreference({
-                    blob,
-                    filename: `${definition.suffix}.csv`,
-                    subdirectories: [tickerFolder, category],
-                    userId: user?.id,
-                    downloadFolder: user?.download_folder,
-                });
-                successCount += 1;
-                if (result.mode === 'browser-default') {
-                    browserFallbackCount += 1;
+            if (failedCount === 0) {
+                if (hasCustomFolderPreference && browserFallbackCount > 0) {
+                    setExportNotice({
+                        kind: 'warning',
+                        message: `Exported ${total}/${total} ${datasetName} files. ${browserFallbackCount} saved to browser default location.`,
+                    });
+                } else if (hasCustomFolderPreference) {
+                    setExportNotice({
+                        kind: 'success',
+                        message: `Exported ${total} ${datasetName} files to ${tickerFolder}/${category}.`,
+                    });
+                } else {
+                    setExportNotice({
+                        kind: 'success',
+                        message: `Exported ${total} ${datasetName} files using browser default location.`,
+                    });
                 }
-            } catch (error) {
-                failedCount += 1;
-                console.error(`Failed to export ${datasetName} ${definition.suffix} for ${stock.ticker}:`, error);
-            }
-        }
-
-        const total = exportDefinitions.length;
-        if (failedCount === 0) {
-            if (hasCustomFolderPreference && browserFallbackCount > 0) {
+            } else {
+                const fallbackMessage = hasCustomFolderPreference && browserFallbackCount > 0
+                    ? ` ${browserFallbackCount} saved to browser default location.`
+                    : '';
                 setExportNotice({
                     kind: 'warning',
-                    message: `Exported ${total}/${total} ${datasetName} files. ${browserFallbackCount} saved to browser default location.`,
-                });
-            } else if (hasCustomFolderPreference) {
-                setExportNotice({
-                    kind: 'success',
-                    message: `Exported ${total} ${datasetName} files to ${tickerFolder}/${category}.`,
-                });
-            } else {
-                setExportNotice({
-                    kind: 'success',
-                    message: `Exported ${total} ${datasetName} files using browser default location.`,
+                    message: `Exported ${successCount}/${total} ${datasetName} files. ${failedCount} failed.${fallbackMessage}`,
                 });
             }
-        } else {
-            const fallbackMessage = hasCustomFolderPreference && browserFallbackCount > 0
-                ? ` ${browserFallbackCount} saved to browser default location.`
-                : '';
-            setExportNotice({
-                kind: 'warning',
-                message: `Exported ${successCount}/${total} ${datasetName} files. ${failedCount} failed.${fallbackMessage}`,
-            });
+        } finally {
+            setExportingContextMenu(false);
         }
-
-        setExportingContextMenu(false);
     };
 
     const handleExportCompanyData = async (stock: Stock) => {

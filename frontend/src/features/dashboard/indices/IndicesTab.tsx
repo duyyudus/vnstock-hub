@@ -11,6 +11,15 @@ import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { useAuthUser } from '../../auth/useAuthUser';
+import {
+    resolveCompanyExportCategory,
+    resolveFinanceExportCategory,
+} from '../../../utils/exportCsv';
+import {
+    COMPANY_EXPORT_DEFINITIONS,
+    FINANCE_EXPORT_DEFINITIONS,
+    runTickerExportDefinitions,
+} from './stockExport';
 
 interface IndicesTabProps {
     /** List of available indices */
@@ -18,6 +27,11 @@ interface IndicesTabProps {
 }
 
 type ViewMode = 'table' | 'growth' | 'comparison' | 'risk_return';
+
+interface ExportNotice {
+    kind: 'success' | 'warning';
+    message: string;
+}
 
 /**
  * Indices Tab - Main container for Index/Industry stock views.
@@ -49,6 +63,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [viewMode, setViewMode] = useState<ViewMode>('table');
     const [searchQuery, setSearchQuery] = useState('');
     const indexDetailsDialogRef = useRef<HTMLDialogElement>(null);
+    const batchExportDialogRef = useRef<HTMLDialogElement>(null);
+    const [batchExportSelections, setBatchExportSelections] = useState<Record<string, boolean>>({});
+    const [batchExporting, setBatchExporting] = useState(false);
+    const [batchExportNotice, setBatchExportNotice] = useState<ExportNotice | null>(null);
 
     const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
 
@@ -138,6 +156,18 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
     }, [isIndexContextActive]);
 
+    useEffect(() => {
+        if (!batchExportNotice) {
+            return;
+        }
+        const timeoutId = window.setTimeout(() => {
+            setBatchExportNotice(null);
+        }, 3000);
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [batchExportNotice]);
+
     // Fetch Stocks Data
     useEffect(() => {
         const fetchData = async () => {
@@ -155,8 +185,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                     setStocks(response.stocks);
                 }
-            } catch (err: any) {
-                const label = selectedBookmarkGroup?.name || selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks');
+            } catch (err: unknown) {
+                const label = selectedBookmarkGroupId
+                    ? 'bookmark group'
+                    : (selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks'));
 
                 // If it's a rate limit error (429) or if we can check global status
                 try {
@@ -168,7 +200,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         setTimeout(() => fetchData(), 30000);
                         return;
                     }
-                } catch (e) {
+                } catch {
                     // Ignore sync status fetch error
                 }
 
@@ -226,6 +258,147 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             stock.ticker.toLowerCase().includes(query)
         );
     }, [stocks, searchQuery]);
+
+    const selectedBatchExportStocks = useMemo(() => {
+        return filteredStocks.filter((stock) => batchExportSelections[stock.ticker.toUpperCase()]);
+    }, [filteredStocks, batchExportSelections]);
+
+    const openBatchExportModal = () => {
+        if (filteredStocks.length === 0 || batchExporting) {
+            return;
+        }
+        const nextSelections: Record<string, boolean> = {};
+        filteredStocks.forEach((stock) => {
+            nextSelections[stock.ticker.toUpperCase()] = true;
+        });
+        setBatchExportSelections(nextSelections);
+        batchExportDialogRef.current?.showModal();
+    };
+
+    const closeBatchExportModal = () => {
+        if (batchExporting) {
+            return;
+        }
+        batchExportDialogRef.current?.close();
+    };
+
+    const handleBatchExportBackdropClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        if (batchExporting) {
+            event.preventDefault();
+            return;
+        }
+        closeBatchExportModal();
+    };
+
+    const handleBatchExportDialogCancel = (event: React.SyntheticEvent<HTMLDialogElement, Event>) => {
+        if (batchExporting) {
+            event.preventDefault();
+            return;
+        }
+        closeBatchExportModal();
+    };
+
+    const handleToggleBatchExportTicker = (ticker: string) => {
+        const key = ticker.toUpperCase();
+        setBatchExportSelections((previous) => ({
+            ...previous,
+            [key]: !previous[key],
+        }));
+    };
+
+    const handleSelectAllBatchExportStocks = () => {
+        const nextSelections: Record<string, boolean> = {};
+        filteredStocks.forEach((stock) => {
+            nextSelections[stock.ticker.toUpperCase()] = true;
+        });
+        setBatchExportSelections(nextSelections);
+    };
+
+    const handleDeselectAllBatchExportStocks = () => {
+        const nextSelections: Record<string, boolean> = {};
+        filteredStocks.forEach((stock) => {
+            nextSelections[stock.ticker.toUpperCase()] = false;
+        });
+        setBatchExportSelections(nextSelections);
+    };
+
+    const handleBatchExport = async () => {
+        if (batchExporting || selectedBatchExportStocks.length === 0) {
+            return;
+        }
+
+        setBatchExporting(true);
+        setBatchExportNotice(null);
+
+        const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
+        const companyCategory = resolveCompanyExportCategory(user?.company_export_category);
+        const financeCategory = resolveFinanceExportCategory(user?.finance_export_category);
+
+        let companyTotal = 0;
+        let financeTotal = 0;
+        let successCount = 0;
+        let failedCount = 0;
+        let browserFallbackCount = 0;
+
+        try {
+            for (const stock of selectedBatchExportStocks) {
+                const companyResult = await runTickerExportDefinitions({
+                    ticker: stock.ticker,
+                    datasetName: 'company',
+                    exportDefinitions: COMPANY_EXPORT_DEFINITIONS,
+                    category: companyCategory,
+                    user,
+                });
+                companyTotal += companyResult.total;
+                successCount += companyResult.successCount;
+                failedCount += companyResult.failedCount;
+                browserFallbackCount += companyResult.browserFallbackCount;
+
+                const financeResult = await runTickerExportDefinitions({
+                    ticker: stock.ticker,
+                    datasetName: 'finance',
+                    exportDefinitions: FINANCE_EXPORT_DEFINITIONS,
+                    category: financeCategory,
+                    user,
+                });
+                financeTotal += financeResult.total;
+                successCount += financeResult.successCount;
+                failedCount += financeResult.failedCount;
+                browserFallbackCount += financeResult.browserFallbackCount;
+            }
+
+            const totalFiles = companyTotal + financeTotal;
+            if (failedCount === 0) {
+                if (hasCustomFolderPreference && browserFallbackCount > 0) {
+                    setBatchExportNotice({
+                        kind: 'warning',
+                        message: `Exported ${totalFiles}/${totalFiles} files for ${selectedBatchExportStocks.length} stocks. ${browserFallbackCount} saved to browser default location.`,
+                    });
+                } else if (hasCustomFolderPreference) {
+                    setBatchExportNotice({
+                        kind: 'success',
+                        message: `Exported ${totalFiles} files for ${selectedBatchExportStocks.length} stocks to <TICKER>/${companyCategory} and <TICKER>/${financeCategory}.`,
+                    });
+                } else {
+                    setBatchExportNotice({
+                        kind: 'success',
+                        message: `Exported ${totalFiles} files for ${selectedBatchExportStocks.length} stocks using browser default location.`,
+                    });
+                }
+            } else {
+                const fallbackMessage = hasCustomFolderPreference && browserFallbackCount > 0
+                    ? ` ${browserFallbackCount} saved to browser default location.`
+                    : '';
+                setBatchExportNotice({
+                    kind: 'warning',
+                    message: `Exported ${successCount}/${totalFiles} files for ${selectedBatchExportStocks.length} stocks. ${failedCount} failed.${fallbackMessage}`,
+                });
+            }
+            batchExportDialogRef.current?.close();
+        } finally {
+            setBatchExporting(false);
+        }
+    };
 
     const selectedBookmarkGroup = useMemo(() => {
         if (!selectedBookmarkGroupId) return null;
@@ -322,7 +495,21 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             Index Details
                         </button>
                     ) : null}
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-primary ml-auto"
+                        onClick={openBatchExportModal}
+                        disabled={filteredStocks.length === 0 || loading || batchExporting}
+                    >
+                        {batchExporting ? 'Exporting...' : 'Batch Export'}
+                    </button>
                 </div>
+
+                {batchExportNotice ? (
+                    <div className={`alert text-sm ${batchExportNotice.kind === 'warning' ? 'alert-warning' : 'alert-success'}`}>
+                        <span>{batchExportNotice.message}</span>
+                    </div>
+                ) : null}
 
                 {/* Row 3: View Mode Toggle */}
                 <div className="overflow-x-auto">
@@ -407,6 +594,98 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     </div>
                 </div>
             )}
+
+            <dialog
+                ref={batchExportDialogRef}
+                className="modal"
+                onCancel={handleBatchExportDialogCancel}
+            >
+                <div className="modal-box max-w-2xl">
+                    <h3 className="font-bold text-lg">Batch export stocks</h3>
+                    <p className="text-sm text-base-content/70 mt-1">
+                        Select stocks to export both company and finance CSV data.
+                    </p>
+
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-sm text-base-content/70">
+                            {selectedBatchExportStocks.length} selected of {filteredStocks.length}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-ghost"
+                                onClick={handleSelectAllBatchExportStocks}
+                                disabled={batchExporting || filteredStocks.length === 0}
+                            >
+                                Select all
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-ghost"
+                                onClick={handleDeselectAllBatchExportStocks}
+                                disabled={batchExporting || filteredStocks.length === 0}
+                            >
+                                Deselect all
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="mt-3 max-h-80 overflow-y-auto rounded-lg border border-base-300">
+                        {filteredStocks.length === 0 ? (
+                            <div className="p-4 text-sm text-base-content/60">
+                                No stocks available for export in the current filter.
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-base-300">
+                                {filteredStocks.map((stock) => {
+                                    const key = stock.ticker.toUpperCase();
+                                    const checked = Boolean(batchExportSelections[key]);
+                                    return (
+                                        <label
+                                            key={stock.ticker}
+                                            className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-base-200/60"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                className="checkbox checkbox-sm"
+                                                checked={checked}
+                                                onChange={() => handleToggleBatchExportTicker(stock.ticker)}
+                                                disabled={batchExporting}
+                                            />
+                                            <span className="w-16 font-semibold uppercase">{stock.ticker}</span>
+                                            <span className="truncate text-sm text-base-content/70">
+                                                {stock.company_name || '-'}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="modal-action">
+                        <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={closeBatchExportModal}
+                            disabled={batchExporting}
+                        >
+                            Close
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => void handleBatchExport()}
+                            disabled={batchExporting || selectedBatchExportStocks.length === 0}
+                        >
+                            {batchExporting ? 'Exporting...' : 'Export selected'}
+                        </button>
+                    </div>
+                </div>
+                <form method="dialog" className="modal-backdrop">
+                    <button onClick={handleBatchExportBackdropClick}>close</button>
+                </form>
+            </dialog>
 
             <dialog ref={indexDetailsDialogRef} className="modal">
                 <div className="modal-box max-w-3xl">
