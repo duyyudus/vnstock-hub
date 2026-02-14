@@ -1,5 +1,5 @@
 import { stockApi } from '../../../api/stockApi';
-import type { AuthUser, FinancialDataResponse } from '../../../api/stockApi';
+import type { AuthUser } from '../../../api/stockApi';
 import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 import {
     resolveTickerFolder,
@@ -8,10 +8,12 @@ import {
 } from '../../../utils/exportCsv';
 
 type CsvRow = Record<string, unknown>;
+type ExportFetchResponse = { data: CsvRow[] };
 
 export interface ExportDefinition {
     suffix: string;
-    fetch: (ticker: string) => Promise<FinancialDataResponse>;
+    fetch: (ticker: string) => Promise<ExportFetchResponse>;
+    prepareRows?: (rows: CsvRow[]) => CsvRow[];
     transformValue?: (value: unknown, key: string, row: CsvRow) => unknown;
 }
 
@@ -25,9 +27,9 @@ export interface TickerExportResult {
 
 interface RunTickerExportDefinitionsInput {
     ticker: string;
-    datasetName: 'company' | 'finance';
+    datasetName: 'company' | 'finance' | 'price_history';
     exportDefinitions: ExportDefinition[];
-    category: string;
+    category?: string;
     user: Pick<AuthUser, 'id' | 'download_folder'> | null;
 }
 
@@ -45,6 +47,22 @@ export const FINANCE_EXPORT_DEFINITIONS: ExportDefinition[] = [
     { suffix: 'ratios', fetch: stockApi.getFinancialRatios, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
 ];
 
+const sortRowsByDateDesc = (rows: CsvRow[]) => {
+    return [...rows].sort((a, b) => {
+        const aDate = typeof a.date === 'string' ? a.date : '';
+        const bDate = typeof b.date === 'string' ? b.date : '';
+        return bDate.localeCompare(aDate);
+    });
+};
+
+export const PRICE_HISTORY_EXPORT_DEFINITIONS: ExportDefinition[] = [
+    {
+        suffix: 'price_history',
+        fetch: stockApi.getPriceHistoryOhlcv,
+        prepareRows: sortRowsByDateDesc,
+    },
+];
+
 export const runTickerExportDefinitions = async (
     input: RunTickerExportDefinitionsInput,
 ): Promise<TickerExportResult> => {
@@ -56,12 +74,17 @@ export const runTickerExportDefinitions = async (
     for (const definition of input.exportDefinitions) {
         try {
             const response = await definition.fetch(input.ticker);
-            const csvContent = rowsToCsv(response.data, definition.transformValue);
+            const rows = definition.prepareRows ? definition.prepareRows(response.data) : response.data;
+            const csvContent = rowsToCsv(rows, definition.transformValue);
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+            const subdirectories = [tickerFolder];
+            if (input.datasetName !== 'price_history' && input.category) {
+                subdirectories.push(input.category);
+            }
             const result = await downloadBlobWithPreference({
                 blob,
                 filename: `${definition.suffix}.csv`,
-                subdirectories: [tickerFolder, input.category],
+                subdirectories,
                 userId: input.user?.id,
                 downloadFolder: input.user?.download_folder,
             });
@@ -83,4 +106,3 @@ export const runTickerExportDefinitions = async (
         browserFallbackCount,
     };
 };
-

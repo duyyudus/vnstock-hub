@@ -129,6 +129,24 @@ class PriceHistoryResponse(BaseModel):
     repaired_missing_dates: int = 0
 
 
+class OhlcvDataPoint(BaseModel):
+    """A single OHLCV data point."""
+    date: str
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    close: float
+    volume: Optional[int] = None
+
+
+class OhlcvHistoryResponse(BaseModel):
+    """Response model for full OHLCV history."""
+    symbol: str
+    company_name: str
+    data: List[OhlcvDataPoint]
+    count: int
+
+
 class WeeklyPricePoint(BaseModel):
     """A single weekly price data point."""
     date: str
@@ -520,6 +538,26 @@ async def get_price_history(symbol: str, days: int = 30):
         sync_error=result.get("sync_error"),
         updated_through=result.get("updated_through"),
         repaired_missing_dates=int(result.get("repaired_missing_dates", 0)),
+    )
+
+
+@router.get("/history/{symbol}/ohlcv", response_model=OhlcvHistoryResponse)
+async def get_price_history_ohlcv(symbol: str):
+    """
+    Get full OHLCV history for a specific stock from DB cache.
+
+    Args:
+        symbol: Stock ticker symbol
+
+    Returns:
+        Full OHLCV data points sorted from latest to earliest
+    """
+    result = await vnstock_service.get_price_history_ohlcv(symbol)
+    return OhlcvHistoryResponse(
+        symbol=result["symbol"],
+        company_name=result["company_name"],
+        data=[OhlcvDataPoint(**point) for point in result["data"]],
+        count=len(result["data"]),
     )
 
 

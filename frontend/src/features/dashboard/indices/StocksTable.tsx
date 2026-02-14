@@ -9,6 +9,7 @@ import {
 import {
     COMPANY_EXPORT_DEFINITIONS,
     FINANCE_EXPORT_DEFINITIONS,
+    PRICE_HISTORY_EXPORT_DEFINITIONS,
     type ExportDefinition,
     runTickerExportDefinitions,
 } from './stockExport';
@@ -353,9 +354,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
 
     const runTickerExport = async (
         stock: Stock,
-        datasetName: 'company' | 'finance',
+        datasetName: 'company' | 'finance' | 'price_history',
         exportDefinitions: ExportDefinition[],
-        category: string,
+        category?: string,
     ) => {
         if (exportingContextMenu) {
             return;
@@ -380,22 +381,27 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                 user,
             });
             const hasCustomFolderPreference = Boolean(user?.download_folder?.trim());
+            const datasetLabel = datasetName === 'price_history' ? 'price history' : datasetName;
+            const fileWord = total === 1 ? 'file' : 'files';
 
             if (failedCount === 0) {
                 if (hasCustomFolderPreference && browserFallbackCount > 0) {
                     setExportNotice({
                         kind: 'warning',
-                        message: `Exported ${total}/${total} ${datasetName} files. ${browserFallbackCount} saved to browser default location.`,
+                        message: `Exported ${total}/${total} ${datasetLabel} ${fileWord}. ${browserFallbackCount} saved to browser default location.`,
                     });
                 } else if (hasCustomFolderPreference) {
+                    const exportLocation = datasetName === 'price_history'
+                        ? `${tickerFolder}/price_history.csv`
+                        : `${tickerFolder}/${category}`;
                     setExportNotice({
                         kind: 'success',
-                        message: `Exported ${total} ${datasetName} files to ${tickerFolder}/${category}.`,
+                        message: `Exported ${total} ${datasetLabel} ${fileWord} to ${exportLocation}.`,
                     });
                 } else {
                     setExportNotice({
                         kind: 'success',
-                        message: `Exported ${total} ${datasetName} files using browser default location.`,
+                        message: `Exported ${total} ${datasetLabel} ${fileWord} using browser default location.`,
                     });
                 }
             } else {
@@ -404,7 +410,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     : '';
                 setExportNotice({
                     kind: 'warning',
-                    message: `Exported ${successCount}/${total} ${datasetName} files. ${failedCount} failed.${fallbackMessage}`,
+                    message: `Exported ${successCount}/${total} ${datasetLabel} ${fileWord}. ${failedCount} failed.${fallbackMessage}`,
                 });
             }
         } finally {
@@ -420,6 +426,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const handleExportFinanceData = async (stock: Stock) => {
         const category = resolveFinanceExportCategory(user?.finance_export_category);
         await runTickerExport(stock, 'finance', FINANCE_EXPORT_DEFINITIONS, category);
+    };
+
+    const handleExportPriceHistory = async (stock: Stock) => {
+        await runTickerExport(stock, 'price_history', PRICE_HISTORY_EXPORT_DEFINITIONS);
     };
 
     const handleSort = (key: SortKey) => {
@@ -824,6 +834,14 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         disabled={exportingContextMenu}
                     >
                         {exportingContextMenu ? 'Exporting...' : 'Export all finance data'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm w-full justify-start"
+                        onClick={() => void handleExportPriceHistory(contextMenu.stock)}
+                        disabled={exportingContextMenu}
+                    >
+                        {exportingContextMenu ? 'Exporting...' : 'Export price history'}
                     </button>
                 </div>
             ) : null}

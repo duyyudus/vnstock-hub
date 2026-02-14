@@ -470,6 +470,18 @@ class HistoryService:
         result.update(sync_meta)
         return result
 
+    async def get_price_history_ohlcv(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetch full OHLCV history for a given stock symbol from database cache.
+        """
+        symbol_clean = symbol[:3].upper()
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            frontend_executor,
+            self._fetch_price_history_ohlcv_sync,
+            symbol_clean,
+        )
+
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
         symbol_clean = symbol[:3].upper()
@@ -588,6 +600,52 @@ class HistoryService:
                 'symbol': symbol_clean,
                 'company_name': company_name,
                 'data': []
+            }
+        finally:
+            engine.dispose()
+
+    def _fetch_price_history_ohlcv_sync(self, symbol: str) -> Dict[str, Any]:
+        """Fetch full OHLCV history synchronously from DB."""
+        symbol_clean = symbol[:3].upper()
+        company_name = symbol_clean
+
+        engine = get_sync_engine()
+
+        try:
+            with Session(engine) as session:
+                stmt = select(StockCompany).where(StockCompany.symbol == symbol_clean)
+                company = session.execute(stmt).scalar_one_or_none()
+                if company:
+                    company_name = company.company_name
+
+                stmt = select(StockDailyPrice).where(
+                    StockDailyPrice.symbol == symbol_clean
+                ).order_by(StockDailyPrice.date.desc())
+                cached_records = session.execute(stmt).scalars().all()
+
+                data = [
+                    {
+                        'date': record.date.strftime('%Y-%m-%d'),
+                        'open': record.open,
+                        'high': record.high,
+                        'low': record.low,
+                        'close': record.close,
+                        'volume': record.volume,
+                    }
+                    for record in cached_records
+                ]
+
+                return {
+                    'symbol': symbol_clean,
+                    'company_name': company_name,
+                    'data': data,
+                }
+        except Exception as e:
+            logger.warning(f"Error in OHLCV history fetch: {e}")
+            return {
+                'symbol': symbol_clean,
+                'company_name': company_name,
+                'data': [],
             }
         finally:
             engine.dispose()

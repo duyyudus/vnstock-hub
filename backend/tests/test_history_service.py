@@ -688,6 +688,69 @@ def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(
     assert result["data"][1]["close"] == 22000.0
 
 
+def test_fetch_price_history_ohlcv_sync_returns_full_history_latest_first(monkeypatch):
+    service = HistoryService()
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    StockCompany.__table__.create(bind=engine, checkfirst=True)
+    StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+    monkeypatch.setattr(history_module, "get_sync_engine", lambda: engine)
+
+    with Session(engine) as session:
+        session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2026, 2, 8),
+                open=21.0,
+                high=21.5,
+                low=20.7,
+                close=21.2,
+                volume=1_200_000,
+            )
+        )
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2026, 2, 10),
+                open=22.0,
+                high=22.4,
+                low=21.8,
+                close=22.1,
+                volume=1_100_000,
+            )
+        )
+        session.add(
+            StockDailyPrice(
+                symbol="TCB",
+                date=date(2026, 2, 9),
+                open=None,
+                high=21.9,
+                low=21.1,
+                close=21.4,
+                volume=None,
+            )
+        )
+        session.commit()
+
+    result = service._fetch_price_history_ohlcv_sync("tcbx")
+
+    assert result["symbol"] == "TCB"
+    assert result["company_name"] == "Techcombank"
+    assert [point["date"] for point in result["data"]] == ["2026-02-10", "2026-02-09", "2026-02-08"]
+    assert result["data"][0]["open"] == 22.0
+    assert result["data"][0]["high"] == 22.4
+    assert result["data"][0]["low"] == 21.8
+    assert result["data"][0]["close"] == 22.1
+    assert result["data"][0]["volume"] == 1_100_000
+    assert result["data"][1]["open"] is None
+    assert result["data"][1]["close"] == 21.4
+    assert result["data"][1]["volume"] is None
+
+
 @pytest.mark.asyncio
 async def test_get_volume_history_runs_request_path_sync_and_returns_metadata(monkeypatch):
     service = HistoryService()

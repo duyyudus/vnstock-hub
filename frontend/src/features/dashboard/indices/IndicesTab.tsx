@@ -18,6 +18,7 @@ import {
 import {
     COMPANY_EXPORT_DEFINITIONS,
     FINANCE_EXPORT_DEFINITIONS,
+    PRICE_HISTORY_EXPORT_DEFINITIONS,
     runTickerExportDefinitions,
 } from './stockExport';
 
@@ -67,6 +68,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [batchExportSelections, setBatchExportSelections] = useState<Record<string, boolean>>({});
     const [batchExporting, setBatchExporting] = useState(false);
     const [batchExportNotice, setBatchExportNotice] = useState<ExportNotice | null>(null);
+    const [includePriceHistoryInBatchExport, setIncludePriceHistoryInBatchExport] = useState(true);
 
     const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
 
@@ -272,6 +274,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             nextSelections[stock.ticker.toUpperCase()] = true;
         });
         setBatchExportSelections(nextSelections);
+        setIncludePriceHistoryInBatchExport(true);
         batchExportDialogRef.current?.showModal();
     };
 
@@ -336,6 +339,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
         let companyTotal = 0;
         let financeTotal = 0;
+        let priceHistoryTotal = 0;
         let successCount = 0;
         let failedCount = 0;
         let browserFallbackCount = 0;
@@ -365,9 +369,22 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 successCount += financeResult.successCount;
                 failedCount += financeResult.failedCount;
                 browserFallbackCount += financeResult.browserFallbackCount;
+
+                if (includePriceHistoryInBatchExport) {
+                    const priceHistoryResult = await runTickerExportDefinitions({
+                        ticker: stock.ticker,
+                        datasetName: 'price_history',
+                        exportDefinitions: PRICE_HISTORY_EXPORT_DEFINITIONS,
+                        user,
+                    });
+                    priceHistoryTotal += priceHistoryResult.total;
+                    successCount += priceHistoryResult.successCount;
+                    failedCount += priceHistoryResult.failedCount;
+                    browserFallbackCount += priceHistoryResult.browserFallbackCount;
+                }
             }
 
-            const totalFiles = companyTotal + financeTotal;
+            const totalFiles = companyTotal + financeTotal + priceHistoryTotal;
             if (failedCount === 0) {
                 if (hasCustomFolderPreference && browserFallbackCount > 0) {
                     setBatchExportNotice({
@@ -375,9 +392,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         message: `Exported ${totalFiles}/${totalFiles} files for ${selectedBatchExportStocks.length} stocks. ${browserFallbackCount} saved to browser default location.`,
                     });
                 } else if (hasCustomFolderPreference) {
+                    const destination = includePriceHistoryInBatchExport
+                        ? `<TICKER>/${companyCategory}, <TICKER>/${financeCategory}, and <TICKER>/price_history.csv`
+                        : `<TICKER>/${companyCategory} and <TICKER>/${financeCategory}`;
                     setBatchExportNotice({
                         kind: 'success',
-                        message: `Exported ${totalFiles} files for ${selectedBatchExportStocks.length} stocks to <TICKER>/${companyCategory} and <TICKER>/${financeCategory}.`,
+                        message: `Exported ${totalFiles} files for ${selectedBatchExportStocks.length} stocks to ${destination}.`,
                     });
                 } else {
                     setBatchExportNotice({
@@ -603,7 +623,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 <div className="modal-box max-w-2xl">
                     <h3 className="font-bold text-lg">Batch export stocks</h3>
                     <p className="text-sm text-base-content/70 mt-1">
-                        Select stocks to export both company and finance CSV data.
+                        Select stocks to export company and finance CSV data, with optional price history export.
                     </p>
 
                     <div className="mt-4 flex items-center justify-between gap-3">
@@ -629,6 +649,17 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             </button>
                         </div>
                     </div>
+
+                    <label className="mt-3 flex items-center gap-3 rounded-lg border border-base-300 px-3 py-2">
+                        <input
+                            type="checkbox"
+                            className="checkbox checkbox-sm"
+                            checked={includePriceHistoryInBatchExport}
+                            onChange={(event) => setIncludePriceHistoryInBatchExport(event.target.checked)}
+                            disabled={batchExporting}
+                        />
+                        <span className="text-sm">Export price history (`&lt;TICKER&gt;/price_history.csv`)</span>
+                    </label>
 
                     <div className="mt-3 max-h-80 overflow-y-auto rounded-lg border border-base-300">
                         {filteredStocks.length === 0 ? (

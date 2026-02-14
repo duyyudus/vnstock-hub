@@ -387,6 +387,22 @@ export interface PriceHistoryResponse {
     repaired_missing_dates: number;
 }
 
+export interface OhlcvDataPoint {
+    date: string;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    close: number;
+    volume: number | null;
+}
+
+export interface OhlcvHistoryResponse {
+    symbol: string;
+    company_name: string;
+    data: OhlcvDataPoint[];
+    count: number;
+}
+
 // Weekly prices types for growth chart
 export interface WeeklyPricePoint {
     date: string;
@@ -777,6 +793,15 @@ export const stockApi = {
      */
     async getPriceHistory(symbol: string, days: number = 30): Promise<PriceHistoryResponse> {
         const response = await apiClient.get<PriceHistoryResponse>(`/stocks/history/${symbol}/price?days=${days}`);
+        return response.data;
+    },
+
+    /**
+     * Fetch full OHLCV history for a specific stock
+     * @param symbol Stock ticker symbol
+     */
+    async getPriceHistoryOhlcv(symbol: string): Promise<OhlcvHistoryResponse> {
+        const response = await apiClient.get<OhlcvHistoryResponse>(`/stocks/history/${symbol}/ohlcv`);
         return response.data;
     },
 

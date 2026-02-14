@@ -148,6 +148,45 @@ async def test_get_price_history(client):
     assert data["updated_through"] == "2022-12-30"
     assert data["repaired_missing_dates"] == 0
 
+
+@pytest.mark.asyncio
+async def test_get_price_history_ohlcv(client):
+    mock_ohlcv = {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [
+            {
+                "date": "2023-01-02",
+                "open": 20.1,
+                "high": 20.6,
+                "low": 19.9,
+                "close": 20.4,
+                "volume": 1005000,
+            },
+            {
+                "date": "2023-01-01",
+                "open": None,
+                "high": 20.0,
+                "low": 19.5,
+                "close": 19.8,
+                "volume": None,
+            },
+        ],
+    }
+    with patch.object(vnstock_service, 'get_price_history_ohlcv', return_value=mock_ohlcv):
+        response = await client.get("/api/v1/stocks/history/TCB/ohlcv")
+        assert response.status_code == 200
+        data = response.json()
+    assert data["symbol"] == "TCB"
+    assert data["company_name"] == "Techcombank"
+    assert data["count"] == 2
+    assert data["data"][0]["date"] == "2023-01-02"
+    assert data["data"][0]["open"] == 20.1
+    assert data["data"][0]["close"] == 20.4
+    assert data["data"][0]["volume"] == 1005000
+    assert data["data"][1]["open"] is None
+    assert data["data"][1]["volume"] is None
+
 @pytest.mark.asyncio
 async def test_get_stock_quotes(client):
     mock_stocks = [
