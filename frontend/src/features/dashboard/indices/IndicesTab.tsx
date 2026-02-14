@@ -178,19 +178,40 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 setError(null);
 
                 if (selectedBookmarkGroupId) {
+                    // Bookmark overrides everything
                     const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId);
                     setStocks(response.stocks);
+                } else if (selectedIndex && selectedIndustryName) {
+                    // Both index and industry selected - fetch both and compute intersection
+                    const [indexResponse, industryResponse] = await Promise.all([
+                        stockApi.getIndexStocks(selectedIndex.apiEndpoint),
+                        stockApi.getIndustryStocks(selectedIndustryName)
+                    ]);
+
+                    // Create a Set of industry tickers for efficient lookup
+                    const industryTickers = new Set(industryResponse.stocks.map(s => s.ticker));
+
+                    // Filter index stocks to only those also in the selected industry
+                    const intersectedStocks = indexResponse.stocks.filter(stock =>
+                        industryTickers.has(stock.ticker)
+                    );
+
+                    setStocks(intersectedStocks);
                 } else if (selectedIndustryName) {
+                    // Only industry selected
                     const response = await stockApi.getIndustryStocks(selectedIndustryName);
                     setStocks(response.stocks);
                 } else if (selectedIndex) {
+                    // Only index selected (default case)
                     const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                     setStocks(response.stocks);
                 }
             } catch (err: unknown) {
                 const label = selectedBookmarkGroupId
                     ? 'bookmark group'
-                    : (selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks'));
+                    : (selectedIndustryName && selectedIndex
+                        ? `${selectedIndex.label} + ${selectedIndustryName}`
+                        : (selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks')));
 
                 // If it's a rate limit error (429) or if we can check global status
                 try {
@@ -220,19 +241,22 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     const handleIndexChange = (newIndex: IndexConfig) => {
         setSelectedIndex(newIndex);
-        setSelectedIndustryName(null); // Clear industry when index selected
+        // Keep industry selection for collaborative filtering
         setSelectedBookmarkGroupId(null);
     };
 
     const handleIndustryChange = (industryName: string | null) => {
         setSelectedIndustryName(industryName);
+        // Keep index selection for collaborative filtering
         setSelectedBookmarkGroupId(null);
     };
 
     const handleBookmarkGroupChange = (groupId: number | null) => {
         setSelectedBookmarkGroupId(groupId);
+        // Bookmark overrides everything - clear both industry and index
         if (groupId) {
             setSelectedIndustryName(null);
+            setSelectedIndex(null);
         }
     };
 
