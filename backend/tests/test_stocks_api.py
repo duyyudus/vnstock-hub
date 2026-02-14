@@ -34,8 +34,22 @@ async def test_get_indices_with_data(client, db_session):
 @pytest.mark.asyncio
 async def test_get_stocks_by_index(client):
     mock_stocks = [
-        StockInfo(ticker="TCB", price=50000, market_cap=100000, company_name="Techcombank"),
-        StockInfo(ticker="VCB", price=90000, market_cap=200000, company_name="Vietcombank")
+        StockInfo(
+            ticker="TCB",
+            price=50000,
+            market_cap=100000,
+            company_name="Techcombank",
+            foreign_buy_value=65.01,
+            foreign_sell_value=34.01,
+        ),
+        StockInfo(
+            ticker="VCB",
+            price=90000,
+            market_cap=200000,
+            company_name="Vietcombank",
+            foreign_buy_value=None,
+            foreign_sell_value=None,
+        )
     ]
 
     with patch.object(vnstock_service, 'get_index_stocks', return_value=mock_stocks):
@@ -46,6 +60,10 @@ async def test_get_stocks_by_index(client):
         assert data["count"] == 2
         assert data["index_symbol"] == "VN30"
         assert data["stocks"][0]["ticker"] == "TCB"
+        assert data["stocks"][0]["foreign_buy_value"] == 65.01
+        assert data["stocks"][0]["foreign_sell_value"] == 34.01
+        assert data["stocks"][1]["foreign_buy_value"] is None
+        assert data["stocks"][1]["foreign_sell_value"] is None
 
 @pytest.mark.asyncio
 async def test_get_industries(client):
@@ -125,8 +143,22 @@ async def test_get_price_history(client):
 @pytest.mark.asyncio
 async def test_get_stock_quotes(client):
     mock_stocks = [
-        StockInfo(ticker="TCB", price=50000, market_cap=100000, company_name="Techcombank"),
-        StockInfo(ticker="VCB", price=90000, market_cap=200000, company_name="Vietcombank")
+        StockInfo(
+            ticker="TCB",
+            price=50000,
+            market_cap=100000,
+            company_name="Techcombank",
+            foreign_buy_value=10.0,
+            foreign_sell_value=8.0,
+        ),
+        StockInfo(
+            ticker="VCB",
+            price=90000,
+            market_cap=200000,
+            company_name="Vietcombank",
+            foreign_buy_value=None,
+            foreign_sell_value=None,
+        )
     ]
 
     with patch.object(vnstock_service, 'get_symbol_stocks', return_value=mock_stocks):
@@ -140,3 +172,9 @@ async def test_get_stock_quotes(client):
         tickers = [stock["ticker"] for stock in data["stocks"]]
         assert "TCB" in tickers
         assert "VCB" in tickers
+        first_stock = next(stock for stock in data["stocks"] if stock["ticker"] == "TCB")
+        second_stock = next(stock for stock in data["stocks"] if stock["ticker"] == "VCB")
+        assert first_stock["foreign_buy_value"] == 10.0
+        assert first_stock["foreign_sell_value"] == 8.0
+        assert second_stock["foreign_buy_value"] is None
+        assert second_stock["foreign_sell_value"] is None

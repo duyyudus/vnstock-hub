@@ -24,6 +24,8 @@ class StockInfo:
     charter_capital: float = 0.0  # In billion VND
     pe_ratio: float | None = None
     accumulated_value: float | None = None  # In billion VND
+    foreign_buy_value: float | None = None  # In billion VND
+    foreign_sell_value: float | None = None  # In billion VND
     price_change_24h: float | None = None  # Percentage
     price_change_1w: float | None = None  # Percentage
     price_change_1m: float | None = None  # Percentage

@@ -333,6 +333,26 @@ class StocksService:
                                 except (ValueError, TypeError):
                                     pass
 
+                            # Get foreign buy/sell values (in billion VND)
+                            # API returns values in VND, divide by 1e9 to get Billion VND
+                            foreign_buy_value = None
+                            if 'match_foreign_buy_value' in row.index:
+                                try:
+                                    foreign_buy = row['match_foreign_buy_value']
+                                    if pd.notna(foreign_buy):
+                                        foreign_buy_value = float(foreign_buy) / 1e9
+                                except (ValueError, TypeError):
+                                    pass
+
+                            foreign_sell_value = None
+                            if 'match_foreign_sell_value' in row.index:
+                                try:
+                                    foreign_sell = row['match_foreign_sell_value']
+                                    if pd.notna(foreign_sell):
+                                        foreign_sell_value = float(foreign_sell) / 1e9
+                                except (ValueError, TypeError):
+                                    pass
+
                             # Get 24h price change percentage
                             price_change_24h = None
                             if 'match_price_change_ratio' in row.index:
@@ -378,6 +398,8 @@ class StocksService:
                                     charter_capital=round(charter_capital, 2),
                                     pe_ratio=round(pe_ratio, 2) if pe_ratio is not None else None,
                                     accumulated_value=round(accumulated_value, 2) if accumulated_value is not None else None,
+                                    foreign_buy_value=round(foreign_buy_value, 2) if foreign_buy_value is not None else None,
+                                    foreign_sell_value=round(foreign_sell_value, 2) if foreign_sell_value is not None else None,
                                     price_change_24h=round(price_change_24h, 2) if price_change_24h is not None else None,
                                     industry=industry
                                 ))

@@ -265,6 +265,8 @@ async def get_group_stocks(
                 charter_capital=stock.charter_capital,
                 pe_ratio=stock.pe_ratio,
                 accumulated_value=stock.accumulated_value,
+                foreign_buy_value=stock.foreign_buy_value,
+                foreign_sell_value=stock.foreign_sell_value,
                 price_change_24h=stock.price_change_24h,
                 price_change_1w=stock.price_change_1w,
                 price_change_1m=stock.price_change_1m,

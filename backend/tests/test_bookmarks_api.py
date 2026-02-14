@@ -190,6 +190,8 @@ async def test_get_group_stocks_details(client: AsyncClient, auth_headers):
         charter_capital=0.0, 
         pe_ratio=None, 
         accumulated_value=None,
+        foreign_buy_value=12.3,
+        foreign_sell_value=9.8,
         price_change_24h=1.5, 
         price_change_1w=None,
         price_change_1m=None, 
@@ -209,6 +211,8 @@ async def test_get_group_stocks_details(client: AsyncClient, auth_headers):
         assert stock["ticker"] == "TCB"
         assert stock["company_name"] == "Techcombank"
         assert stock["price"] == 50000.0
+        assert stock["foreign_buy_value"] == 12.3
+        assert stock["foreign_sell_value"] == 9.8
 
 @pytest.mark.asyncio
 async def test_unauthorized_access(client: AsyncClient, auth_headers):

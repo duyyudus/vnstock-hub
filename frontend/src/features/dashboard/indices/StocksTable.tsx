@@ -22,7 +22,7 @@ interface StocksTableProps {
     onBookmarksUpdated?: (groupId?: number) => void;
 }
 
-type SortKey = keyof Stock;
+type SortKey = keyof Stock | 'foreign_net_value';
 type SortDirection = 'asc' | 'desc';
 
 interface SortConfig {
@@ -147,6 +147,14 @@ export const StocksTable: React.FC<StocksTableProps> = ({
 
     const formatAccumulatedValue = (value: number | null): string => {
         if (value === null) return '-';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(value);
+    };
+
+    const formatForeignValue = (value: number | null | undefined): string => {
+        if (value == null) return '-';
         return new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
@@ -435,8 +443,16 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         const sortableStocks = [...stocks];
         if (sortConfig.key) {
             sortableStocks.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
+                const aValue = sortConfig.key === 'foreign_net_value'
+                    ? (a.foreign_buy_value != null && a.foreign_sell_value != null
+                        ? a.foreign_buy_value - a.foreign_sell_value
+                        : null)
+                    : a[sortConfig.key as keyof Stock];
+                const bValue = sortConfig.key === 'foreign_net_value'
+                    ? (b.foreign_buy_value != null && b.foreign_sell_value != null
+                        ? b.foreign_buy_value - b.foreign_sell_value
+                        : null)
+                    : b[sortConfig.key as keyof Stock];
 
                 if (aValue == null) return 1;
                 if (bValue == null) return -1;
@@ -472,7 +488,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         );
     };
 
-    const totalColumns = isLoggedIn ? 16 : 15;
+    const totalColumns = isLoggedIn ? 17 : 16;
 
     return (
         <div className="overflow-x-auto rounded-xl">
@@ -569,6 +585,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     Vol<br />(B VND)
                                 </div>
                                 {renderSortIcon('accumulated_value')}
+                            </div>
+                        </th>
+                        <th
+                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                            onClick={() => handleSort('foreign_net_value')}
+                        >
+                            <div className="flex items-center justify-end">
+                                <div className="text-right">
+                                    Foreign<br />(B VND)
+                                </div>
+                                {renderSortIcon('foreign_net_value')}
                             </div>
                         </th>
                         <th
@@ -722,6 +749,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         >
                                             {formatAccumulatedValue(stock.accumulated_value)}
                                         </button>
+                                    </td>
+                                    <td className="text-right font-mono whitespace-nowrap">
+                                        {stock.foreign_buy_value != null && stock.foreign_sell_value != null ? (
+                                            <>
+                                                <span className="text-success">{formatForeignValue(stock.foreign_buy_value)}</span>
+                                                <span className="text-base-content">|</span>
+                                                <span className="text-error">{formatForeignValue(stock.foreign_sell_value)}</span>
+                                            </>
+                                        ) : (
+                                            <span className="text-base-content/50">-|-</span>
+                                        )}
                                     </td>
                                     <td className={`text-right font-mono ${change24h.className}`}>
                                         {change24h.text}
