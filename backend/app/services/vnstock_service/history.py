@@ -482,6 +482,101 @@ class HistoryService:
             symbol_clean,
         )
 
+    async def get_stocks_volume_series(
+        self,
+        symbols: List[str],
+        start_date: date,
+        end_date: date,
+    ) -> Dict[str, Any]:
+        """
+        Fetch volume-value time series for multiple symbols within a date range.
+        """
+        clean_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
+
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+
+        today = date.today()
+        bounded_end = min(end_date, today)
+        bounded_start = min(start_date, bounded_end)
+
+        if not clean_symbols:
+            return {
+                "stocks": [],
+                "start_date": bounded_start.strftime("%Y-%m-%d"),
+                "end_date": bounded_end.strftime("%Y-%m-%d"),
+                "is_stale": False,
+                "is_syncing": False,
+            }
+
+        async with async_session() as session:
+            stmt = select(StockDailyPrice).where(
+                and_(
+                    StockDailyPrice.symbol.in_(clean_symbols),
+                    StockDailyPrice.date >= bounded_start,
+                    StockDailyPrice.date <= bounded_end,
+                )
+            ).order_by(StockDailyPrice.symbol.asc(), StockDailyPrice.date.asc())
+            result = await session.execute(stmt)
+            records = result.scalars().all()
+
+        company_names = await self._get_company_names(clean_symbols)
+        series_by_symbol: Dict[str, List[Dict[str, Any]]] = {symbol: [] for symbol in clean_symbols}
+
+        for record in records:
+            value = None
+            if record.volume is not None and record.close is not None:
+                value = round((record.volume * record.close) / 1e6, 2)
+
+            series_by_symbol.setdefault(record.symbol, []).append({
+                "date": record.date.strftime("%Y-%m-%d"),
+                "value": value,
+            })
+
+        stale_check_payload = {
+            symbol: [{"date": point["date"]} for point in points]
+            for symbol, points in series_by_symbol.items()
+        }
+        stale_symbols = self._get_symbols_with_stale_latest(
+            stocks_data=stale_check_payload,
+            requested_symbols=clean_symbols,
+            end_date=bounded_end,
+        )
+        is_stale = len(stale_symbols) > 0
+        is_syncing = any(symbol in self._weekly_prices_syncing_symbols for symbol in clean_symbols)
+
+        if stale_symbols:
+            latest_window_start = max(
+                bounded_start,
+                bounded_end - timedelta(days=WEEKLY_SYNC_LATEST_WINDOW_DAYS),
+            )
+            triggered = await self._trigger_price_history_sync(
+                symbols=stale_symbols,
+                start_date=latest_window_start,
+                end_date=bounded_end,
+                force=False,
+            )
+            if triggered:
+                is_syncing = True
+
+        stocks_response = [
+            {
+                "symbol": symbol,
+                "ticker": symbol,
+                "company_name": company_names.get(symbol, symbol),
+                "data": series_by_symbol.get(symbol, []),
+            }
+            for symbol in clean_symbols
+        ]
+
+        return {
+            "stocks": stocks_response,
+            "start_date": bounded_start.strftime("%Y-%m-%d"),
+            "end_date": bounded_end.strftime("%Y-%m-%d"),
+            "is_stale": is_stale,
+            "is_syncing": is_syncing,
+        }
+
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
         symbol_clean = symbol[:3].upper()

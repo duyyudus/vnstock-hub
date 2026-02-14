@@ -104,6 +104,11 @@ def test_check_prices_historical_coverage_allows_small_offset_from_start():
 async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_historical_gap(monkeypatch):
     service = HistoryService()
 
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 6)
+
     async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
         return {
             "AAA": [
@@ -121,6 +126,7 @@ async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_h
     monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
     monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
     monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
+    monkeypatch.setattr(history_module, "date", FixedDate)
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
@@ -221,6 +227,11 @@ async def test_get_stocks_weekly_prices_triggers_request_path_sync_when_latest_i
 async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_historical_gap_only(monkeypatch):
     service = HistoryService()
 
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 6)
+
     async def _fake_load_weekly_prices(_symbols, _start_date, _end_date):
         return {
             "AAA": [
@@ -242,6 +253,7 @@ async def test_get_stocks_weekly_prices_does_not_trigger_request_path_sync_for_h
     monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
     monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
     monkeypatch.setattr(service, "_trigger_price_history_sync", _unexpected_trigger)
+    monkeypatch.setattr(history_module, "date", FixedDate)
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
@@ -927,6 +939,113 @@ async def test_get_volume_history_sets_sync_error_when_request_sync_fails(monkey
     assert result["sync_error"] == "request sync exploded"
     assert result["updated_through"] is None
     assert result["repaired_missing_dates"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(monkeypatch, db_session):
+    service = HistoryService()
+    trigger_calls = []
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return False
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    db_session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
+    db_session.add(
+        StockDailyPrice(
+            symbol="TCB",
+            date=date(2026, 2, 10),
+            open=20.0,
+            high=20.5,
+            low=19.8,
+            close=20.0,
+            volume=1_500_000,
+        )
+    )
+    db_session.add(
+        StockDailyPrice(
+            symbol="TCB",
+            date=date(2026, 2, 11),
+            open=20.1,
+            high=20.3,
+            low=19.9,
+            close=20.2,
+            volume=None,
+        )
+    )
+    await db_session.commit()
+
+    result = await service.get_stocks_volume_series(
+        symbols=["tcbx", "TCB", ""],
+        start_date=date(2026, 2, 20),
+        end_date=date(2026, 2, 1),
+    )
+
+    assert result["start_date"] == "2026-02-01"
+    assert result["end_date"] == "2026-02-11"
+    assert result["is_stale"] is False
+    assert result["is_syncing"] is False
+    assert trigger_calls == []
+
+    assert len(result["stocks"]) == 1
+    stock = result["stocks"][0]
+    assert stock["symbol"] == "TCB"
+    assert stock["ticker"] == "TCB"
+    assert stock["company_name"] == "Techcombank"
+    assert stock["data"][0]["date"] == "2026-02-10"
+    assert stock["data"][0]["value"] == 30.0
+    assert stock["data"][1]["date"] == "2026-02-11"
+    assert stock["data"][1]["value"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_stocks_volume_series_triggers_sync_for_stale_symbols(monkeypatch, db_session):
+    service = HistoryService()
+    trigger_calls = []
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    async def _fake_trigger(symbols, start_date, end_date, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+
+    result = await service.get_stocks_volume_series(
+        symbols=["VCB"],
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 2, 11),
+    )
+
+    assert result["is_stale"] is True
+    assert result["is_syncing"] is True
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0]["symbols"] == ["VCB"]
+    assert trigger_calls[0]["start_date"] == date(2026, 1, 1)
+    assert trigger_calls[0]["end_date"] == date(2026, 2, 11)
+    assert trigger_calls[0]["force"] is False
 
 
 def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):

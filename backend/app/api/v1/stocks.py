@@ -1,6 +1,7 @@
 """
 Stock-related API endpoints.
 """
+from datetime import date
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
@@ -172,6 +173,36 @@ class StocksWeeklyPricesResponse(BaseModel):
     """Response model for weekly prices of multiple stocks."""
     stocks: List[StockWeeklyPriceData]
     benchmarks: dict
+    start_date: str
+    end_date: str
+    is_stale: bool = False
+    is_syncing: bool = False
+
+
+class VolumeSeriesPoint(BaseModel):
+    """A single daily volume-value point."""
+    date: str
+    value: Optional[float] = None
+
+
+class StockVolumeSeriesData(BaseModel):
+    """Volume-value series for one stock."""
+    symbol: str
+    ticker: str
+    company_name: str
+    data: List[VolumeSeriesPoint]
+
+
+class StocksVolumeSeriesRequest(BaseModel):
+    """Request model for fetching volume series for multiple stocks."""
+    symbols: List[str]
+    start_date: date
+    end_date: date
+
+
+class StocksVolumeSeriesResponse(BaseModel):
+    """Response model for volume series across multiple stocks."""
+    stocks: List[StockVolumeSeriesData]
     start_date: str
     end_date: str
     is_stale: bool = False
@@ -579,3 +610,36 @@ async def get_stocks_weekly_prices(request: StocksWeeklyPricesRequest):
         include_benchmarks=request.include_benchmarks
     )
     return StocksWeeklyPricesResponse(**result)
+
+
+@router.post("/volume-series", response_model=StocksVolumeSeriesResponse)
+async def get_stocks_volume_series(request: StocksVolumeSeriesRequest):
+    """
+    Get volume-value time series for multiple stocks in a date range.
+
+    Args:
+        request: Request with stock symbols and date range
+
+    Returns:
+        Per-stock daily value series in Billion VND
+    """
+    result = await vnstock_service.get_stocks_volume_series(
+        symbols=request.symbols,
+        start_date=request.start_date,
+        end_date=request.end_date,
+    )
+    return StocksVolumeSeriesResponse(
+        stocks=[
+            StockVolumeSeriesData(
+                symbol=stock["symbol"],
+                ticker=stock["ticker"],
+                company_name=stock["company_name"],
+                data=[VolumeSeriesPoint(**point) for point in stock["data"]],
+            )
+            for stock in result["stocks"]
+        ],
+        start_date=result["start_date"],
+        end_date=result["end_date"],
+        is_stale=bool(result.get("is_stale", False)),
+        is_syncing=bool(result.get("is_syncing", False)),
+    )

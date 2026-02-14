@@ -428,6 +428,26 @@ export interface StocksWeeklyPricesResponse {
     is_syncing: boolean;
 }
 
+export interface VolumeSeriesPoint {
+    date: string;
+    value: number | null;
+}
+
+export interface StockVolumeSeriesData {
+    symbol: string;
+    ticker: string;
+    company_name: string;
+    data: VolumeSeriesPoint[];
+}
+
+export interface StocksVolumeSeriesResponse {
+    stocks: StockVolumeSeriesData[];
+    start_date: string;
+    end_date: string;
+    is_stale: boolean;
+    is_syncing: boolean;
+}
+
 // Fund data types
 export interface FundDataResponse {
     symbol?: string;
@@ -820,6 +840,25 @@ export const stockApi = {
             symbols,
             start_year: startYear,
             include_benchmarks: includeBenchmarks
+        });
+        return response.data;
+    },
+
+    /**
+     * Fetch daily trading value series for multiple stocks.
+     * @param symbols List of stock ticker symbols
+     * @param startDate Inclusive start date (YYYY-MM-DD)
+     * @param endDate Inclusive end date (YYYY-MM-DD)
+     */
+    async getStocksVolumeSeries(
+        symbols: string[],
+        startDate: string,
+        endDate: string
+    ): Promise<StocksVolumeSeriesResponse> {
+        const response = await apiClient.post<StocksVolumeSeriesResponse>('/stocks/volume-series', {
+            symbols,
+            start_date: startDate,
+            end_date: endDate,
         });
         return response.data;
     },

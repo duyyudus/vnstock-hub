@@ -125,6 +125,53 @@ async def test_get_volume_history(client):
 
 
 @pytest.mark.asyncio
+async def test_get_stocks_volume_series(client):
+    mock_series = {
+        "stocks": [
+            {
+                "symbol": "TCB",
+                "ticker": "TCB",
+                "company_name": "Techcombank",
+                "data": [
+                    {"date": "2026-02-10", "value": 25.1},
+                    {"date": "2026-02-11", "value": 27.3},
+                ],
+            },
+            {
+                "symbol": "VCB",
+                "ticker": "VCB",
+                "company_name": "Vietcombank",
+                "data": [],
+            },
+        ],
+        "start_date": "2025-11-14",
+        "end_date": "2026-02-11",
+        "is_stale": True,
+        "is_syncing": True,
+    }
+    with patch.object(vnstock_service, 'get_stocks_volume_series', return_value=mock_series):
+        response = await client.post(
+            "/api/v1/stocks/volume-series",
+            json={
+                "symbols": ["TCB", "VCB"],
+                "start_date": "2025-11-14",
+                "end_date": "2026-02-11",
+            }
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+    assert data["start_date"] == "2025-11-14"
+    assert data["end_date"] == "2026-02-11"
+    assert data["is_stale"] is True
+    assert data["is_syncing"] is True
+    assert data["stocks"][0]["symbol"] == "TCB"
+    assert data["stocks"][0]["data"][0]["value"] == 25.1
+    assert data["stocks"][1]["symbol"] == "VCB"
+    assert data["stocks"][1]["data"] == []
+
+
+@pytest.mark.asyncio
 async def test_get_price_history(client):
     mock_prices = {
         "symbol": "TCB",

@@ -8,6 +8,7 @@ import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
 import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
+import { StocksVolumeChart } from './StocksVolumeChart';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -27,7 +28,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'table' | 'growth' | 'comparison' | 'risk_return';
+type ViewMode = 'table' | 'growth' | 'comparison' | 'risk_return' | 'volume';
 
 interface ExportNotice {
     kind: 'success' | 'warning';
@@ -594,6 +595,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             </svg>
                             Risk/Return
                         </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'volume' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('volume')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h6m-6 4h14M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" />
+                            </svg>
+                            Volume
+                        </button>
                     </div>
                 </div>
             </div>
@@ -625,6 +635,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             />
                         ) : viewMode === 'risk_return' ? (
                             <StocksRiskReturnScatterPlot
+                                stocks={filteredStocks}
+                            />
+                        ) : viewMode === 'volume' ? (
+                            <StocksVolumeChart
                                 stocks={filteredStocks}
                             />
                         ) : (
