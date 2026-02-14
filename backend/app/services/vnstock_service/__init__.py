@@ -44,11 +44,17 @@ class VnstockService:
         self.history.set_on_demand_history_sync_handler(
             self.price_sync.sync_symbol_history_for_request
         )
+        self.history.set_weekly_history_sync_trigger_handler(
+            self._run_price_sync_for_symbols
+        )
         self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
         self.company_data_sync = CompanyDataSyncService(company=self.company)
         self.indices = IndicesService()
         self.funds = FundsService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
+
+    async def _run_price_sync_for_symbols(self, symbols: List[str]) -> Dict[str, Any]:
+        return await self.price_sync.run_sync(symbols=symbols)
 
     async def start_background_tasks(self) -> None:
         """Start long-running background workers."""

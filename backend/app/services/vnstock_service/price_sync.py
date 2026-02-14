@@ -1255,6 +1255,8 @@ class PriceSyncService:
                 row = StockPriceSyncState(symbol=symbol)
                 session.add(row)
 
+            row.sync_status = 'completed'
+            row.sync_completed_at = now
             row.last_incremental_sync_at = now
             if oldest is not None:
                 row.earliest_synced_date = oldest

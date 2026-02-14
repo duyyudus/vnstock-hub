@@ -5,8 +5,10 @@ import threading
 import time
 
 import pytest
+from sqlalchemy import select
 
 import app.services.vnstock_service.price_sync as price_sync_module
+from app.db.models import StockPriceSyncState
 from app.services.sync_status import sync_status
 from app.services.vnstock_service.history import HistoryService
 from app.services.vnstock_service.price_sync import (
@@ -512,6 +514,30 @@ async def test_sync_symbol_without_history_starts_from_listing_date(monkeypatch)
 
     assert chunk_starts
     assert chunk_starts[0] == date(2021, 6, 15)
+
+
+@pytest.mark.asyncio
+async def test_mark_symbol_sync_result_sets_completed_status(monkeypatch, db_session):
+    service = PriceSyncService(history=HistoryService())
+
+    async def _fake_bounds(_symbol: str):
+        return date(2020, 1, 2), date(2026, 2, 12)
+
+    monkeypatch.setattr(service, "_get_symbol_bounds", _fake_bounds)
+
+    db_session.add(StockPriceSyncState(symbol="AAA", sync_status="running"))
+    await db_session.commit()
+
+    await service._mark_symbol_sync_result("AAA")
+
+    stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == "AAA")
+    row = (await db_session.execute(stmt)).scalar_one()
+
+    assert row.sync_status == "completed"
+    assert row.sync_completed_at is not None
+    assert row.last_incremental_sync_at is not None
+    assert row.earliest_synced_date == date(2020, 1, 2)
+    assert row.latest_synced_date == date(2026, 2, 12)
 
 
 @pytest.mark.asyncio

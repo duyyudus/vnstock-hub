@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any, Callable, Awaitable
+from typing import List, Dict, Any, Callable, Awaitable, Set
 import asyncio
 import threading
 from datetime import datetime, date, timedelta
@@ -13,10 +13,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.db.database import async_session
 from app.db.models import StockDailyPrice, StockCompany, StockPriceSyncState
 from app.services.sync_status import sync_status
-from app.core.logging_config import log_background_start, log_background_complete
 
 from .core import (
-    background_executor,
     frontend_executor,
     logger,
     bg_logger,
@@ -31,8 +29,6 @@ from .models import StockInfo
 
 
 # Weekly price history defaults
-HISTORY_COVERAGE_TOLERANCE_DAYS = 30
-WEEKLY_SYNC_LATEST_WINDOW_DAYS = 45
 REQUEST_HISTORY_SYNC_TIMEOUT_SECONDS = 12.0
 
 
@@ -40,19 +36,23 @@ class HistoryService:
     """Historical price and volume data operations."""
 
     def __init__(self) -> None:
-        # Track background sync task for weekly prices
-        self._weekly_prices_sync_task: asyncio.Task | None = None
-        self._weekly_prices_syncing_symbols = set()
         self._weekly_prices_retry_cooldown = timedelta(minutes=10)
         self._symbol_sync_locks: Dict[str, threading.Lock] = {}
         self._symbol_sync_locks_guard = threading.Lock()
         self._request_sync_handler: Callable[[str, date, date, float], Awaitable[Dict[str, Any]]] | None = None
+        self._weekly_sync_trigger_handler: Callable[[List[str]], Awaitable[Dict[str, Any]]] | None = None
 
     def set_on_demand_history_sync_handler(
         self,
         handler: Callable[[str, date, date, float], Awaitable[Dict[str, Any]]]
     ) -> None:
         self._request_sync_handler = handler
+
+    def set_weekly_history_sync_trigger_handler(
+        self,
+        handler: Callable[[List[str]], Awaitable[Dict[str, Any]]]
+    ) -> None:
+        self._weekly_sync_trigger_handler = handler
 
     def _get_symbol_sync_lock(self, symbol: str) -> threading.Lock:
         symbol_key = symbol[:3].upper()
@@ -108,16 +108,7 @@ class HistoryService:
         return
 
     async def stop_background_workers(self) -> None:
-        """Cancel in-flight request-path weekly sync task."""
-        if self._weekly_prices_sync_task and not self._weekly_prices_sync_task.done():
-            self._weekly_prices_sync_task.cancel()
-            try:
-                await self._weekly_prices_sync_task
-            except asyncio.CancelledError:
-                pass
-
-        self._weekly_prices_sync_task = None
-        self._weekly_prices_syncing_symbols.clear()
+        """No-op hook kept for lifecycle symmetry."""
         return
 
     def enrich_with_price_changes(self, stocks: List[StockInfo]) -> List[StockInfo]:
@@ -543,16 +534,13 @@ class HistoryService:
             end_date=bounded_end,
         )
         is_stale = len(stale_symbols) > 0
-        is_syncing = any(symbol in self._weekly_prices_syncing_symbols for symbol in clean_symbols)
+        is_syncing_symbols = await self._get_symbols_currently_syncing(clean_symbols)
+        is_syncing = len(is_syncing_symbols) > 0
 
         if stale_symbols:
-            latest_window_start = max(
-                bounded_start,
-                bounded_end - timedelta(days=WEEKLY_SYNC_LATEST_WINDOW_DAYS),
-            )
             triggered = await self._trigger_price_history_sync(
                 symbols=stale_symbols,
-                start_date=latest_window_start,
+                start_date=bounded_start,
                 end_date=bounded_end,
                 force=False,
             )
@@ -764,15 +752,9 @@ class HistoryService:
         # Load from database
         stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
 
-        # Check freshness + requested historical coverage
+        # Check freshness from latest locally available date only.
         stale_latest_symbols = self._get_symbols_with_stale_latest(stocks_data, clean_symbols, end_date)
-        has_stale_latest = len(stale_latest_symbols) > 0
-        has_historical_gap = self._check_prices_historical_coverage(
-            stocks_data=stocks_data,
-            requested_symbols=clean_symbols,
-            start_date=start_date
-        )
-        is_stale = has_stale_latest or has_historical_gap
+        is_stale = len(stale_latest_symbols) > 0
 
         # Load benchmarks if requested
         benchmarks = {}
@@ -793,16 +775,13 @@ class HistoryService:
                 'prices': prices
             })
 
-        is_syncing = any(symbol in self._weekly_prices_syncing_symbols for symbol in clean_symbols)
+        is_syncing_symbols = await self._get_symbols_currently_syncing(clean_symbols)
+        is_syncing = len(is_syncing_symbols) > 0
 
-        if has_stale_latest:
-            latest_window_start = max(
-                start_date,
-                end_date - timedelta(days=WEEKLY_SYNC_LATEST_WINDOW_DAYS)
-            )
+        if stale_latest_symbols:
             triggered = await self._trigger_price_history_sync(
                 symbols=stale_latest_symbols,
-                start_date=latest_window_start,
+                start_date=start_date,
                 end_date=end_date,
                 force=False
             )
@@ -929,47 +908,6 @@ class HistoryService:
 
         return stale_symbols
 
-    def _check_prices_historical_coverage(
-        self,
-        stocks_data: Dict[str, List[Dict[str, Any]]],
-        requested_symbols: List[str],
-        start_date: date
-    ) -> bool:
-        """
-        Check whether cached history covers the requested start date.
-        Returns True if any requested symbol:
-        - Has no data
-        - Has an earliest valid data point significantly after start_date
-        """
-        if not requested_symbols:
-            return False
-
-        coverage_threshold = start_date + timedelta(days=HISTORY_COVERAGE_TOLERANCE_DAYS)
-
-        for symbol in requested_symbols:
-            prices = stocks_data.get(symbol, [])
-            if not prices:
-                return True
-
-            oldest_date: date | None = None
-            for point in prices:
-                date_str = point.get('date')
-                try:
-                    point_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                except (TypeError, ValueError):
-                    continue
-
-                if oldest_date is None or point_date < oldest_date:
-                    oldest_date = point_date
-
-            if oldest_date is None:
-                return True
-
-            if oldest_date > coverage_threshold:
-                return True
-
-        return False
-
     async def _load_benchmark_prices(
         self,
         start_date: date,
@@ -1057,17 +995,25 @@ class HistoryService:
         force: bool = False
     ) -> bool:
         """
-        Trigger background sync for price history.
-        Returns True if sync was triggered, False if already syncing.
+        Trigger delegated price sync for stale symbols.
+        Returns True if sync was triggered or currently running.
         """
+        if not symbols:
+            return False
+
+        normalized_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
+        if not normalized_symbols:
+            return False
+
         now = datetime.utcnow()
         cooldown_state: Dict[str, datetime] = {}
+        syncing_symbols = await self._get_symbols_currently_syncing(normalized_symbols)
         if not force:
-            cooldown_state = await self._get_weekly_sync_cooldown_state(symbols)
+            cooldown_state = await self._get_weekly_sync_cooldown_state(normalized_symbols)
 
         symbols_to_sync: List[str] = []
-        for symbol in symbols:
-            if symbol in self._weekly_prices_syncing_symbols:
+        for symbol in normalized_symbols:
+            if symbol in syncing_symbols:
                 continue
 
             if not force:
@@ -1078,22 +1024,29 @@ class HistoryService:
             symbols_to_sync.append(symbol)
 
         if not symbols_to_sync:
-            # Only report syncing=True when there is an active sync task for requested symbols.
-            return any(s in self._weekly_prices_syncing_symbols for s in symbols)
+            return len(syncing_symbols) > 0
 
-        # Mark as syncing
-        self._weekly_prices_syncing_symbols.update(symbols_to_sync)
+        if self._weekly_sync_trigger_handler is None:
+            logger.warning("Weekly sync trigger handler is not configured; skipping delegated sync")
+            return len(syncing_symbols) > 0
+
         await self._set_weekly_sync_cooldown_state(
             symbols=symbols_to_sync,
             attempted_at=now,
         )
 
-        # Create background task
-        self._weekly_prices_sync_task = asyncio.create_task(
-            self._sync_price_history_background(symbols_to_sync, start_date, end_date)
-        )
+        try:
+            result = await self._weekly_sync_trigger_handler(symbols_to_sync)
+        except Exception as e:
+            logger.warning(f"Error triggering delegated weekly price sync: {e}")
+            return len(syncing_symbols) > 0
 
-        return True
+        if not isinstance(result, dict):
+            return True
+
+        started = bool(result.get("started"))
+        state = str(result.get("state", "")).strip().lower()
+        return started or state == "running"
 
     async def _get_weekly_sync_cooldown_state(
         self,
@@ -1150,89 +1103,24 @@ class HistoryService:
         except Exception as e:
             logger.warning(f"Error updating weekly sync cooldown state: {e}")
 
-    async def _sync_price_history_background(
-        self,
-        symbols: List[str],
-        start_date: date,
-        end_date: date
-    ) -> None:
-        """
-        Background task to sync price history for given symbols.
-        Fetches from vnstock API and stores in database.
-        """
-        # Early bail-out if rate limited
-        if sync_status.is_rate_limited:
-            bg_logger.warning("Skipping price history sync due to rate limit")
-            for symbol in symbols:
-                self._weekly_prices_syncing_symbols.discard(symbol)
-            return
+    async def _get_symbols_currently_syncing(self, symbols: List[str]) -> Set[str]:
+        if not symbols:
+            return set()
 
-        log_background_start("Price History Sync", f"{len(symbols)} symbols")
-
-        loop = asyncio.get_event_loop()
+        # Ignore stale DB "running" flags when price sync runtime is not active.
+        if not sync_status.price_sync.is_running:
+            return set()
 
         try:
-            # Sync in batches to avoid overwhelming the API
-            batch_size = 10
-            for i in range(0, len(symbols), batch_size):
-                # Check rate limit on each batch
-                if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
-                    bg_logger.warning("Rate limit detected during price sync, stopping early")
-                    break
-
-                batch = symbols[i:i + batch_size]
-
-                for symbol in batch:
-                    # Check rate limit on each symbol for faster exit
-                    if sync_status.is_rate_limited or not api_circuit_breaker.can_proceed():
-                        bg_logger.warning("Rate limit detected, stopping price sync")
-                        break
-                    try:
-                        await loop.run_in_executor(
-                            background_executor,
-                            self._fetch_and_store_stock_history,
-                            symbol,
-                            start_date,
-                            end_date
-                        )
-                        # Small delay between symbols
-                        await asyncio.sleep(0.5)
-                    except Exception as e:
-                        bg_logger.error(f"Error syncing {symbol}: {e}")
-                        # Check if it's a rate limit error
-                        if _is_rate_limit_error(e):
-                            _record_rate_limit(reset_seconds=30.0)
-                            bg_logger.warning("Rate limit hit, stopping price sync")
-                            break
-
-                # Longer delay between batches
-                if i + batch_size < len(symbols):
-                    await asyncio.sleep(2.0)
-
-            log_background_complete("Price History Sync", f"{len(symbols)} symbols processed")
-        finally:
-            # Clear syncing status
-            for symbol in symbols:
-                self._weekly_prices_syncing_symbols.discard(symbol)
-
-    def _fetch_and_store_stock_history(
-        self,
-        symbol: str,
-        start_date: date,
-        end_date: date
-    ) -> None:
-        """Fetch stock history from API and store in database using unified helper."""
-        try:
-            count = self._upsert_stock_price_history(
-                symbol=symbol,
-                start_date=start_date,
-                end_date=end_date
-            )
-            if count > 0:
-                bg_logger.debug(f"Synced {count} price records for {symbol}")
+            async with async_session() as session:
+                stmt = select(StockPriceSyncState.symbol).where(
+                    and_(
+                        StockPriceSyncState.symbol.in_(symbols),
+                        StockPriceSyncState.sync_status == "running",
+                    )
+                )
+                result = await session.execute(stmt)
+                return {row[0] for row in result.all() if row[0]}
         except Exception as e:
-            bg_logger.error(f"Error in background sync for {symbol}: {e}")
-        finally:
-            # Clean up connections
-            engine = get_sync_engine()
-            engine.dispose()
+            logger.warning(f"Error loading currently syncing symbols: {e}")
+            return set()
