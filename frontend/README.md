@@ -1,77 +1,83 @@
-# VNStock Hub - Frontend
+# VNStock Hub Frontend
 
-This is the frontend component of the VNStock Hub, a modern web dashboard for tracking the Vietnam stock market. It is built with React, TypeScript, and Vite, featuring a sleek UI powered by TailwindCSS and DaisyUI.
+React + TypeScript dashboard for VNStock Hub, covering market analytics, fund exploration, personal portfolio tracking, bookmarks, auth, and admin sync controls.
 
-## 🚀 Tech Stack
+## Tech Stack
 
-- **Framework:** [React 19](https://react.dev/)
-- **Build Tool:** [Vite](https://vitejs.dev/)
-- **Language:** [TypeScript](https://www.typescriptlang.org/)
-- **Styling:** [TailwindCSS](https://tailwindcss.com/) & [DaisyUI](https://daisyui.com/)
-- **Charts:** [Recharts](https://recharts.org/)
-- **API Client:** [Axios](https://axios-http.com/)
-- **State/Auth:** Custom hooks and context for JWT authentication.
+- React 19 + TypeScript
+- Vite
+- TailwindCSS + DaisyUI
+- Recharts
+- Axios
 
-## 📦 Project Structure
+## App Structure
 
 ```text
 frontend/
 ├── src/
-│   ├── api/            # Centralized API client (stockApi.ts)
-│   ├── components/     # Shared UI components (Navigation, SyncIndicator)
-│   ├── features/       # Feature-based modules
-│   │   ├── auth/       # Login/Register widgets and user hooks
-│   │   ├── dashboard/  # Main hub: Indices, Funds, Portfolio tabs
-│   │   │   ├── banner/ # Index market banners
-│   │   │   ├── funds/  # Fund analysis charts and selectors
-│   │   │   ├── indices/# Stock tables, growth charts, industry filters
-│   │   │   └── portfolio/ # Portfolio tracking and management
-│   ├── App.tsx         # Root layout and routing
-│   └── main.tsx        # Application entry point
-├── tailwind.config.js  # Tailwind CSS & DaisyUI configuration
-└── package.json        # Project dependencies and scripts
+│   ├── api/                 # stockApi.ts (all backend calls + auth storage)
+│   ├── components/          # shared components (tab nav, sync indicator)
+│   ├── features/
+│   │   ├── auth/            # AuthWidget, useAuthUser
+│   │   ├── admin/           # /admin page + sync control tabs
+│   │   └── dashboard/
+│   │       ├── banner/      # index banners
+│   │       ├── components/  # financial/volume/price popups, shared charts
+│   │       ├── funds/       # fund analysis views
+│   │       ├── indices/     # index/industry/bookmark views + table/charts/export
+│   │       └── portfolio/   # portfolio management and imports/exports
+│   ├── App.tsx              # path switch: dashboard vs /admin
+│   └── main.tsx
+└── package.json
 ```
 
-## 🛠️ Getting Started
+## Key Features
+
+- Dashboard tabs: `Indices`, `Funds`, and `Portfolio` (portfolio tab shown when logged in).
+- Indices workflows: search, index/industry/bookmark filters, table + growth/comparison/risk-return chart modes.
+- Stock tooling: draggable financial popup, volume history popup, and price history popup.
+- Bookmark workflows: group CRUD and per-group ticker management from the stock table.
+- Batch export flow from indices tab for company + finance CSV datasets.
+- Funds analytics: NAV charts, holdings breakdowns, cumulative growth, risk-return scatter, periodic return heatmap.
+- Portfolio workflows: position CRUD, quote refresh, CSV export, fresh CSV import, and LLM-assisted import using broker presets.
+- Admin page (`/admin`): live sync status polling and trigger actions for price, audit, repair, finance sync, and company sync.
+- Auth/session handling: register/login, JWT persistence, auto-logout by token expiry, and user settings for export preferences.
+
+## Setup
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
+- Node.js 18+
 - npm
 
-### Installation
+### Install
 
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create a `.env` file:
-   ```env
-   VITE_API_URL=http://localhost:8000/api/v1
-   ```
-
-### Running the Application
-
-Start the development server:
 ```bash
+cd frontend
+npm install
+```
+
+### Environment
+
+Create `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+## Run
+
+```bash
+cd frontend
 npm run dev
 ```
-Access at: `http://localhost:5173`
 
-## ✨ Key Features
+- App URL: `http://localhost:5173`
+- Quick start from repo root: `./run-ui`
 
-- **Indices Dashboard:** Dynamic index selection (VN30, VN100, etc.), industry-based filtering, and stock bookmarking.
-- **Mutual Fund Explorer:** Visual analysis of fund NAV performance, risk-return profiles, and detailed holding allocations.
-- **Portfolio Tracking:** Manage your stock positions and view real-time performance summaries.
-- **Interactive Visualizations:** Responsive growth charts, volume history, and financial performance popups.
-- **Secure Authentication:** User registration and login to persist bookmarks and portfolio data.
+## Scripts
 
-## 🎨 Design System
-
-- **Modern UI:** Clean, glassmorphic design using DaisyUI components.
-- **Dark Mode:** Fully optimized for professional dark theme environments.
-- **Responsive:** Mobile-friendly layouts for market tracking on the go.
+- `npm run dev` — start dev server
+- `npm run build` — type-check + production build
+- `npm run preview` — preview built app
+- `npm run lint` — ESLint

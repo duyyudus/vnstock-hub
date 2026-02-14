@@ -1,65 +1,93 @@
-# VNStock Hub - Backend
+# VNStock Hub Backend
 
-This is the backend component of the VNStock Hub, a web application for tracking and analyzing the Vietnam stock market. It provides a RESTful API built with FastAPI, leveraging the `vnstock` library for data retrieval and PostgreSQL for data persistence.
+FastAPI backend for VNStock Hub, providing market/fund data APIs, user features (auth, bookmarks, portfolio), and background synchronization jobs.
 
-## 🚀 Tech Stack
+## Tech Stack
 
-- **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.12+)
-- **Package Management:** [uv](https://github.com/astral-sh/uv)
-- **Database:** PostgreSQL with [SQLAlchemy](https://www.sqlalchemy.org/) ORM (Async)
-- **Migrations:** [Alembic](https://alembic.sqlalchemy.org/)
-- **Data Source:** [vnstock](https://github.com/thinh-vu/vnstock) library
-- **Validation:** Pydantic v2
-- **Security:** JWT Authentication (`python-jose`) + password hashing (`passlib`/bcrypt)
+- FastAPI (Python 3.12+)
+- uv (dependency + environment management)
+- PostgreSQL + SQLAlchemy async
+- Alembic migrations
+- Pydantic v2
+- JWT auth (`python-jose`) + password hashing
+- `vnstock` data source wrapper (`app/services/vnstock_service`)
 
-## 📦 Project Structure
+## Current Capabilities
+
+- Stock endpoints for index values, index/industry constituents, quotes, finance datasets, company datasets, and historical price/volume.
+- Fund endpoints for listing, aggregated performance, NAV report, top holdings, industry holdings, and asset holdings.
+- Auth endpoints for register/login plus user export preference settings.
+- Bookmark groups for authenticated users (group CRUD + per-group stocks).
+- Portfolio position management (CRUD), CSV export, CSV overwrite import, and LLM-assisted import from file/image flows.
+- Sync status + admin controls for price sync, price audit, repair, finance sync, and company sync.
+- Startup lifecycle that syncs indices and starts/stops background workers.
+
+## Project Structure
 
 ```text
 backend/
-├── alembic/            # Database migrations
+├── alembic/
 ├── app/
-│   ├── api/v1/         # API endpoints (Auth, Stocks, Funds, Portfolio, Sync)
-│   ├── core/           # Config, auth deps, security, logging, circuit breaker
-│   ├── db/             # Database session and SQLAlchemy models
-│   ├── services/       # Business logic
-│   │   ├── vnstock_service/     # Modular vnstock wrapper (indices/stocks/history/sync/funds/...)
-│   │   ├── portfolio_import/    # Broker crop profiles + LLM-backed extraction helpers
-│   │   └── llm/                 # OpenAI-compatible LLM client(s)
-│   └── main.py         # Application entry point
-├── tests/              # Pytest suite for APIs and Services
-├── pyproject.toml      # Project dependencies and metadata
-└── uv.lock             # Lockfile for reproducible builds
+│   ├── api/v1/            # auth, bookmarks, funds, portfolio, stocks, sync
+│   ├── core/              # config, deps, security, exceptions, logging
+│   ├── db/                # async engine/session + SQLAlchemy models
+│   ├── services/
+│   │   ├── vnstock_service/   # facade + domain services + sync workers
+│   │   ├── portfolio_import/  # broker crop profiles + extraction helpers
+│   │   └── llm/               # OpenAI-compatible LLM clients
+│   └── main.py
+├── tests/
+├── settings.yaml
+└── pyproject.toml
 ```
 
-## 🛠️ Getting Started
+## Setup
 
 ### Prerequisites
 
-- Python 3.12 or higher
-- [uv](https://github.com/astral-sh/uv) installed
+- Python 3.12+
+- `uv`
 - PostgreSQL
 
-### Installation
+### Install + migrate
 
-1. Clone the repository and navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Sync dependencies using `uv`:
-   ```bash
-   uv sync
-   ```
-3. Create a `.env` file (see `.env.example`).
-4. Run migrations (recommended):
-   ```bash
-   uv run alembic upgrade head
-   ```
+```bash
+cd backend
+uv sync
+uv run alembic upgrade head
+```
 
-Note: the app also calls `Base.metadata.create_all()` on startup to ensure tables exist in dev, but Alembic migrations are still the source of truth for schema changes.
+Note: app startup also runs `Base.metadata.create_all()` for dev convenience, but Alembic remains the source of truth.
 
-### settings.yaml (Non-environmental config)
+### Environment variables
 
-Broker import profiles live in `backend/settings.yaml`:
+Common settings in `backend/.env`:
+
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
+API_V1_PREFIX=/api/v1
+CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
+VNSTOCK_API_KEY=
+
+JWT_SECRET_KEY=change-me
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+SYNC_TARGET_RPM=150
+SYNC_MAX_WORKERS=6
+SYNC_CHUNK_DAYS=1095
+SYNC_RATE_LIMIT_FIXED_WAIT_SECONDS=30
+SYNC_RATE_LIMIT_MAX_WAIT_SECONDS=1200
+SYNC_ADMIN_EMAILS=["admin@example.com"]
+
+LLM_PROVIDERS=[]
+LLM_REQUEST_TIMEOUT_SECONDS=30
+```
+
+### `settings.yaml`
+
+Broker import presets are loaded from `backend/settings.yaml`:
+
 ```yaml
 brokers:
   - id: vpbanks
@@ -69,131 +97,94 @@ brokers:
     bottom_right: E
 ```
 
-### LLM Provider Configuration (Portfolio Import)
-
-Set `LLM_PROVIDERS` in `.env` as a JSON array (ordered fallback):
-```bash
-LLM_PROVIDERS='[
-  {"name":"gemini","base_url":"https://generativelanguage.googleapis.com/v1beta/openai","api_key":"YOUR_KEY","model":"gpt-4o-mini"},
-  {"name":"openrouter","base_url":"https://openrouter.ai/api/v1","api_key":"YOUR_KEY","model":"openai/gpt-4o-mini"}
-]'
-LLM_REQUEST_TIMEOUT_SECONDS=30
-```
-
-### Sync Runtime Configuration
-
-Background sync workers (price sync + finance sync) read these environment variables:
+## Run
 
 ```bash
-SYNC_TARGET_RPM=150
-SYNC_MAX_WORKERS=10
-SYNC_CHUNK_DAYS=1825
-SYNC_RATE_LIMIT_FIXED_WAIT_SECONDS=30
-SYNC_RATE_LIMIT_MAX_WAIT_SECONDS=1200
-```
-
-Admin-only sync endpoints are guarded by an allowlist:
-
-```bash
-SYNC_ADMIN_EMAILS='["you@example.com"]'
-```
-
-### Running the Application
-
-Start the development server:
-```bash
+cd backend
 uv run uvicorn app.main:app --reload --port 8000
 ```
-Interactive API docs: `http://localhost:8000/docs`
 
-From repo root you can also use:
+- Swagger UI: `http://localhost:8000/docs`
+- Quick start from repo root: `./run-server`
+
+## Testing
+
 ```bash
-./run-server
-```
-
-### Test Environment
-
-Backend tests are isolated to `backend/.env.test`.
-
-- Tests require `backend/.env.test` to exist.
-- Tests use `DATABASE_URL` from `.env.test`.
-- Tests do not read `backend/.env` when running via pytest.
-
-Run tests from the backend directory:
-```bash
+cd backend
 uv run pytest
 ```
 
-## 🔌 API Endpoints (v1)
+Test config is isolated via `backend/.env.test`.
 
-Base prefix: `/api/v1`
+## API Surface (`/api/v1`)
 
-- **Auth**
-   - `POST /auth/register`
-   - `POST /auth/login`
+### Auth
 
-- **Stocks**
-   - `GET /stocks/index-values`
-   - `GET /stocks/indices`
-   - `GET /stocks/index/{index_symbol}`
-   - `GET /stocks/industries`
-   - `GET /stocks/industry/{industry_name}`
-   - `POST /stocks/quotes`
-   - `GET /stocks/finance/{symbol}/income-statement`
-   - `GET /stocks/finance/{symbol}/balance-sheet`
-   - `GET /stocks/finance/{symbol}/cash-flow`
-   - `GET /stocks/finance/{symbol}/ratios`
-   - `GET /stocks/company/{symbol}/overview`
-   - `GET /stocks/company/{symbol}/shareholders`
-   - `GET /stocks/company/{symbol}/officers`
-   - `GET /stocks/company/{symbol}/subsidiaries`
-   - `GET /stocks/history/{symbol}/volume`
-   - `GET /stocks/history/{symbol}/price`
-   - `POST /stocks/weekly-prices`
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/settings`
+- `PATCH /auth/settings`
 
-- **Funds**
-   - `GET /funds/listing`
-   - `GET /funds/performance`
-   - `GET /funds/{symbol}/nav-report`
-   - `GET /funds/{symbol}/top-holding`
-   - `GET /funds/{symbol}/industry-holding`
-   - `GET /funds/{symbol}/asset-holding`
+### Stocks
 
-- **Portfolio** (requires `Authorization: Bearer <token>`)
-   - `GET /portfolio/positions`
-   - `POST /portfolio/positions`
-   - `PATCH /portfolio/positions/{position_id}`
-   - `DELETE /portfolio/positions/{position_id}`
-   - `GET /portfolio/export/csv`
-   - `POST /portfolio/import/fresh` (CSV overwrite import)
-   - `GET /portfolio/import/brokers`
-   - `POST /portfolio/import` (LLM-assisted import from `.csv` / `.xlsx` crop or from image uploads)
+- `GET /stocks/index-values`
+- `GET /stocks/indices`
+- `GET /stocks/index/{index_symbol}`
+- `GET /stocks/industries`
+- `GET /stocks/industry/{industry_name}`
+- `POST /stocks/quotes`
+- `GET /stocks/finance/{symbol}/income-statement`
+- `GET /stocks/finance/{symbol}/balance-sheet`
+- `GET /stocks/finance/{symbol}/cash-flow`
+- `GET /stocks/finance/{symbol}/ratios`
+- `GET /stocks/company/{symbol}/overview`
+- `GET /stocks/company/{symbol}/shareholders`
+- `GET /stocks/company/{symbol}/officers`
+- `GET /stocks/company/{symbol}/subsidiaries`
+- `GET /stocks/history/{symbol}/volume`
+- `GET /stocks/history/{symbol}/price`
+- `POST /stocks/weekly-prices`
 
-- **Bookmarks** (requires `Authorization: Bearer <token>`)
-   - `GET /bookmarks/groups`
-   - `POST /bookmarks/groups`
-   - `PATCH /bookmarks/groups/{group_id}`
-   - `DELETE /bookmarks/groups/{group_id}`
-   - `GET /bookmarks/groups/{group_id}/stocks`
-   - `POST /bookmarks/groups/{group_id}/stocks`
-   - `DELETE /bookmarks/groups/{group_id}/stocks/{ticker}`
+### Funds
 
-- **Sync**
-   - `GET /sync/status`
-   - `POST /sync/prices/run` (admin)
-   - `POST /sync/prices/audit/run` (admin)
-   - `POST /sync/prices/repair/run` (admin)
-   - `POST /sync/finance/run` (admin)
+- `GET /funds/listing`
+- `GET /funds/performance`
+- `GET /funds/{symbol}/nav-report`
+- `GET /funds/{symbol}/top-holding`
+- `GET /funds/{symbol}/industry-holding`
+- `GET /funds/{symbol}/asset-holding`
 
-Non-versioned utility endpoints:
+### Portfolio (auth required)
 
-- `GET /` (API info)
+- `GET /portfolio/positions`
+- `POST /portfolio/positions`
+- `PATCH /portfolio/positions/{position_id}`
+- `DELETE /portfolio/positions/{position_id}`
+- `GET /portfolio/export/csv`
+- `POST /portfolio/import/fresh`
+- `GET /portfolio/import/brokers`
+- `POST /portfolio/import`
+
+### Bookmarks (auth required)
+
+- `GET /bookmarks/groups`
+- `POST /bookmarks/groups`
+- `PATCH /bookmarks/groups/{group_id}`
+- `DELETE /bookmarks/groups/{group_id}`
+- `GET /bookmarks/groups/{group_id}/stocks`
+- `POST /bookmarks/groups/{group_id}/stocks`
+- `DELETE /bookmarks/groups/{group_id}/stocks/{ticker}`
+
+### Sync
+
+- `GET /sync/status`
+- `POST /sync/prices/run` (admin)
+- `POST /sync/prices/audit/run` (admin)
+- `POST /sync/prices/repair/run` (admin)
+- `POST /sync/finance/run` (admin)
+- `POST /sync/company/run` (admin)
+
+### Non-versioned utilities
+
+- `GET /`
 - `GET /health`
-
-## 🧪 Features
-
-- **Market Data APIs:** Indices, index constituents, industry classification, quotes, and historical price/volume.
-- **Company & Finance Data:** Income statement, balance sheet, cash flow, ratios, and company profile datasets.
-- **Fund Analytics:** Fund listing, cached performance comparison, NAV report, and holdings breakdowns.
-- **User Features:** JWT auth, portfolio positions (CRUD + CSV export/import), and bookmark groups.
-- **Background Sync:** Startup index sync + background workers for price sync and finance dataset sync (admin-controlled).
