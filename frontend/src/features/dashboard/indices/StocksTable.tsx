@@ -169,6 +169,13 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(ratio);
     };
 
+    const formatRoomTooltip = (
+        currentRoom: number | null | undefined,
+        totalRoom: number | null | undefined
+    ): string => {
+        return `Current room: ${formatForeignValue(currentRoom)}\nTotal room: ${formatForeignValue(totalRoom)}`;
+    };
+
     const formatPriceChange = (change: number | null): { text: string; className: string } => {
         if (change === null) return { text: '-', className: 'text-base-content/50' };
         const prefix = change > 0 ? '+' : '';
@@ -706,6 +713,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const normalizedTicker = stock.ticker.toUpperCase();
                             const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
                             const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
+                            const hasRoomData = stock.current_room != null || stock.total_room != null;
+                            const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
+                            const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
 
                             return (
                                 <tr key={stock.ticker} className="hover">
@@ -782,7 +792,13 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         )}
                                     </td>
                                     <td className="text-right font-mono whitespace-nowrap text-base-content">
-                                        {formatRemainingRoomRatio(stock.current_room, stock.total_room)}
+                                        {hasRoomData ? (
+                                            <div className="tooltip [&:before]:whitespace-pre-line" data-tip={roomTooltipText}>
+                                                <span className="cursor-help">{roomRatioText}</span>
+                                            </div>
+                                        ) : (
+                                            roomRatioText
+                                        )}
                                     </td>
                                     <td className={`text-right font-mono ${change24h.className}`}>
                                         {change24h.text}
