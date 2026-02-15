@@ -11,6 +11,7 @@ import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
 import { StocksTable } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
+import { deriveIndexIndustryScope } from './indexIndustryScope';
 import { useAuthUser } from '../../auth/useAuthUser';
 import {
     resolveCompanyExportCategory,
@@ -54,6 +55,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     // --- Data State ---
     const [stocks, setStocks] = useState<Stock[]>([]);
+    const [indexUniverseStocks, setIndexUniverseStocks] = useState<Stock[]>([]);
+    const [indexUniverseIndexId, setIndexUniverseIndexId] = useState<string | null>(null);
     const [industries, setIndustries] = useState<IndustryInfo[]>([]);
     const [bookmarkGroups, setBookmarkGroups] = useState<BookmarkGroup[]>([]);
     const [bookmarkLoading, setBookmarkLoading] = useState(false);
@@ -171,6 +174,36 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
     }, [batchExportNotice]);
 
+    const {
+        selectorIndustries,
+        industryAllocation,
+        allowedIndustryNames,
+    } = useMemo(
+        () => deriveIndexIndustryScope(indexUniverseStocks, industries),
+        [indexUniverseStocks, industries]
+    );
+    const industriesForSelector = useMemo(() => {
+        if (selectedBookmarkGroupId || !selectedIndex) {
+            return industries;
+        }
+        return selectorIndustries;
+    }, [industries, selectedBookmarkGroupId, selectedIndex, selectorIndustries]);
+
+    useEffect(() => {
+        if (
+            !selectedIndustryName ||
+            !selectedIndex ||
+            selectedBookmarkGroupId ||
+            loading ||
+            indexUniverseIndexId !== selectedIndex.id
+        ) {
+            return;
+        }
+        if (!allowedIndustryNames.has(selectedIndustryName)) {
+            setSelectedIndustryName(null);
+        }
+    }, [allowedIndustryNames, indexUniverseIndexId, loading, selectedBookmarkGroupId, selectedIndex, selectedIndustryName]);
+
     // Fetch Stocks Data
     useEffect(() => {
         const fetchData = async () => {
@@ -182,12 +215,17 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     // Bookmark overrides everything
                     const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId);
                     setStocks(response.stocks);
+                    setIndexUniverseStocks([]);
+                    setIndexUniverseIndexId(null);
                 } else if (selectedIndex && selectedIndustryName) {
                     // Both index and industry selected - fetch both and compute intersection
                     const [indexResponse, industryResponse] = await Promise.all([
                         stockApi.getIndexStocks(selectedIndex.apiEndpoint),
                         stockApi.getIndustryStocks(selectedIndustryName)
                     ]);
+
+                    setIndexUniverseStocks(indexResponse.stocks);
+                    setIndexUniverseIndexId(selectedIndex.id);
 
                     // Create a Set of industry tickers for efficient lookup
                     const industryTickers = new Set(industryResponse.stocks.map(s => s.ticker));
@@ -202,10 +240,14 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     // Only industry selected
                     const response = await stockApi.getIndustryStocks(selectedIndustryName);
                     setStocks(response.stocks);
+                    setIndexUniverseStocks([]);
+                    setIndexUniverseIndexId(null);
                 } else if (selectedIndex) {
                     // Only index selected (default case)
                     const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
                     setStocks(response.stocks);
+                    setIndexUniverseStocks(response.stocks);
+                    setIndexUniverseIndexId(selectedIndex.id);
                 }
             } catch (err: unknown) {
                 const label = selectedBookmarkGroupId
@@ -242,6 +284,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     const handleIndexChange = (newIndex: IndexConfig) => {
         setSelectedIndex(newIndex);
+        setIndexUniverseStocks([]);
+        setIndexUniverseIndexId(null);
         // Keep industry selection for collaborative filtering
         setSelectedBookmarkGroupId(null);
     };
@@ -256,6 +300,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         setSelectedBookmarkGroupId(groupId);
         // Bookmark overrides everything - clear both industry and index
         if (groupId) {
+            setIndexUniverseStocks([]);
+            setIndexUniverseIndexId(null);
             setSelectedIndustryName(null);
             setSelectedIndex(null);
         }
@@ -450,33 +496,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         return bookmarkGroups.find(group => group.id === selectedBookmarkGroupId) || null;
     }, [bookmarkGroups, selectedBookmarkGroupId]);
 
-    const industryAllocation = useMemo(() => {
-        const industryMap = new Map<string, number>();
-        let totalMarketCap = 0;
-
-        stocks.forEach((stock) => {
-            const marketCap = Number(stock.market_cap);
-            if (!Number.isFinite(marketCap) || marketCap <= 0) {
-                return;
-            }
-
-            const industryName = stock.industry?.trim() || 'Other';
-            industryMap.set(industryName, (industryMap.get(industryName) || 0) + marketCap);
-            totalMarketCap += marketCap;
-        });
-
-        if (totalMarketCap <= 0) {
-            return [];
-        }
-
-        return Array.from(industryMap.entries())
-            .map(([industry, marketCap]) => ({
-                industry,
-                allocation: (marketCap / totalMarketCap) * 100,
-            }))
-            .sort((a, b) => b.allocation - a.allocation);
-    }, [stocks]);
-
     // --- Render ---
 
     if (!selectedIndex) {
@@ -522,7 +541,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         />
                     ) : null}
                     <IndustrySelector
-                        industries={industries}
+                        industries={industriesForSelector}
                         selectedIndustryName={selectedIndustryName}
                         onIndustryChange={handleIndustryChange}
                     />
