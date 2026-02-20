@@ -55,11 +55,30 @@ const sortRowsByDateDesc = (rows: CsvRow[]) => {
     });
 };
 
+const PRICE_HISTORY_PRICE_KEYS = new Set(['open', 'high', 'low', 'close']);
+
+const transformPriceHistoryCsvValue = (value: unknown, key: string) => {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (typeof value !== 'number') {
+        return value;
+    }
+
+    const lowerKey = key.toLowerCase();
+    if (!PRICE_HISTORY_PRICE_KEYS.has(lowerKey)) {
+        return value;
+    }
+
+    return Math.round(value * 1000);
+};
+
 export const PRICE_HISTORY_EXPORT_DEFINITIONS: ExportDefinition[] = [
     {
         suffix: 'price_history',
         fetch: stockApi.getPriceHistoryOhlcv,
         prepareRows: sortRowsByDateDesc,
+        transformValue: (value, key) => transformPriceHistoryCsvValue(value, key),
     },
 ];
 
