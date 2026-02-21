@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TabNavigation from '../../components/TabNavigation';
 import IndicesTab from './indices/IndicesTab';
+import { ScreenersTab } from './screeners/ScreenersTab';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
@@ -12,6 +13,7 @@ import { PortfolioTab } from './portfolio/PortfolioTab';
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
+    { id: 'screeners', label: 'Screeners' },
     { id: 'funds', label: 'Funds' },
     { id: 'portfolio', label: 'Portfolio' },
 ];
@@ -215,17 +217,20 @@ export const Dashboard: React.FC = () => {
 
     // Render content based on active tab
     const renderContent = () => {
+        if ((activeTab === 'indices' || activeTab === 'screeners') && loadingIndices) {
+            return (
+                <div className="flex flex-col items-center justify-center h-64">
+                    <span className="loading loading-spinner loading-lg text-primary"></span>
+                    <p className="mt-4 text-base-content/70">Loading available indices...</p>
+                </div>
+            );
+        }
+
         switch (activeTab) {
             case 'indices':
-                if (loadingIndices) {
-                    return (
-                        <div className="flex flex-col items-center justify-center h-64">
-                            <span className="loading loading-spinner loading-lg text-primary"></span>
-                            <p className="mt-4 text-base-content/70">Loading available indices...</p>
-                        </div>
-                    );
-                }
                 return <IndicesTab indices={indices} />;
+            case 'screeners':
+                return <ScreenersTab indices={indices} />;
             case 'funds':
                 return <FundsTab />;
             case 'portfolio':
