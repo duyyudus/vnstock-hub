@@ -32,6 +32,7 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
     const [displayStocks, setDisplayStocks] = useState<Stock[]>([]);
     const [industries, setIndustries] = useState<IndustryInfo[]>([]);
     const [bookmarkGroups, setBookmarkGroups] = useState<BookmarkGroup[]>([]);
+    const [portfolioTickers, setPortfolioTickers] = useState<string[]>([]);
 
     const [sourceLoading, setSourceLoading] = useState(false);
     const [benchmarkLoading, setBenchmarkLoading] = useState(false);
@@ -107,6 +108,30 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
         }
         refreshBookmarkGroups();
     }, [user, refreshBookmarkGroups]);
+
+    useEffect(() => {
+        if (!user) {
+            setPortfolioTickers([]);
+            return;
+        }
+        let isMounted = true;
+        stockApi.getPortfolioPositions()
+            .then((response) => {
+                if (!isMounted) return;
+                const uniqueTickers = Array.from(
+                    new Set(response.positions.map((position) => position.ticker.toUpperCase())),
+                );
+                setPortfolioTickers(uniqueTickers);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+                setPortfolioTickers([]);
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [user]);
 
     useEffect(() => {
         if (selectedBookmarkGroupId && !bookmarkGroups.some((group) => group.id === selectedBookmarkGroupId)) {
@@ -312,6 +337,7 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
                 benchmarkStocks={benchmarkStocks}
                 displayStocks={displayStocks}
                 industries={industries}
+                portfolioTickers={portfolioTickers}
                 benchmarkLabel={selectedIndex?.label || 'N/A'}
                 sourceLoading={sourceLoading}
                 benchmarkLoading={benchmarkLoading}

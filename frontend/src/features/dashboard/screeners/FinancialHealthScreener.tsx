@@ -13,6 +13,7 @@ export interface FinancialHealthScreenerProps {
     benchmarkStocks: Stock[];
     displayStocks: Stock[];
     industries: IndustryInfo[];
+    portfolioTickers?: string[];
     benchmarkLabel: string;
     sourceLoading: boolean;
     benchmarkLoading: boolean;
@@ -37,6 +38,7 @@ type SortDirection = 'asc' | 'desc';
 type SortKey =
     | 'ticker'
     | 'sector'
+    | 'market_cap'
     | 'z_score'
     | 'z_zone_base'
     | 'vf_score'
@@ -62,6 +64,7 @@ const CONCURRENCY_LIMIT = 6;
 const SORTABLE_HEADERS: SortableHeaderConfig[] = [
     { key: 'ticker', line1: 'Ticker' },
     { key: 'sector', line1: 'Sector' },
+    { key: 'market_cap', line1: 'MCap' },
     { key: 'z_score', line1: 'Z', line2: '(Model)' },
     { key: 'z_zone_base', line1: 'Z Base' },
     { key: 'z_pct', line1: 'Z %ile' },
@@ -180,6 +183,7 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
     benchmarkStocks,
     displayStocks,
     industries,
+    portfolioTickers = [],
     benchmarkLabel,
     sourceLoading,
     benchmarkLoading,
@@ -204,6 +208,9 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
     const inflightRef = useRef<Map<string, Promise<FetchCacheEntry>>>(new Map());
     const runIdRef = useRef(0);
     const benchmarkQualityRef = useRef<HTMLDivElement>(null);
+    const portfolioTickerSet = useMemo(() => {
+        return new Set(portfolioTickers.map((ticker) => ticker.toUpperCase()));
+    }, [portfolioTickers]);
     const industryFamilyByLevel2Name = useMemo(() => {
         const map = new Map<string, {
             family_code: string | null;
@@ -426,6 +433,8 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
                     return row.ticker;
                 case 'sector':
                     return row.sector;
+                case 'market_cap':
+                    return row.snapshot.market_cap_vnd ?? -Infinity;
                 case 'z_score':
                     return row.scores.z_score ?? -Infinity;
                 case 'z_zone_base':
@@ -645,6 +654,7 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
                                 <th className="align-top">{renderSortableHeader('ticker')}</th>
                                 <th className="align-top">{renderSortableHeader('sector')}</th>
                                 <th className="align-top">{renderStaticHeader('Flags')}</th>
+                                <th className="align-top">{renderSortableHeader('market_cap')}</th>
                                 <th className="align-top">{renderSortableHeader('z_score')}</th>
                                 <th className="align-top">{renderSortableHeader('z_zone_base')}</th>
                                 <th className="align-top">{renderStaticHeader('Z Adj')}</th>
@@ -658,78 +668,89 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
                             </tr>
                         </thead>
                         <tbody>
-                            {sortedRows.map((row) => (
-                                <tr key={row.ticker} className="hover">
-                                    <td className="font-semibold">{row.ticker}</td>
-                                    <td
-                                        className="max-w-48 truncate"
-                                        title={row.classification.sector_family
-                                            ? `${row.sector} | Family: ${row.classification.sector_family}`
-                                            : row.sector}
-                                    >
-                                        {row.sector}
-                                    </td>
-                                    <td>
-                                        <div className="flex flex-wrap gap-1">
-                                            {row.classification.is_financial ? <span className="badge badge-warning badge-xs">Financial</span> : null}
-                                            {row.classification.is_manufacturing ? <span className="badge badge-info badge-xs">Manufacturing</span> : null}
-                                            {row.classification.is_soe ? <span className="badge badge-success badge-xs">SOE</span> : null}
-                                            {!row.classification.is_soe && row.classification.partial_soe ? (
-                                                <span className="badge badge-accent badge-xs">SOE 10-30%</span>
-                                            ) : null}
-                                            {row.scores.cutoff_mismatch_majority ? (
-                                                <span
-                                                    className="badge badge-error badge-xs"
-                                                    title={`Ticker cutoff ${row.scores.cutoff_label ?? 'N/A'} differs from majority ${screenerStats?.majority_cutoff ?? 'N/A'}`}
-                                                >
-                                                    Cutoff!=Maj
+                            {sortedRows.map((row) => {
+                                const isInPortfolio = portfolioTickerSet.has(row.ticker.toUpperCase());
+                                const tickerTooltip = row.company_name || row.ticker;
+                                return (
+                                    <tr key={row.ticker} className="hover">
+                                        <td className="w-20">
+                                            <div className="tooltip tooltip-right" data-tip={tickerTooltip}>
+                                                <span className={`font-semibold ${isInPortfolio ? 'text-accent' : ''}`}>
+                                                    {row.ticker}
                                                 </span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        {row.scores.z_model === 'N/A'
-                                            ? 'N/A'
-                                            : `${formatNumber(row.scores.z_score, 2)} (${row.scores.z_model})`}
-                                    </td>
-                                    <td>{row.scores.z_zone_base || '-'}</td>
-                                    <td>{row.scores.z_zone_adjusted || '-'}</td>
-                                    <td>{formatPercentile(row.scores.z_sector_pctile)}</td>
-                                    <td className="font-semibold">{row.scores.vf_score}</td>
-                                    <td title={`Peers: ${row.scores.vf_peer_group} (${row.scores.vf_peer_size})`}>
-                                        {formatPercentile(row.scores.vf_sector_pctile)}
-                                    </td>
-                                    <td>{formatNumber(row.snapshot.debt_to_equity, 2)}</td>
-                                    <td>{row.scores.leverage_flag}</td>
-                                    <td>
-                                        <div className="flex items-center gap-1">
-                                            <span className={`badge badge-sm ${getVnHealthToneClasses(row.scores.vn_health_rating_base)}`}>
-                                                {row.scores.vn_health_rating_base}
-                                            </span>
-                                            {row.scores.vn_health_rating !== row.scores.vn_health_rating_base ? (
-                                                <span className="badge badge-xs badge-outline" title={`Final with SOE modifier: ${row.scores.vn_health_rating}`}>
-                                                    SOE↑
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span className={`badge badge-sm ${
-                                            row.snapshot.data_quality === 'Complete'
-                                                ? 'badge-success'
-                                                : row.snapshot.data_quality === 'Partial'
-                                                    ? 'badge-warning'
-                                                    : 'badge-error'
-                                        }`}
+                                            </div>
+                                        </td>
+                                        <td
+                                            className="max-w-48 truncate"
+                                            title={row.classification.sector_family
+                                                ? `${row.sector} | Family: ${row.classification.sector_family}`
+                                                : row.sector}
                                         >
-                                            {row.snapshot.data_quality}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
+                                            {row.sector}
+                                        </td>
+                                        <td>
+                                            <div className="flex flex-wrap gap-1">
+                                                {row.classification.is_financial ? <span className="badge badge-warning badge-xs">Financial</span> : null}
+                                                {row.classification.is_manufacturing ? <span className="badge badge-info badge-xs">Manufacturing</span> : null}
+                                                {row.classification.is_soe ? <span className="badge badge-success badge-xs">SOE</span> : null}
+                                                {!row.classification.is_soe && row.classification.partial_soe ? (
+                                                    <span className="badge badge-accent badge-xs">SOE 10-30%</span>
+                                                ) : null}
+                                                {row.scores.cutoff_mismatch_majority ? (
+                                                    <span
+                                                        className="badge badge-error badge-xs"
+                                                        title={`Ticker cutoff ${row.scores.cutoff_label ?? 'N/A'} differs from majority ${screenerStats?.majority_cutoff ?? 'N/A'}`}
+                                                    >
+                                                        Cutoff!=Maj
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td>{formatCompact(row.snapshot.market_cap_vnd)}</td>
+                                        <td>
+                                            {row.scores.z_model === 'N/A'
+                                                ? 'N/A'
+                                                : `${formatNumber(row.scores.z_score, 2)} (${row.scores.z_model})`}
+                                        </td>
+                                        <td>{row.scores.z_zone_base || '-'}</td>
+                                        <td>{row.scores.z_zone_adjusted || '-'}</td>
+                                        <td>{formatPercentile(row.scores.z_sector_pctile)}</td>
+                                        <td className="font-semibold">{row.scores.vf_score}</td>
+                                        <td title={`Peers: ${row.scores.vf_peer_group} (${row.scores.vf_peer_size})`}>
+                                            {formatPercentile(row.scores.vf_sector_pctile)}
+                                        </td>
+                                        <td>{formatNumber(row.snapshot.debt_to_equity, 2)}</td>
+                                        <td>{row.scores.leverage_flag}</td>
+                                        <td>
+                                            <div className="flex items-center gap-1">
+                                                <span className={`badge badge-sm ${getVnHealthToneClasses(row.scores.vn_health_rating_base)}`}>
+                                                    {row.scores.vn_health_rating_base}
+                                                </span>
+                                                {row.scores.vn_health_rating !== row.scores.vn_health_rating_base ? (
+                                                    <span className="badge badge-xs badge-outline" title={`Final with SOE modifier: ${row.scores.vn_health_rating}`}>
+                                                        SOE↑
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span className={`badge badge-sm ${
+                                                row.snapshot.data_quality === 'Complete'
+                                                    ? 'badge-success'
+                                                    : row.snapshot.data_quality === 'Partial'
+                                                        ? 'badge-warning'
+                                                        : 'badge-error'
+                                            }`}
+                                            >
+                                                {row.snapshot.data_quality}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                             {sortedRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={13} className="text-center text-base-content/60 py-6">
+                                    <td colSpan={14} className="text-center text-base-content/60 py-6">
                                         {screenerProgress.running
                                             ? 'Computing screener rows...'
                                             : 'No stocks match current filters.'}
