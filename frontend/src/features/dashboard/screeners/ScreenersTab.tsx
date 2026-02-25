@@ -8,6 +8,7 @@ import type { IndexConfig } from '../indices/indexConfig';
 import { deriveIndexIndustryScope } from '../indices/indexIndustryScope';
 import { useAuthUser } from '../../auth/useAuthUser';
 import { FinancialHealthScreener } from './FinancialHealthScreener';
+import { ValuationScreener } from './ValuationScreener';
 
 interface ScreenersTabProps {
     indices: IndexConfig[];
@@ -15,6 +16,7 @@ interface ScreenersTabProps {
 
 export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
     const user = useAuthUser();
+    const [activeScreener, setActiveScreener] = useState<'valuation' | 'financial-health'>('valuation');
 
     const [selectedIndexId, setSelectedIndexId] = useState<string | null>(() => {
         if (indices.length === 0) return null;
@@ -325,7 +327,16 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
 
                 <div className="overflow-x-auto">
                     <div className="join min-w-max">
-                        <button className="join-item btn btn-sm btn-primary">
+                        <button
+                            className={`join-item btn btn-sm ${activeScreener === 'valuation' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setActiveScreener('valuation')}
+                        >
+                            Valuation
+                        </button>
+                        <button
+                            className={`join-item btn btn-sm ${activeScreener === 'financial-health' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setActiveScreener('financial-health')}
+                        >
                             Financial Health
                         </button>
                     </div>
@@ -333,17 +344,30 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
 
             </div>
 
-            <FinancialHealthScreener
-                benchmarkStocks={benchmarkStocks}
-                displayStocks={displayStocks}
-                industries={industries}
-                portfolioTickers={portfolioTickers}
-                benchmarkLabel={selectedIndex?.label || 'N/A'}
-                sourceLoading={sourceLoading}
-                benchmarkLoading={benchmarkLoading}
-                sourceError={sourceError}
-                searchQuery={searchQuery}
-            />
+            {activeScreener === 'valuation' ? (
+                <ValuationScreener
+                    benchmarkStocks={benchmarkStocks}
+                    displayStocks={displayStocks}
+                    portfolioTickers={portfolioTickers}
+                    benchmarkLabel={selectedIndex?.label || 'N/A'}
+                    sourceLoading={sourceLoading}
+                    benchmarkLoading={benchmarkLoading}
+                    sourceError={sourceError}
+                    searchQuery={searchQuery}
+                />
+            ) : (
+                <FinancialHealthScreener
+                    benchmarkStocks={benchmarkStocks}
+                    displayStocks={displayStocks}
+                    industries={industries}
+                    portfolioTickers={portfolioTickers}
+                    benchmarkLabel={selectedIndex?.label || 'N/A'}
+                    sourceLoading={sourceLoading}
+                    benchmarkLoading={benchmarkLoading}
+                    sourceError={sourceError}
+                    searchQuery={searchQuery}
+                />
+            )}
         </div>
     );
 };
