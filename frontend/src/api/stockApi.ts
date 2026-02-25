@@ -320,6 +320,9 @@ export interface IndustryInfo {
     name: string;
     en_name: string;
     code: string;
+    family_code?: string | null;
+    family_name?: string | null;
+    family_en_name?: string | null;
 }
 
 export interface IndustryListResponse {
@@ -385,6 +388,10 @@ export interface PriceHistoryResponse {
     sync_error: string | null;
     updated_through: string | null;
     repaired_missing_dates: number;
+}
+
+export interface HistoryRequestOptions {
+    autoSync?: boolean;
 }
 
 export interface OhlcvDataPoint {
@@ -801,8 +808,18 @@ export const stockApi = {
      * @param symbol Stock ticker symbol
      * @param days Number of days to fetch (default: 30)
      */
-    async getVolumeHistory(symbol: string, days: number = 30): Promise<VolumeHistoryResponse> {
-        const response = await apiClient.get<VolumeHistoryResponse>(`/stocks/history/${symbol}/volume?days=${days}`);
+    async getVolumeHistory(
+        symbol: string,
+        days: number = 30,
+        options?: HistoryRequestOptions,
+    ): Promise<VolumeHistoryResponse> {
+        const params = new URLSearchParams({ days: String(days) });
+        if (options?.autoSync !== undefined) {
+            params.set('auto_sync', String(options.autoSync));
+        }
+        const response = await apiClient.get<VolumeHistoryResponse>(
+            `/stocks/history/${symbol}/volume?${params.toString()}`
+        );
         return response.data;
     },
 
@@ -811,8 +828,18 @@ export const stockApi = {
      * @param symbol Stock ticker symbol
      * @param days Number of days to fetch (default: 30)
      */
-    async getPriceHistory(symbol: string, days: number = 30): Promise<PriceHistoryResponse> {
-        const response = await apiClient.get<PriceHistoryResponse>(`/stocks/history/${symbol}/price?days=${days}`);
+    async getPriceHistory(
+        symbol: string,
+        days: number = 30,
+        options?: HistoryRequestOptions,
+    ): Promise<PriceHistoryResponse> {
+        const params = new URLSearchParams({ days: String(days) });
+        if (options?.autoSync !== undefined) {
+            params.set('auto_sync', String(options.autoSync));
+        }
+        const response = await apiClient.get<PriceHistoryResponse>(
+            `/stocks/history/${symbol}/price?${params.toString()}`
+        );
         return response.data;
     },
 

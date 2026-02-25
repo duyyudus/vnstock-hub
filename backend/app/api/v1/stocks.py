@@ -61,6 +61,9 @@ class IndustryInfo(BaseModel):
     name: str
     en_name: str
     code: str
+    family_code: Optional[str] = None
+    family_name: Optional[str] = None
+    family_en_name: Optional[str] = None
 
 
 class IndustryListResponse(BaseModel):
@@ -310,7 +313,10 @@ async def get_industries():
             IndustryInfo(
                 name=ind['icb_name'],
                 en_name=ind['en_icb_name'],
-                code=ind['icb_code']
+                code=ind['icb_code'],
+                family_code=ind.get('icb_family_code') or None,
+                family_name=ind.get('icb_family_name') or None,
+                family_en_name=ind.get('icb_family_en_name') or None,
             )
             for ind in industries
         ],
@@ -521,7 +527,7 @@ async def get_subsidiaries(symbol: str):
 
 
 @router.get("/history/{symbol}/volume", response_model=VolumeHistoryResponse)
-async def get_volume_history(symbol: str, days: int = 30):
+async def get_volume_history(symbol: str, days: int = 30, auto_sync: bool = True):
     """
     Get volume history for a specific stock.
 
@@ -532,7 +538,7 @@ async def get_volume_history(symbol: str, days: int = 30):
     Returns:
         Volume history data points with date, volume, and accumulated value
     """
-    result = await vnstock_service.get_volume_history(symbol, days=days)
+    result = await vnstock_service.get_volume_history(symbol, days=days, auto_sync=auto_sync)
     return VolumeHistoryResponse(
         symbol=result["symbol"],
         company_name=result["company_name"],
@@ -547,7 +553,7 @@ async def get_volume_history(symbol: str, days: int = 30):
 
 
 @router.get("/history/{symbol}/price", response_model=PriceHistoryResponse)
-async def get_price_history(symbol: str, days: int = 30):
+async def get_price_history(symbol: str, days: int = 30, auto_sync: bool = True):
     """
     Get price history for a specific stock.
 
@@ -558,7 +564,7 @@ async def get_price_history(symbol: str, days: int = 30):
     Returns:
         Price history data points with date and close price in VND
     """
-    result = await vnstock_service.get_price_history(symbol, days=days)
+    result = await vnstock_service.get_price_history(symbol, days=days, auto_sync=auto_sync)
     return PriceHistoryResponse(
         symbol=result["symbol"],
         company_name=result["company_name"],

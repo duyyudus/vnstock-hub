@@ -875,6 +875,50 @@ async def test_get_volume_history_runs_request_path_sync_and_returns_metadata(mo
 
 
 @pytest.mark.asyncio
+async def test_get_volume_history_skips_request_path_sync_when_auto_sync_disabled(monkeypatch):
+    service = HistoryService()
+    sync_called = False
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    class InlineLoop:
+        async def run_in_executor(self, _executor, func, *args):
+            return func(*args)
+
+    async def _fake_request_sync(_symbol, _start_date, _end_date, _timeout_seconds):
+        nonlocal sync_called
+        sync_called = True
+        return {
+            "sync_performed": True,
+            "sync_timed_out": False,
+            "sync_error": None,
+            "updated_through": "2026-02-11",
+            "repaired_missing_dates": 1,
+        }
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(history_module.asyncio, "get_event_loop", lambda: InlineLoop())
+    monkeypatch.setattr(service, "_fetch_volume_history_sync", lambda _symbol, _days: {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2026-02-10", "volume": 1200, "value": 20.2}],
+    })
+    service.set_on_demand_history_sync_handler(_fake_request_sync)
+
+    result = await service.get_volume_history("tcbx", 90, auto_sync=False)
+
+    assert sync_called is False
+    assert result["sync_performed"] is False
+    assert result["sync_timed_out"] is False
+    assert result["sync_error"] is None
+    assert result["updated_through"] is None
+    assert result["repaired_missing_dates"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_price_history_runs_request_path_sync_and_returns_metadata(monkeypatch):
     service = HistoryService()
     sync_calls = []
@@ -924,6 +968,50 @@ async def test_get_price_history_runs_request_path_sync_and_returns_metadata(mon
     assert result["sync_error"] is None
     assert result["updated_through"] == "2026-02-11"
     assert result["repaired_missing_dates"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_skips_request_path_sync_when_auto_sync_disabled(monkeypatch):
+    service = HistoryService()
+    sync_called = False
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 11)
+
+    class InlineLoop:
+        async def run_in_executor(self, _executor, func, *args):
+            return func(*args)
+
+    async def _fake_request_sync(_symbol, _start_date, _end_date, _timeout_seconds):
+        nonlocal sync_called
+        sync_called = True
+        return {
+            "sync_performed": True,
+            "sync_timed_out": False,
+            "sync_error": None,
+            "updated_through": "2026-02-11",
+            "repaired_missing_dates": 1,
+        }
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+    monkeypatch.setattr(history_module.asyncio, "get_event_loop", lambda: InlineLoop())
+    monkeypatch.setattr(service, "_fetch_price_history_sync", lambda _symbol, _days: {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2026-02-10", "close": 22000.0}],
+    })
+    service.set_on_demand_history_sync_handler(_fake_request_sync)
+
+    result = await service.get_price_history("tcbx", 90, auto_sync=False)
+
+    assert sync_called is False
+    assert result["sync_performed"] is False
+    assert result["sync_timed_out"] is False
+    assert result["sync_error"] is None
+    assert result["updated_through"] is None
+    assert result["repaired_missing_dates"] == 0
 
 
 @pytest.mark.asyncio

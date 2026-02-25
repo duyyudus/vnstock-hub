@@ -405,7 +405,12 @@ class HistoryService:
                     merged[key] = result[key]
         return merged
 
-    async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+    async def get_volume_history(
+        self,
+        symbol: str,
+        days: int = 30,
+        auto_sync: bool = True,
+    ) -> Dict[str, Any]:
         """
         Fetch volume history for a given stock symbol.
         """
@@ -417,11 +422,14 @@ class HistoryService:
 
         end_date = date.today()
         start_date = end_date - timedelta(days=safe_days - 1)
-        sync_meta = await self._sync_history_for_request(
-            symbol=symbol_clean,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        if auto_sync:
+            sync_meta = await self._sync_history_for_request(
+                symbol=symbol_clean,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            sync_meta = self._default_request_sync_metadata()
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -433,7 +441,12 @@ class HistoryService:
         result.update(sync_meta)
         return result
 
-    async def get_price_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
+    async def get_price_history(
+        self,
+        symbol: str,
+        days: int = 30,
+        auto_sync: bool = True,
+    ) -> Dict[str, Any]:
         """
         Fetch price history for a given stock symbol.
         """
@@ -445,11 +458,14 @@ class HistoryService:
 
         end_date = date.today()
         start_date = end_date - timedelta(days=safe_days - 1)
-        sync_meta = await self._sync_history_for_request(
-            symbol=symbol_clean,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        if auto_sync:
+            sync_meta = await self._sync_history_for_request(
+                symbol=symbol_clean,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            sync_meta = self._default_request_sync_metadata()
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 import asyncio
 import pandas as pd
 
@@ -52,10 +52,71 @@ class StocksService:
         loop = asyncio.get_event_loop()
         df = await loop.run_in_executor(frontend_executor, self._fetch_industries_sync)
         if df is not None and not df.empty:
-            # Filter for level 2 industries
-            l2_df = df[df['level'] == 2]
-            return l2_df[['icb_name', 'en_icb_name', 'icb_code']].to_dict('records')
+            return self._build_industry_list_with_families(df)
         return []
+
+    def _build_industry_list_with_families(self, df: pd.DataFrame) -> List[Dict[str, str]]:
+        required_columns = {'level', 'icb_name', 'en_icb_name', 'icb_code'}
+        if not required_columns.issubset(df.columns):
+            return []
+
+        normalized_df = df[['level', 'icb_name', 'en_icb_name', 'icb_code']].copy()
+        normalized_df['icb_name'] = normalized_df['icb_name'].fillna('').astype(str).str.strip()
+        normalized_df['en_icb_name'] = normalized_df['en_icb_name'].fillna('').astype(str).str.strip()
+        normalized_df['icb_code'] = normalized_df['icb_code'].fillna('').astype(str).str.strip()
+        normalized_df['level'] = pd.to_numeric(normalized_df['level'], errors='coerce')
+
+        level1_df = normalized_df[normalized_df['level'] == 1]
+        level2_df = normalized_df[normalized_df['level'] == 2]
+        if level2_df.empty:
+            return []
+
+        def normalize_label(value: str) -> str:
+            return value.casefold().strip()
+
+        level1_by_name = {
+            normalize_label(row.icb_name): {
+                'code': row.icb_code,
+                'name': row.icb_name,
+                'en_name': row.en_icb_name,
+            }
+            for row in level1_df.itertuples(index=False)
+            if row.icb_name and row.icb_code
+        }
+        level1_by_code = {
+            row.icb_code: {
+                'code': row.icb_code,
+                'name': row.icb_name,
+                'en_name': row.en_icb_name,
+            }
+            for row in level1_df.itertuples(index=False)
+            if row.icb_code
+        }
+
+        def infer_level1(level2_code: str, level2_name: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+            direct_match = level1_by_name.get(normalize_label(level2_name))
+            if direct_match:
+                return direct_match['code'], direct_match['name'], direct_match['en_name']
+
+            if level2_code and level2_code[0].isdigit():
+                family_code = f"{level2_code[0]}000"
+                family = level1_by_code.get(family_code)
+                if family:
+                    return family['code'], family['name'], family['en_name']
+            return None, None, None
+
+        industries: List[Dict[str, str]] = []
+        for row in level2_df.itertuples(index=False):
+            family_code, family_name, family_en_name = infer_level1(row.icb_code, row.icb_name)
+            industries.append({
+                'icb_name': row.icb_name,
+                'en_icb_name': row.en_icb_name,
+                'icb_code': row.icb_code,
+                'icb_family_code': family_code or '',
+                'icb_family_name': family_name or '',
+                'icb_family_en_name': family_en_name or '',
+            })
+        return industries
 
     async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
         """

@@ -120,11 +120,11 @@ class VnstockService:
         return await self.company.get_subsidiaries(symbol)
 
     # History
-    async def get_volume_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
-        return await self.history.get_volume_history(symbol, days=days)
+    async def get_volume_history(self, symbol: str, days: int = 30, auto_sync: bool = True) -> Dict[str, Any]:
+        return await self.history.get_volume_history(symbol, days=days, auto_sync=auto_sync)
 
-    async def get_price_history(self, symbol: str, days: int = 30) -> Dict[str, Any]:
-        return await self.history.get_price_history(symbol, days=days)
+    async def get_price_history(self, symbol: str, days: int = 30, auto_sync: bool = True) -> Dict[str, Any]:
+        return await self.history.get_price_history(symbol, days=days, auto_sync=auto_sync)
 
     async def get_price_history_ohlcv(self, symbol: str) -> Dict[str, Any]:
         return await self.history.get_price_history_ohlcv(symbol)

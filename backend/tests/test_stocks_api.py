@@ -76,8 +76,22 @@ async def test_get_stocks_by_index(client):
 @pytest.mark.asyncio
 async def test_get_industries(client):
     mock_industries = [
-        {"icb_name": "Banks", "en_icb_name": "Banks", "icb_code": "8300"},
-        {"icb_name": "Real Estate", "en_icb_name": "Real Estate", "icb_code": "8600"}
+        {
+            "icb_name": "Banks",
+            "en_icb_name": "Banks",
+            "icb_code": "8300",
+            "icb_family_code": "8301",
+            "icb_family_name": "Banks",
+            "icb_family_en_name": "Banks",
+        },
+        {
+            "icb_name": "Real Estate",
+            "en_icb_name": "Real Estate",
+            "icb_code": "8600",
+            "icb_family_code": "8000",
+            "icb_family_name": "Financials",
+            "icb_family_en_name": "Financials",
+        },
     ]
     with patch.object(vnstock_service, 'get_industry_list', return_value=mock_industries):
         response = await client.get("/api/v1/stocks/industries")
@@ -85,6 +99,8 @@ async def test_get_industries(client):
         data = response.json()
         assert data["count"] == 2
         assert data["industries"][0]["name"] == "Banks"
+        assert data["industries"][0]["family_code"] == "8301"
+        assert data["industries"][1]["family_name"] == "Financials"
 
 @pytest.mark.asyncio
 async def test_get_stocks_by_industry(client):
@@ -111,10 +127,11 @@ async def test_get_volume_history(client):
         "updated_through": "2023-01-01",
         "repaired_missing_dates": 2,
     }
-    with patch.object(vnstock_service, 'get_volume_history', return_value=mock_volume):
+    with patch.object(vnstock_service, 'get_volume_history', return_value=mock_volume) as mock_get_volume_history:
         response = await client.get("/api/v1/stocks/history/TCB/volume")
         assert response.status_code == 200
         data = response.json()
+    mock_get_volume_history.assert_called_once_with("TCB", days=30, auto_sync=True)
     assert data["symbol"] == "TCB"
     assert data["data"][0]["volume"] == 1000
     assert data["sync_performed"] is True
@@ -183,10 +200,11 @@ async def test_get_price_history(client):
         "updated_through": "2022-12-30",
         "repaired_missing_dates": 0,
     }
-    with patch.object(vnstock_service, 'get_price_history', return_value=mock_prices):
+    with patch.object(vnstock_service, 'get_price_history', return_value=mock_prices) as mock_get_price_history:
         response = await client.get("/api/v1/stocks/history/TCB/price")
         assert response.status_code == 200
         data = response.json()
+    mock_get_price_history.assert_called_once_with("TCB", days=30, auto_sync=True)
     assert data["symbol"] == "TCB"
     assert data["data"][0]["close"] == 50100.0
     assert data["sync_performed"] is False
@@ -194,6 +212,50 @@ async def test_get_price_history(client):
     assert data["sync_error"] is None
     assert data["updated_through"] == "2022-12-30"
     assert data["repaired_missing_dates"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_volume_history_allows_disabling_auto_sync(client):
+    mock_volume = {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2023-01-01", "volume": 1000, "value": 50.0}],
+        "sync_performed": False,
+        "sync_timed_out": False,
+        "sync_error": None,
+        "updated_through": None,
+        "repaired_missing_dates": 0,
+    }
+    with patch.object(vnstock_service, 'get_volume_history', return_value=mock_volume) as mock_get_volume_history:
+        response = await client.get("/api/v1/stocks/history/TCB/volume?auto_sync=false")
+        assert response.status_code == 200
+        data = response.json()
+
+    mock_get_volume_history.assert_called_once_with("TCB", days=30, auto_sync=False)
+    assert data["sync_performed"] is False
+    assert data["sync_timed_out"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_allows_disabling_auto_sync(client):
+    mock_prices = {
+        "symbol": "TCB",
+        "company_name": "Techcombank",
+        "data": [{"date": "2023-01-01", "close": 50100.0}],
+        "sync_performed": False,
+        "sync_timed_out": False,
+        "sync_error": None,
+        "updated_through": None,
+        "repaired_missing_dates": 0,
+    }
+    with patch.object(vnstock_service, 'get_price_history', return_value=mock_prices) as mock_get_price_history:
+        response = await client.get("/api/v1/stocks/history/TCB/price?auto_sync=false")
+        assert response.status_code == 200
+        data = response.json()
+
+    mock_get_price_history.assert_called_once_with("TCB", days=30, auto_sync=False)
+    assert data["sync_performed"] is False
+    assert data["sync_timed_out"] is False
 
 
 @pytest.mark.asyncio
