@@ -1,36 +1,52 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+interface NavDataPoint {
+    date?: string | null;
+    nav_date?: string | null;
+    nav?: number | null;
+    value?: number | null;
+}
+
+interface NavTooltipPayload {
+    payload: NavDataPoint;
+}
+
+interface NavTooltipProps {
+    active?: boolean;
+    payload?: NavTooltipPayload[];
+}
+
 interface NavReportChartProps {
-    data: any[];
+    data: NavDataPoint[];
     loading?: boolean;
 }
 
+const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+};
+
+const formatValue = (value: number) => {
+    return value.toLocaleString();
+};
+
+const NavReportTooltip: React.FC<NavTooltipProps> = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const datum = payload[0].payload;
+        return (
+            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
+                <p className="text-sm font-semibold mb-1">{datum.date || datum.nav_date || 'N/A'}</p>
+                <p className="text-xs text-primary">
+                    NAV: {formatValue(datum.nav || datum.value || 0)}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
 export const NavReportChart: React.FC<NavReportChartProps> = ({ data, loading = false }) => {
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return `${date.getMonth() + 1}/${date.getDate()}`;
-    };
-
-    const formatValue = (value: number) => {
-        return value.toLocaleString();
-    };
-
-    const CustomTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            const data = payload[0].payload;
-            return (
-                <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
-                    <p className="text-sm font-semibold mb-1">{data.date || data.nav_date || 'N/A'}</p>
-                    <p className="text-xs text-primary">
-                        NAV: {formatValue(data.nav || data.value || 0)}
-                    </p>
-                </div>
-            );
-        }
-        return null;
-    };
-
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -65,7 +81,7 @@ export const NavReportChart: React.FC<NavReportChartProps> = ({ data, loading = 
                         stroke="currentColor"
                         opacity={0.5}
                     />
-                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                    <Tooltip content={<NavReportTooltip />} isAnimationActive={false} />
                     <Line
                         type="monotone"
                         dataKey={(item) => item.nav || item.value}

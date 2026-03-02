@@ -18,7 +18,24 @@ const formatBillionVND = (value: number): string => {
     return value.toFixed(0);
 };
 
-const CustomTooltip = ({ active, payload }: any) => {
+interface ComparisonChartDatum {
+    ticker: string;
+    company_name: string;
+    market_cap: number;
+    charter_capital: number;
+    pe_ratio: number | null;
+}
+
+interface ComparisonTooltipPayload {
+    payload: ComparisonChartDatum;
+}
+
+interface ComparisonTooltipProps {
+    active?: boolean;
+    payload?: ComparisonTooltipPayload[];
+}
+
+const CustomTooltip: React.FC<ComparisonTooltipProps> = ({ active, payload }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (

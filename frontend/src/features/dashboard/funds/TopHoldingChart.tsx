@@ -1,33 +1,51 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+interface TopHoldingDataPoint {
+    ticker?: string | null;
+    symbol?: string | null;
+    stock_code?: string | null;
+    allocation?: number | null;
+    weight?: number | null;
+    percentage?: number | null;
+}
+
+interface TopHoldingTooltipPayload {
+    payload: TopHoldingDataPoint;
+}
+
+interface TopHoldingTooltipProps {
+    active?: boolean;
+    payload?: TopHoldingTooltipPayload[];
+}
+
 interface TopHoldingChartProps {
-    data: any[];
+    data: TopHoldingDataPoint[];
     loading?: boolean;
 }
 
+const formatPercent = (value: number) => {
+    return `${value.toFixed(1)}%`;
+};
+
+const TopHoldingTooltip: React.FC<TopHoldingTooltipProps> = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const datum = payload[0].payload;
+        const ticker = datum.ticker || datum.symbol || datum.stock_code || 'N/A';
+        const allocation = datum.allocation || datum.weight || datum.percentage || 0;
+        return (
+            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
+                <p className="text-sm font-semibold mb-1">{ticker}</p>
+                <p className="text-xs text-primary">
+                    Allocation: {formatPercent(allocation)}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
 export const TopHoldingChart: React.FC<TopHoldingChartProps> = ({ data, loading = false }) => {
-    const formatPercent = (value: number) => {
-        return `${value.toFixed(1)}%`;
-    };
-
-    const CustomTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            const data = payload[0].payload;
-            const ticker = data.ticker || data.symbol || data.stock_code || 'N/A';
-            const allocation = data.allocation || data.weight || data.percentage || 0;
-            return (
-                <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
-                    <p className="text-sm font-semibold mb-1">{ticker}</p>
-                    <p className="text-xs text-primary">
-                        Allocation: {formatPercent(allocation)}
-                    </p>
-                </div>
-            );
-        }
-        return null;
-    };
-
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -77,7 +95,7 @@ export const TopHoldingChart: React.FC<TopHoldingChartProps> = ({ data, loading 
                         opacity={0.5}
                         width={50}
                     />
-                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                    <Tooltip content={<TopHoldingTooltip />} isAnimationActive={false} />
                     <Bar
                         dataKey={(item) => item.allocation || item.weight || item.percentage}
                         fill="#10b981"

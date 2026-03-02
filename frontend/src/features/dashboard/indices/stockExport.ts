@@ -1,20 +1,20 @@
 import { stockApi } from '../../../api/stockApi';
-import type { AuthUser } from '../../../api/stockApi';
+import type { AuthUser, OhlcvDataPoint } from '../../../api/stockApi';
 import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 import {
     resolveTickerFolder,
+    type CsvRow,
     rowsToCsv,
     transformFinanceCsvValue,
 } from '../../../utils/exportCsv';
 
-type CsvRow = Record<string, unknown>;
-type ExportFetchResponse = { data: CsvRow[] };
+type ExportFetchResponse<Row extends object = CsvRow> = { data: Row[] };
 
-export interface ExportDefinition {
+export interface ExportDefinition<Row extends object = CsvRow> {
     suffix: string;
-    fetch: (ticker: string) => Promise<ExportFetchResponse>;
-    prepareRows?: (rows: CsvRow[]) => CsvRow[];
-    transformValue?: (value: unknown, key: string, row: CsvRow) => unknown;
+    fetch: (ticker: string) => Promise<ExportFetchResponse<Row>>;
+    prepareRows?: (rows: Row[]) => Row[];
+    transformValue?: (value: unknown, key: string, row: Row) => unknown;
 }
 
 export interface TickerExportResult {
@@ -25,10 +25,10 @@ export interface TickerExportResult {
     browserFallbackCount: number;
 }
 
-interface RunTickerExportDefinitionsInput {
+interface RunTickerExportDefinitionsInput<Row extends object = CsvRow> {
     ticker: string;
     datasetName: 'company' | 'finance' | 'price_history';
-    exportDefinitions: ExportDefinition[];
+    exportDefinitions: ExportDefinition<Row>[];
     category?: string;
     user: Pick<AuthUser, 'id' | 'download_folder'> | null;
 }
@@ -47,11 +47,9 @@ export const FINANCE_EXPORT_DEFINITIONS: ExportDefinition[] = [
     { suffix: 'ratios', fetch: stockApi.getFinancialRatios, transformValue: (value, key) => transformFinanceCsvValue(value, key) },
 ];
 
-const sortRowsByDateDesc = (rows: CsvRow[]) => {
+const sortRowsByDateDesc = <Row extends { date: string }>(rows: Row[]) => {
     return [...rows].sort((a, b) => {
-        const aDate = typeof a.date === 'string' ? a.date : '';
-        const bDate = typeof b.date === 'string' ? b.date : '';
-        return bDate.localeCompare(aDate);
+        return b.date.localeCompare(a.date);
     });
 };
 
@@ -73,7 +71,7 @@ const transformPriceHistoryCsvValue = (value: unknown, key: string) => {
     return Math.round(value * 1000);
 };
 
-export const PRICE_HISTORY_EXPORT_DEFINITIONS: ExportDefinition[] = [
+export const PRICE_HISTORY_EXPORT_DEFINITIONS: ExportDefinition<OhlcvDataPoint>[] = [
     {
         suffix: 'price_history',
         fetch: stockApi.getPriceHistoryOhlcv,
@@ -82,8 +80,8 @@ export const PRICE_HISTORY_EXPORT_DEFINITIONS: ExportDefinition[] = [
     },
 ];
 
-export const runTickerExportDefinitions = async (
-    input: RunTickerExportDefinitionsInput,
+export const runTickerExportDefinitions = async <Row extends object>(
+    input: RunTickerExportDefinitionsInput<Row>,
 ): Promise<TickerExportResult> => {
     const tickerFolder = resolveTickerFolder(input.ticker);
     let successCount = 0;
@@ -94,7 +92,14 @@ export const runTickerExportDefinitions = async (
         try {
             const response = await definition.fetch(input.ticker);
             const rows = definition.prepareRows ? definition.prepareRows(response.data) : response.data;
-            const csvContent = rowsToCsv(rows, definition.transformValue);
+            const csvRows: CsvRow[] = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+            const transformValue = definition.transformValue;
+            const csvContent = rowsToCsv(
+                csvRows,
+                transformValue
+                    ? (value, key, row) => transformValue(value, key, row as unknown as Row)
+                    : undefined,
+            );
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
             const subdirectories = [tickerFolder];
             if (input.datasetName !== 'price_history' && input.category) {

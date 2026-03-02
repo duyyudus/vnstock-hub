@@ -8,6 +8,22 @@ interface CumulativeGrowthChartProps {
     startYear: number;
 }
 
+interface GrowthChartRecord extends Record<string, number | string> {
+    date: string;
+}
+
+interface GrowthTooltipEntry {
+    color?: string;
+    dataKey?: string | number;
+    value?: number | string | null;
+}
+
+interface GrowthTooltipProps {
+    active?: boolean;
+    payload?: GrowthTooltipEntry[];
+    label?: string | number;
+}
+
 // Color palette for top funds
 const TOP_COLORS = [
     '#3b82f6', // blue
@@ -24,6 +40,42 @@ const TOP_COLORS = [
 
 const GRAY_COLOR = '#6b7280';
 const BENCHMARK_COLOR = '#fbbf24';
+const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.getMonth() + 1}/${date.getFullYear().toString().slice(2)}`;
+};
+
+const formatValue = (value: number) => {
+    return value.toFixed(0);
+};
+
+const GrowthTooltip: React.FC<GrowthTooltipProps> = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        const sorted = [...payload].sort((a, b) => {
+            const aValue = typeof a.value === 'number' ? a.value : 0;
+            const bValue = typeof b.value === 'number' ? b.value : 0;
+            return bValue - aValue;
+        });
+        return (
+            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                <p className="text-sm font-semibold mb-2">{label}</p>
+                {sorted.slice(0, 10).map((entry, index) => {
+                    const dataKey = entry.dataKey != null ? String(entry.dataKey) : 'N/A';
+                    const value = typeof entry.value === 'number' ? entry.value.toFixed(1) : 'N/A';
+                    return (
+                        <p key={index} className="text-xs" style={{ color: entry.color }}>
+                            {dataKey === 'benchmark' ? '📊 ' : ''}{dataKey}: {value}
+                        </p>
+                    );
+                })}
+                {sorted.length > 10 && (
+                    <p className="text-xs text-base-content/50">...and {sorted.length - 10} more</p>
+                )}
+            </div>
+        );
+    }
+    return null;
+};
 
 export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
     funds,
@@ -38,7 +90,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
         const startStr = `${startYear}-01-01`;
 
         // Get all unique dates
-        const dateMap = new Map<string, Record<string, number>>();
+        const dateMap = new Map<string, GrowthChartRecord>();
 
         // Add fund data
         funds.forEach((fund) => {
@@ -52,7 +104,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                 const baseVal = history[0].normalized_nav;
                 history.forEach((point) => {
                     if (!dateMap.has(point.date)) {
-                        dateMap.set(point.date, { date: point.date as unknown as number });
+                        dateMap.set(point.date, { date: point.date });
                     }
                     const record = dateMap.get(point.date)!;
                     // Protect against division by zero just in case
@@ -71,7 +123,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                 const baseVal = history[0].normalized_nav;
                 history.forEach((point) => {
                     if (!dateMap.has(point.date)) {
-                        dateMap.set(point.date, { date: point.date as unknown as number });
+                        dateMap.set(point.date, { date: point.date });
                     }
                     const record = dateMap.get(point.date)!;
                     record['benchmark'] = baseVal > 0 ? (point.normalized_nav / baseVal) * 100 : 100;
@@ -91,41 +143,13 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
 
         const lastRecord = chartData[chartData.length - 1];
         return [...funds].sort((a, b) => {
-            const aVal = lastRecord[a.symbol] ?? 0;
-            const bVal = lastRecord[b.symbol] ?? 0;
+            const aValue = lastRecord[a.symbol];
+            const bValue = lastRecord[b.symbol];
+            const aVal = typeof aValue === 'number' ? aValue : 0;
+            const bVal = typeof bValue === 'number' ? bValue : 0;
             return bVal - aVal;
         });
     }, [funds, chartData]);
-
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return `${date.getMonth() + 1}/${date.getFullYear().toString().slice(2)}`;
-    };
-
-    const formatValue = (value: number) => {
-        return value.toFixed(0);
-    };
-
-    const CustomTooltip = ({ active, payload, label }: any) => {
-        if (active && payload && payload.length) {
-            // Sort payload by value descending
-            const sorted = [...payload].sort((a, b) => (b.value || 0) - (a.value || 0));
-            return (
-                <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    <p className="text-sm font-semibold mb-2">{label}</p>
-                    {sorted.slice(0, 10).map((entry: any, index: number) => (
-                        <p key={index} className="text-xs" style={{ color: entry.color }}>
-                            {entry.dataKey === 'benchmark' ? '📊 ' : ''}{entry.dataKey}: {entry.value?.toFixed(1) || 'N/A'}
-                        </p>
-                    ))}
-                    {sorted.length > 10 && (
-                        <p className="text-xs text-base-content/50">...and {sorted.length - 10} more</p>
-                    )}
-                </div>
-            );
-        }
-        return null;
-    };
 
     if (chartData.length === 0) {
         return (
@@ -157,7 +181,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                             domain={['auto', 'auto']}
                             label={{ value: 'Growth (Base=100)', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
                         />
-                        <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                        <Tooltip content={<GrowthTooltip />} isAnimationActive={false} />
 
                         {/* Render funds - top 10 get colors, rest are gray */}
                         {sortedFunds.map((fund, idx) => (

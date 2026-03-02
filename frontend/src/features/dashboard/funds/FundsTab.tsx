@@ -12,6 +12,18 @@ import { PeriodicReturnHeatmap } from './PeriodicReturnHeatmap';
 
 type ChartType = 'growth' | 'scatter' | 'heatmap';
 type Benchmark = 'VNINDEX' | 'VN30';
+type FundApiRecord = Record<string, string | number | boolean | null>;
+
+interface ApiErrorResponse {
+    status?: number;
+    data?: {
+        retry_after?: number;
+    };
+}
+
+interface ApiErrorLike {
+    response?: ApiErrorResponse;
+}
 
 /**
  * Funds Tab - displays aggregate performance charts and individual fund data.
@@ -31,11 +43,11 @@ export const FundsTab: React.FC = () => {
     // --- Individual Fund State ---
     const [funds, setFunds] = useState<FundInfo[]>([]);
     const [selectedFund, setSelectedFund] = useState<string | null>(null);
-    const [fundInfo, setFundInfo] = useState<any | null>(null);
-    const [navData, setNavData] = useState<any[]>([]);
-    const [topHoldings, setTopHoldings] = useState<any[]>([]);
-    const [industryHoldings, setIndustryHoldings] = useState<any[]>([]);
-    const [assetHoldings, setAssetHoldings] = useState<any[]>([]);
+    const [fundInfo, setFundInfo] = useState<FundInfo | FundApiRecord | null>(null);
+    const [navData, setNavData] = useState<FundApiRecord[]>([]);
+    const [topHoldings, setTopHoldings] = useState<FundApiRecord[]>([]);
+    const [industryHoldings, setIndustryHoldings] = useState<FundApiRecord[]>([]);
+    const [assetHoldings, setAssetHoldings] = useState<FundApiRecord[]>([]);
     const [loadingFunds, setLoadingFunds] = useState(true);
     const [loadingData, setLoadingData] = useState(false);
 
@@ -53,8 +65,8 @@ export const FundsTab: React.FC = () => {
 
                 if (response.funds.length > 0) {
                     const years = new Set<number>();
-                    response.funds.forEach(fund => {
-                        Object.keys(fund.yearly_returns).forEach(y => years.add(parseInt(y)));
+                    response.funds.forEach((fund) => {
+                        Object.keys(fund.yearly_returns).forEach((y) => years.add(parseInt(y, 10)));
                     });
                     const sortedYears = Array.from(years).sort((a, b) => a - b);
                     if (sortedYears.length > 0) {
@@ -67,9 +79,9 @@ export const FundsTab: React.FC = () => {
                     }
                 }
             } catch (err) {
-                const anyErr = err as any;
-                const status = anyErr?.response?.status;
-                const retryAfter = anyErr?.response?.data?.retry_after;
+                const apiError = err as ApiErrorLike;
+                const status = apiError?.response?.status;
+                const retryAfter = apiError?.response?.data?.retry_after;
 
                 if (status === 429 || status === 503) {
                     const delayMs = (typeof retryAfter === 'number' ? retryAfter : 30) * 1000;
@@ -117,11 +129,11 @@ export const FundsTab: React.FC = () => {
         if (!performanceData?.funds) return [];
         const years = new Set<number>();
         performanceData.funds.forEach(fund => {
-            Object.keys(fund.yearly_returns).forEach(y => years.add(parseInt(y)));
+            Object.keys(fund.yearly_returns).forEach((y) => years.add(parseInt(y, 10)));
         });
         if (performanceData.benchmarks) {
             Object.values(performanceData.benchmarks).forEach(b => {
-                Object.keys(b.yearly_returns).forEach(y => years.add(parseInt(y)));
+                Object.keys(b.yearly_returns).forEach((y) => years.add(parseInt(y, 10)));
             });
         }
         return Array.from(years).sort((a, b) => a - b);
@@ -146,17 +158,28 @@ export const FundsTab: React.FC = () => {
             setLoadingFunds(true);
             try {
                 const response = await stockApi.getFunds();
-                const fundList = response.data.map((f: any) => ({
-                    symbol: f.symbol || f.fund_code,
-                    name: f.fund_name || f.name || f.symbol || f.fund_code,
-                    fund_type: f.fund_type || f.type,
-                    fund_owner: f.fund_owner || f.owner || f.management_company,
-                })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+                const toStringValue = (value: string | number | boolean | null | undefined) => {
+                    return typeof value === 'string' ? value : '';
+                };
+                const fundList = response.data.map((fundRecord): FundInfo => {
+                    const symbol = toStringValue(fundRecord.symbol) || toStringValue(fundRecord.fund_code);
+                    const name = toStringValue(fundRecord.fund_name)
+                        || toStringValue(fundRecord.name)
+                        || symbol;
+
+                    return {
+                        symbol,
+                        name,
+                        fund_type: toStringValue(fundRecord.fund_type) || toStringValue(fundRecord.type) || undefined,
+                        fund_owner: toStringValue(fundRecord.fund_owner)
+                            || toStringValue(fundRecord.owner)
+                            || toStringValue(fundRecord.management_company)
+                            || undefined,
+                    };
+                }).filter((fund) => fund.symbol).sort((a, b) => a.name.localeCompare(b.name));
 
                 setFunds(fundList);
-                if (fundList.length > 0 && !selectedFund) {
-                    setSelectedFund(fundList[0].symbol);
-                }
+                setSelectedFund((current) => current || (fundList.length > 0 ? fundList[0].symbol : null));
             } catch (error) {
                 console.error('Error fetching funds list:', error);
             } finally {

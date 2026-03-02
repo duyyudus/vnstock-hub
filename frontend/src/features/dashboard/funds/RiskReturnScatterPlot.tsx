@@ -8,6 +8,32 @@ interface RiskReturnScatterPlotProps {
     startYear: number;
 }
 
+interface RiskReturnPoint {
+    symbol: string;
+    name: string;
+    x: number;
+    y: number;
+    sharpe: number;
+    color: string;
+}
+
+interface BenchmarkPoint {
+    symbol: string;
+    name: string;
+    x: number;
+    y: number;
+    sharpe: number;
+}
+
+interface RiskReturnTooltipPayload {
+    payload: RiskReturnPoint;
+}
+
+interface RiskReturnTooltipProps {
+    active?: boolean;
+    payload?: RiskReturnTooltipPayload[];
+}
+
 // Color based on Sharpe ratio (efficiency)
 const getColor = (sharpe: number | null): string => {
     if (sharpe === null) return '#6b7280'; // gray
@@ -62,6 +88,23 @@ const calculateMetrics = (history: { date: string, normalized_nav: number }[], s
     return { return: totalReturn, volatility, sharpe };
 };
 
+const RiskReturnTooltip: React.FC<RiskReturnTooltipProps> = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const datum = payload[0].payload;
+        return (
+            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
+                <p className="text-sm font-semibold">{datum.name}</p>
+                <p className="text-xs text-primary">Return: {datum.y.toFixed(1)}%</p>
+                <p className="text-xs text-secondary">Volatility (Ann.): {datum.x.toFixed(1)}%</p>
+                <p className="text-xs" style={{ color: datum.color }}>
+                    Sharpe: {datum.sharpe.toFixed(2)}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
 export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
     funds,
     benchmark,
@@ -83,13 +126,13 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
                     color: getColor(metrics.sharpe),
                 };
             })
-            .filter((d): d is NonNullable<typeof d> => d !== null)
+            .filter((d): d is RiskReturnPoint => d !== null)
             // Filter out extreme outliers (likely data corruption) - allow wide range for valid data
             // Returns up to 1000% possible for long timeframes, volatility rarely exceeds 200%
             .filter(d => Math.abs(d.y) <= 1000 && d.x >= 0 && d.x <= 300);
     }, [funds, startStr]);
 
-    const benchmarkPoint = useMemo(() => {
+    const benchmarkPoint = useMemo<BenchmarkPoint | null>(() => {
         if (!benchmark) return null;
         const metrics = calculateMetrics(benchmark.nav_history, startStr);
         if (!metrics) return null;
@@ -108,27 +151,9 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
 
     // Calculate line from origin through benchmark (Capital Market Line approximation)
     const riskFreeRate = 4; // 4% risk-free rate
-    const cmlSlope = (benchmarkPoint && benchmarkPoint.x! > 0)
-        ? (benchmarkPoint.y - riskFreeRate) / benchmarkPoint.x!
+    const cmlSlope = (benchmarkPoint && benchmarkPoint.x > 0)
+        ? (benchmarkPoint.y - riskFreeRate) / benchmarkPoint.x
         : 0.5;
-
-    // ... rest of Tooltip and Guards ...
-    const CustomTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            const data = payload[0].payload;
-            return (
-                <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
-                    <p className="text-sm font-semibold">{data.name}</p>
-                    <p className="text-xs text-primary">Return: {data.y?.toFixed(1)}%</p>
-                    <p className="text-xs text-secondary">Volatility (Ann.): {data.x?.toFixed(1)}%</p>
-                    <p className="text-xs" style={{ color: data.color }}>
-                        Sharpe: {data.sharpe?.toFixed(2) || 'N/A'}
-                    </p>
-                </div>
-            );
-        }
-        return null;
-    };
 
     if (chartData.length === 0) {
         return (
@@ -187,7 +212,7 @@ export const RiskReturnScatterPlot: React.FC<RiskReturnScatterPlotProps> = ({
                         label={{ value: 'Total Return %', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
                     />
                     <ZAxis type="number" range={[80, 80]} />
-                    <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
+                    <Tooltip content={<RiskReturnTooltip />} isAnimationActive={false} />
 
                     {/* Capital Market Line - funds above are "alpha" generators */}
                     <ReferenceLine

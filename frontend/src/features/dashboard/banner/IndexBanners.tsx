@@ -65,7 +65,7 @@ export const IndexBanners: React.FC = () => {
                         setError('Market data source busy. Retrying...');
                         return;
                     }
-                } catch (e) {
+                } catch {
                     // Ignore
                 }
 

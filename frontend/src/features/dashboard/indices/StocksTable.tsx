@@ -359,10 +359,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         });
     };
 
-    const runTickerExport = async (
+    const runTickerExport = async <Row extends object>(
         stock: Stock,
         datasetName: 'company' | 'finance' | 'price_history',
-        exportDefinitions: ExportDefinition[],
+        exportDefinitions: ExportDefinition<Row>[],
         category?: string,
     ) => {
         if (exportingContextMenu) {

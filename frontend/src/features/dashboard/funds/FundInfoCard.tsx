@@ -1,7 +1,12 @@
 import React from 'react';
+import type { FundInfo } from './FundSelector';
+
+type FundDataValue = string | number | boolean | null;
+type FundDataRecord = Record<string, FundDataValue>;
+type FundInfoSource = FundInfo | FundDataRecord;
 
 interface FundInfoCardProps {
-    fundInfo: any | null;
+    fundInfo: FundInfoSource | null;
     loading?: boolean;
 }
 
@@ -33,14 +38,48 @@ export const FundInfoCard: React.FC<FundInfoCardProps> = ({ fundInfo, loading = 
         );
     }
 
+    const getStringValue = (...values: Array<FundDataValue | undefined>) => {
+        for (const value of values) {
+            if (typeof value === 'string' && value.trim()) {
+                return value;
+            }
+        }
+        return null;
+    };
+
+    const getNumberValue = (...values: Array<FundDataValue | undefined>) => {
+        for (const value of values) {
+            if (typeof value === 'number') {
+                return value;
+            }
+        }
+        return null;
+    };
+
     // Extract fund information from the data object
-    const symbol = fundInfo.symbol || fundInfo.fund_code || 'N/A';
-    const name = fundInfo.fund_name || fundInfo.name || 'N/A';
-    const fundType = fundInfo.fund_type || fundInfo.type || 'N/A';
-    const fundOwner = fundInfo.fund_owner || fundInfo.owner || fundInfo.management_company || 'N/A';
-    const nav = fundInfo.nav || fundInfo.net_asset_value || null;
-    const fee = fundInfo.management_fee || fundInfo.fee || null;
-    const inceptionDate = fundInfo.inception_date || fundInfo.start_date || null;
+    const symbol = getStringValue(fundInfo.symbol, 'fund_code' in fundInfo ? fundInfo.fund_code : null) || 'N/A';
+    const name = getStringValue('fund_name' in fundInfo ? fundInfo.fund_name : null, fundInfo.name) || 'N/A';
+    const fundType = getStringValue(
+        'fund_type' in fundInfo ? fundInfo.fund_type : null,
+        'type' in fundInfo ? fundInfo.type : null,
+    ) || 'N/A';
+    const fundOwner = getStringValue(
+        'fund_owner' in fundInfo ? fundInfo.fund_owner : null,
+        'owner' in fundInfo ? fundInfo.owner : null,
+        'management_company' in fundInfo ? fundInfo.management_company : null,
+    ) || 'N/A';
+    const nav = getNumberValue(
+        'nav' in fundInfo ? fundInfo.nav : null,
+        'net_asset_value' in fundInfo ? fundInfo.net_asset_value : null,
+    );
+    const fee = getNumberValue(
+        'management_fee' in fundInfo ? fundInfo.management_fee : null,
+        'fee' in fundInfo ? fundInfo.fee : null,
+    );
+    const inceptionDate = getStringValue(
+        'inception_date' in fundInfo ? fundInfo.inception_date : null,
+        'start_date' in fundInfo ? fundInfo.start_date : null,
+    );
 
     return (
         <div className="card bg-base-100 shadow-md border border-base-300">
