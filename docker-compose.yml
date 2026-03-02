@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        - VNSTOCK_API_KEY=
+    image: 192.168.100.x:5000/vnstock-hub-backend:latest
+    ports:
+      - "8020:8000"
+    env_file:
+      - ./backend/.env
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://192.168.100.x:8020}
+    image: 192.168.100.x:5000/vnstock-hub-frontend:latest
+    ports:
+      - "3030:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_BASE_URL=http://192.168.100.x:8020
+      - VITE_APP_NAME=VnstockHub
+
+networks:
+  default:
+    name: vnstock-hub
