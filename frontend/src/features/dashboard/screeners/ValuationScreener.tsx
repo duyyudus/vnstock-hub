@@ -588,8 +588,8 @@ export const ValuationScreener: React.FC<ValuationScreenerProps> = ({
 
             <div className="card bg-base-100 shadow-md border border-base-300">
                 <div className="card-body p-0">
-                    <div className="overflow-auto border border-base-300 rounded-lg">
-                        <table className="table table-xs table-pin-rows">
+                    <div className="dashboard-adaptive-table-wrap border border-base-300 rounded-lg">
+                        <table className="table table-xs table-pin-rows w-max min-w-full">
                             <thead>
                                 <tr>
                                     {SORTABLE_HEADERS.map((header) => (

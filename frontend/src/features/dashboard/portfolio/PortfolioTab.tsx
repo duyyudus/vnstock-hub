@@ -883,8 +883,8 @@ export const PortfolioTab: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="table table-zebra table-sm">
+                            <div className="dashboard-adaptive-table-wrap">
+                                <table className="table table-zebra table-sm w-max min-w-full">
                                 <thead>
                                     <tr>
                                         <th>{renderSortHeader('Ticker', 'ticker')}</th>

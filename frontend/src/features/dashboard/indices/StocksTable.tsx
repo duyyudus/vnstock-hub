@@ -507,13 +507,13 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const totalColumns = isLoggedIn ? 18 : 17;
 
     return (
-        <div className="overflow-x-auto rounded-xl">
+        <div className="dashboard-adaptive-table-wrap rounded-xl">
             {exportNotice ? (
                 <div className={`alert mb-2 text-sm ${exportNotice.kind === 'warning' ? 'alert-warning' : 'alert-success'}`}>
                     <span>{exportNotice.message}</span>
                 </div>
             ) : null}
-            <table className="table table-zebra table-sm">
+            <table className="table table-zebra table-sm w-max min-w-full">
                 <thead className="bg-base-200">
                     <tr>
                         <th className="text-base-content font-bold">#</th>

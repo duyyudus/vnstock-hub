@@ -10,3 +10,14 @@
 body {
   min-height: 100vh;
 }
+
+.dashboard-adaptive-shell {
+  width: max-content;
+  min-width: 100%;
+}
+
+.dashboard-adaptive-table-wrap {
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}

@@ -81,8 +81,8 @@ export const PeriodicReturnHeatmap: React.FC<PeriodicReturnHeatmapProps> = ({
     }
 
     return (
-        <div className="w-full overflow-x-auto">
-            <table className="w-full text-xs">
+        <div className="dashboard-adaptive-table-wrap">
+            <table className="w-max min-w-full text-xs">
                 <thead className="sticky top-0 bg-base-100 z-10">
                     <tr>
                         <th className="text-left py-1 px-3 font-semibold border-b border-base-300 min-w-[140px]">

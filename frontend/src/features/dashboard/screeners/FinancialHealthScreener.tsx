@@ -647,8 +647,8 @@ export const FinancialHealthScreener: React.FC<FinancialHealthScreenerProps> = (
                     </div>
                 )}
 
-                <div className="overflow-auto border border-base-300 rounded-lg">
-                    <table className="table table-xs table-pin-rows">
+                <div className="dashboard-adaptive-table-wrap border border-base-300 rounded-lg">
+                    <table className="table table-xs table-pin-rows w-max min-w-full">
                         <thead>
                             <tr>
                                 <th className="align-top">{renderSortableHeader('ticker')}</th>
