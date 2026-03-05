@@ -10,6 +10,7 @@ import { useAuthUser } from '../../auth/useAuthUser';
 import { FinancialHealthScreener } from './FinancialHealthScreener';
 import { ValuationScreener } from './ValuationScreener';
 import { MarginTrendScreener } from './MarginTrendScreener';
+import { LiquidityRiskScreener } from './LiquidityRiskScreener';
 
 interface ScreenersTabProps {
     indices: IndexConfig[];
@@ -17,7 +18,7 @@ interface ScreenersTabProps {
 
 export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
     const user = useAuthUser();
-    const [activeScreener, setActiveScreener] = useState<'valuation' | 'margin-trend' | 'financial-health'>('valuation');
+    const [activeScreener, setActiveScreener] = useState<'valuation' | 'margin-trend' | 'financial-health' | 'liquidity-risk'>('valuation');
 
     const [selectedIndexId, setSelectedIndexId] = useState<string | null>(() => {
         if (indices.length === 0) return null;
@@ -341,6 +342,12 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
                             Margin Trend
                         </button>
                         <button
+                            className={`join-item btn btn-sm ${activeScreener === 'liquidity-risk' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setActiveScreener('liquidity-risk')}
+                        >
+                            Liquidity & Volatility
+                        </button>
+                        <button
                             className={`join-item btn btn-sm ${activeScreener === 'financial-health' ? 'btn-primary' : 'btn-outline'}`}
                             onClick={() => setActiveScreener('financial-health')}
                         >
@@ -367,6 +374,17 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
                     benchmarkStocks={benchmarkStocks}
                     displayStocks={displayStocks}
                     industries={industries}
+                    portfolioTickers={portfolioTickers}
+                    benchmarkLabel={selectedIndex?.label || 'N/A'}
+                    sourceLoading={sourceLoading}
+                    benchmarkLoading={benchmarkLoading}
+                    sourceError={sourceError}
+                    searchQuery={searchQuery}
+                />
+            ) : activeScreener === 'liquidity-risk' ? (
+                <LiquidityRiskScreener
+                    benchmarkStocks={benchmarkStocks}
+                    displayStocks={displayStocks}
                     portfolioTickers={portfolioTickers}
                     benchmarkLabel={selectedIndex?.label || 'N/A'}
                     sourceLoading={sourceLoading}
