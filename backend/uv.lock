@@ -1595,7 +1595,7 @@ sdist = { url = "https://vnstocks.com/files/vnii-0.1.9.tar.gz" }
 
 [[package]]
 name = "vnstock"
-version = "3.4.1"
+version = "3.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1611,9 +1611,9 @@ dependencies = [
     { name = "vnai" },
     { name = "vnstock-ezchart" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/30/56ddb59418c555264031391655d32732a87a8f2d548042753351a319bb39/vnstock-3.4.1.tar.gz", hash = "sha256:2ad4a9dca0b12080d8fbbf8d091276f942fefc5bf37dde0fe23191221f01357e", size = 249442, upload-time = "2026-01-27T16:40:47.682Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/8f/31f914fa3e399e973f7659d5164ee78eb93d4f944375e4e855e403fc4612/vnstock-3.4.2.tar.gz", hash = "sha256:9d98dcadfba9f1be42cf2ca61858ddd722fdcefb183dc55a713b069a087ad96b", size = 250098, upload-time = "2026-02-01T08:27:42.748Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/cf/049b51746d482a807325ee17c4fe4b060f62c36f9c900a8bc4e5d7939aed/vnstock-3.4.1-py3-none-any.whl", hash = "sha256:54167f247dffee0fbccddfeede097e191898c113adf7910453078efa3257bc55", size = 276974, upload-time = "2026-01-27T16:40:45.569Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/86/d538895d1e2d092df80ccd80a6249814df24202b1146cb2be2c0d28ef03e/vnstock-3.4.2-py3-none-any.whl", hash = "sha256:d5af31b2cb79e4bf0433ca5ae7e211cfaad4f46359f0f4592670c38219c5897a", size = 277467, upload-time = "2026-02-01T08:27:41.241Z" },
 ]
 
 [[package]]
@@ -1691,7 +1691,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.40.0" },
     { name = "vnai", specifier = ">=2.3.9" },
     { name = "vnii", specifier = ">=0.1.9" },
-    { name = "vnstock", specifier = ">=3.4.1" },
+    { name = "vnstock", specifier = ">=3.4.2" },
 ]
 
 [package.metadata.requires-dev]

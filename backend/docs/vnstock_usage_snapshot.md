@@ -12,8 +12,8 @@ Maintenance guidance:
 ## Snapshot Metadata
 - Snapshot date: `2026-02-14`
 - Code snapshot (HEAD short SHA): `c75e1db`
-- Backend dependency intent: `vnstock>=3.4.1` in `backend/pyproject.toml:27`
-- Locked version observed: `vnstock-3.4.1` in `backend/uv.lock:1614`
+- Backend dependency intent: `vnstock>=3.4.2` in `backend/pyproject.toml:27`
+- Locked version observed: `vnstock-3.4.2` in `backend/uv.lock`
 
 ## Current Dependency Context
 - Backend wraps `vnstock` in `backend/app/services/vnstock_service`.
