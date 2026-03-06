@@ -1,6 +1,11 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
+interface IndustryHoldingStockItem {
+    ticker: string;
+    companyName?: string;
+}
+
 interface IndustryHoldingDataPoint {
     industry?: string | null;
     sector?: string | null;
@@ -8,16 +13,20 @@ interface IndustryHoldingDataPoint {
     allocation?: number | null;
     weight?: number | null;
     percentage?: number | null;
+    stocks?: IndustryHoldingStockItem[] | null;
 }
 
 interface PieDatum {
     name: string;
     value: number;
+    stocks?: IndustryHoldingStockItem[];
 }
 
 interface PieTooltipProps {
     active?: boolean;
-    payload?: PieDatum[];
+    payload?: Array<{
+        payload: PieDatum;
+    }>;
 }
 
 interface IndustryHoldingChartProps {
@@ -32,13 +41,25 @@ const formatPercent = (value: number) => {
 
 const IndustryHoldingTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
     if (active && payload && payload.length) {
-        const datum = payload[0];
+        const datum = payload[0].payload;
         return (
             <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
                 <p className="text-sm font-semibold mb-1">{datum.name}</p>
                 <p className="text-xs text-primary">
                     Allocation: {formatPercent(datum.value)}
                 </p>
+                {datum.stocks && datum.stocks.length > 0 && (
+                    <div className="mt-2 max-h-32 overflow-y-auto pr-1">
+                        <ul className="text-xs text-base-content/80 space-y-1">
+                            {datum.stocks.map((stock) => (
+                                <li key={stock.ticker}>
+                                    <span className="font-medium">{stock.ticker}</span>
+                                    {stock.companyName ? ` - ${stock.companyName}` : ''}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </div>
         );
     }
@@ -66,6 +87,7 @@ export const IndustryHoldingChart: React.FC<IndustryHoldingChartProps> = ({ data
     const chartData: PieDatum[] = data.map((item) => ({
         name: item.industry || item.sector || item.industry_name || 'Other',
         value: item.allocation || item.weight || item.percentage || 0,
+        stocks: item.stocks || undefined,
     }));
 
     return (

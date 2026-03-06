@@ -28,6 +28,15 @@ interface StockAllocationItem {
     companyName?: string;
 }
 
+interface IndustryAllocationItem {
+    industry: string;
+    allocation: number;
+    stocks: Array<{
+        ticker: string;
+        companyName?: string;
+    }>;
+}
+
 interface CsvExportNotice {
     kind: 'success' | 'warning';
     message: string;
@@ -160,7 +169,7 @@ export const PortfolioTab: React.FC = () => {
                 ? 'text-error'
                 : 'text-base-content';
 
-    const industryAllocation = useMemo(() => {
+    const industryAllocation = useMemo<IndustryAllocationItem[]>(() => {
         if (positions.length === 0 || Object.keys(quotes).length === 0) {
             console.log('No industry allocation: positions or quotes empty', {
                 positionsCount: positions.length,
@@ -169,12 +178,19 @@ export const PortfolioTab: React.FC = () => {
             return [];
         }
 
-        // Group by industry and calculate market value per industry
-        const industryMap = new Map<string, number>();
+        // Group by industry and track each ticker's market value within that industry.
+        const industryMap = new Map<string, {
+            marketValue: number;
+            stockMap: Map<string, {
+                marketValue: number;
+                companyName?: string;
+            }>;
+        }>();
         let totalMarketValue = 0;
 
         positions.forEach((position) => {
-            const quote = quotes[position.ticker.toUpperCase()];
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
             const price = quote?.price;
             const industry = quote?.industry || 'Other';
 
@@ -182,20 +198,41 @@ export const PortfolioTab: React.FC = () => {
 
             if (typeof price === 'number' && Number.isFinite(price)) {
                 const marketValue = position.quantity * price;
-                industryMap.set(industry, (industryMap.get(industry) || 0) + marketValue);
+                const companyName = quote?.company_name?.trim() || undefined;
+                const existingIndustry = industryMap.get(industry) || {
+                    marketValue: 0,
+                    stockMap: new Map<string, {
+                        marketValue: number;
+                        companyName?: string;
+                    }>(),
+                };
+                const existingStock = existingIndustry.stockMap.get(ticker) || {
+                    marketValue: 0,
+                    companyName,
+                };
+
+                existingIndustry.marketValue += marketValue;
+                existingStock.marketValue += marketValue;
+                existingStock.companyName = existingStock.companyName || companyName;
+                existingIndustry.stockMap.set(ticker, existingStock);
+                industryMap.set(industry, existingIndustry);
                 totalMarketValue += marketValue;
             }
         });
 
-        // Convert to array with allocation percentages
-        // Note: IndustryHoldingChart expects 'industry' and 'allocation' fields
         const result = Array.from(industryMap.entries())
             .map(([industry, value]) => ({
-                industry: industry,
-                allocation: totalMarketValue > 0 ? (value / totalMarketValue) * 100 : 0
+                industry,
+                allocation: totalMarketValue > 0 ? (value.marketValue / totalMarketValue) * 100 : 0,
+                stocks: Array.from(value.stockMap.entries())
+                    .sort((a, b) => b[1].marketValue - a[1].marketValue)
+                    .map(([ticker, stock]) => ({
+                        ticker,
+                        companyName: stock.companyName,
+                    })),
             }))
             .filter(item => item.allocation > 0)
-            .sort((a, b) => b.allocation - a.allocation); // Sort by allocation descending
+            .sort((a, b) => b.allocation - a.allocation);
 
         console.log('Industry allocation calculated:', result);
         return result;
