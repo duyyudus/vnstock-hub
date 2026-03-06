@@ -514,7 +514,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                 </div>
             ) : null}
             <table className="table table-zebra table-sm w-max min-w-full">
-                <thead className="bg-base-200">
+                <thead className="sticky top-0 z-20 bg-base-200">
                     <tr>
                         <th className="text-base-content font-bold">#</th>
                         {isLoggedIn ? (
