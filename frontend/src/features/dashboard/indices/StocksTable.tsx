@@ -19,10 +19,15 @@ interface StocksTableProps {
     stocks: Stock[];
     /** Bookmark groups for the logged-in user */
     bookmarkGroups?: BookmarkGroup[];
-    /** Tickers in the user's portfolio */
-    portfolioTickers?: string[];
+    /** Current holding details keyed by uppercase ticker */
+    portfolioHoldings?: Record<string, PortfolioHoldingSummary>;
     /** Notify parent to refresh bookmark data */
     onBookmarksUpdated?: (groupId?: number) => void;
+}
+
+export interface PortfolioHoldingSummary {
+    marketValue: number;
+    allocationPercent: number;
 }
 
 type SortKey = keyof Stock | 'foreign_net_value' | 'room_ratio';
@@ -47,7 +52,7 @@ interface ExportNotice {
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     bookmarkGroups = [],
-    portfolioTickers = [],
+    portfolioHoldings = {},
     onBookmarksUpdated,
 }) => {
     const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -85,8 +90,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     }, [bookmarkGroups]);
 
     const portfolioTickerSet = useMemo(() => {
-        return new Set(portfolioTickers.map((ticker) => ticker.toUpperCase()));
-    }, [portfolioTickers]);
+        return new Set(Object.keys(portfolioHoldings));
+    }, [portfolioHoldings]);
 
     useEffect(() => {
         if (!exportNotice) {
@@ -142,6 +147,40 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(value);
+    };
+
+    const formatHoldingPercent = (value: number): string => {
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(value);
+    };
+
+    const formatHoldingValue = (value: number): string => {
+        return new Intl.NumberFormat('en-US', {
+            maximumFractionDigits: 2,
+        }).format(value);
+    };
+
+    const formatTickerTooltip = (
+        companyLabel: string,
+        holding?: PortfolioHoldingSummary
+    ): string => {
+        if (
+            !holding
+            || !Number.isFinite(holding.marketValue)
+            || !Number.isFinite(holding.allocationPercent)
+        ) {
+            return companyLabel;
+        }
+
+        const parts = [];
+        if (companyLabel) {
+            parts.push(companyLabel);
+        }
+        parts.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
+        parts.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+        return parts.join('\n');
     };
 
     const getRemainingRoomRatio = (
@@ -713,6 +752,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const normalizedTicker = stock.ticker.toUpperCase();
                             const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
                             const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
+                            const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
+                            const tickerTooltipText = formatTickerTooltip(fullNameWithExchange, portfolioHolding);
                             const hasRoomData = stock.current_room != null || stock.total_room != null;
                             const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
                             const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
@@ -740,7 +781,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                         {!isCompanyCollapsed && stock.company_name}
                                     </td>
                                     <td className="w-16">
-                                        <div className="tooltip tooltip-right" data-tip={fullNameWithExchange}>
+                                        <div
+                                            className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
+                                            data-tip={tickerTooltipText}
+                                        >
                                             <button
                                                 className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
                                                     isInPortfolio ? 'text-accent' : 'text-primary'

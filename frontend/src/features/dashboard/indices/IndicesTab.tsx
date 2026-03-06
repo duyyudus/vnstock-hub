@@ -10,6 +10,7 @@ import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
 import { StocksTable } from './StocksTable';
+import type { PortfolioHoldingSummary } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { deriveIndexIndustryScope } from './indexIndustryScope';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -62,7 +63,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [bookmarkLoading, setBookmarkLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [portfolioTickers, setPortfolioTickers] = useState<string[]>([]);
+    const [portfolioHoldings, setPortfolioHoldings] = useState<Record<string, PortfolioHoldingSummary>>({});
 
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -128,22 +129,67 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     useEffect(() => {
         if (!user) {
-            setPortfolioTickers([]);
+            setPortfolioHoldings({});
             return;
         }
         let isMounted = true;
-        stockApi.getPortfolioPositions()
-            .then((response) => {
+        const fetchPortfolioHoldings = async () => {
+            try {
+                const response = await stockApi.getPortfolioPositions();
                 if (!isMounted) return;
                 const uniqueTickers = Array.from(
                     new Set(response.positions.map((position) => position.ticker.toUpperCase()))
                 );
-                setPortfolioTickers(uniqueTickers);
-            })
-            .catch(() => {
+
+                if (uniqueTickers.length === 0) {
+                    setPortfolioHoldings({});
+                    return;
+                }
+
+                const quotesResponse = await stockApi.getStockQuotes(uniqueTickers);
                 if (!isMounted) return;
-                setPortfolioTickers([]);
-            });
+                const quotesByTicker = quotesResponse.stocks.reduce<Record<string, Stock>>((accumulator, stock) => {
+                    accumulator[stock.ticker.toUpperCase()] = stock;
+                    return accumulator;
+                }, {});
+
+                const holdingsTotals = response.positions.reduce<Record<string, number>>((accumulator, position) => {
+                    const ticker = position.ticker.toUpperCase();
+                    const price = quotesByTicker[ticker]?.price;
+                    if (typeof price !== 'number' || !Number.isFinite(price)) {
+                        return accumulator;
+                    }
+
+                    const marketValue = position.quantity * price;
+                    if (!Number.isFinite(marketValue)) {
+                        return accumulator;
+                    }
+
+                    accumulator[ticker] = (accumulator[ticker] ?? 0) + marketValue;
+                    return accumulator;
+                }, {});
+
+                const totalMarketValue = Object.values(holdingsTotals).reduce((sum, value) => sum + value, 0);
+                if (!Number.isFinite(totalMarketValue) || totalMarketValue <= 0) {
+                    setPortfolioHoldings({});
+                    return;
+                }
+
+                const nextPortfolioHoldings = Object.entries(holdingsTotals).reduce<Record<string, PortfolioHoldingSummary>>((accumulator, [ticker, marketValue]) => {
+                    accumulator[ticker] = {
+                        marketValue,
+                        allocationPercent: (marketValue / totalMarketValue) * 100,
+                    };
+                    return accumulator;
+                }, {});
+                setPortfolioHoldings(nextPortfolioHoldings);
+            } catch {
+                if (!isMounted) return;
+                setPortfolioHoldings({});
+            }
+        };
+
+        fetchPortfolioHoldings();
 
         return () => {
             isMounted = false;
@@ -664,7 +710,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             <StocksTable
                                 stocks={filteredStocks}
                                 bookmarkGroups={bookmarkGroups}
-                                portfolioTickers={portfolioTickers}
+                                portfolioHoldings={portfolioHoldings}
                                 onBookmarksUpdated={handleBookmarksUpdated}
                             />
                         )}
