@@ -791,7 +791,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                                 }`}
                                                 onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
                                                 onContextMenu={(event) => handleTickerContextMenu(event, stock)}
-                                                title={`View financial details for ${stock.ticker}`}
+                                                aria-label={`View financial details for ${stock.ticker}`}
                                             >
                                                 {stock.ticker.slice(0, 3)}
                                             </button>
