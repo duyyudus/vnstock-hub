@@ -4,6 +4,8 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 interface IndustryHoldingStockItem {
     ticker: string;
     companyName?: string;
+    marketValue?: number;
+    allocation?: number;
 }
 
 interface IndustryHoldingDataPoint {
@@ -38,23 +40,39 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const formatPercent = (value: number) => {
     return `${value.toFixed(1)}%`;
 };
+const formatMarketValue = (value: number) => {
+    return `${new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 2,
+    }).format(value)} VND`;
+};
 
 const IndustryHoldingTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
     if (active && payload && payload.length) {
         const datum = payload[0].payload;
         return (
-            <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
+            <div className="inline-block w-max max-w-none bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg z-50">
                 <p className="text-sm font-semibold mb-1">{datum.name}</p>
                 <p className="text-xs text-primary">
                     Allocation: {formatPercent(datum.value)}
                 </p>
                 {datum.stocks && datum.stocks.length > 0 && (
-                    <div className="mt-2 max-h-32 overflow-y-auto pr-1">
-                        <ul className="text-xs text-base-content/80 space-y-1">
+                    <div className="mt-2">
+                        <ul className="text-xs text-base-content/80 space-y-1 whitespace-nowrap">
                             {datum.stocks.map((stock) => (
                                 <li key={stock.ticker}>
-                                    <span className="font-medium">{stock.ticker}</span>
-                                    {stock.companyName ? ` - ${stock.companyName}` : ''}
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <span>
+                                            <span className="font-medium shrink-0">{stock.ticker}</span>
+                                            {stock.companyName ? ` - ${stock.companyName}` : ''}
+                                        </span>
+                                        {(typeof stock.marketValue === 'number' || typeof stock.allocation === 'number') && (
+                                            <span className="text-base-content/60 text-right shrink-0">
+                                                {typeof stock.marketValue === 'number' ? formatMarketValue(stock.marketValue) : ''}
+                                                {typeof stock.marketValue === 'number' && typeof stock.allocation === 'number' ? ' · ' : ''}
+                                                {typeof stock.allocation === 'number' ? formatPercent(stock.allocation) : ''}
+                                            </span>
+                                        )}
+                                    </div>
                                 </li>
                             ))}
                         </ul>

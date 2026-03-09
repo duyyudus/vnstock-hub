@@ -34,6 +34,8 @@ interface IndustryAllocationItem {
     stocks: Array<{
         ticker: string;
         companyName?: string;
+        marketValue?: number;
+        allocation?: number;
     }>;
 }
 
@@ -229,6 +231,8 @@ export const PortfolioTab: React.FC = () => {
                     .map(([ticker, stock]) => ({
                         ticker,
                         companyName: stock.companyName,
+                        marketValue: stock.marketValue,
+                        allocation: totalMarketValue > 0 ? (stock.marketValue / totalMarketValue) * 100 : 0,
                     })),
             }))
             .filter(item => item.allocation > 0)
@@ -1164,10 +1168,10 @@ export const PortfolioTab: React.FC = () => {
 
             {positions.length > 0 && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="card bg-base-100 shadow-md border border-base-300">
-                        <div className="card-body p-4">
+                    <div className="card relative z-10 overflow-visible bg-base-100 shadow-md border border-base-300">
+                        <div className="card-body overflow-visible p-4">
                             <h3 className="card-title text-base">Industry Allocation</h3>
-                            <div className="w-full aspect-square">
+                            <div className="w-full aspect-square overflow-visible">
                                 <IndustryHoldingChart
                                     data={industryAllocation}
                                     loading={quoteLoading}
@@ -1175,7 +1179,7 @@ export const PortfolioTab: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="card bg-base-100 shadow-md border border-base-300">
+                    <div className="card relative z-0 bg-base-100 shadow-md border border-base-300">
                         <div className="card-body p-4">
                             <h3 className="card-title text-base">Stock Allocation</h3>
                             <div className="w-full aspect-square overflow-y-auto pr-1">
