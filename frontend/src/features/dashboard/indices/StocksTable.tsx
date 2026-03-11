@@ -837,7 +837,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     </td>
                                     <td className="text-right font-mono whitespace-nowrap text-base-content">
                                         {hasRoomData ? (
-                                            <div className="tooltip [&:before]:whitespace-pre-line" data-tip={roomTooltipText}>
+                                            <div
+                                                className="tooltip z-30 [&:before]:z-30 [&:before]:whitespace-pre-line [&:after]:z-30"
+                                                data-tip={roomTooltipText}
+                                            >
                                                 <span className="cursor-help">{roomRatioText}</span>
                                             </div>
                                         ) : (
