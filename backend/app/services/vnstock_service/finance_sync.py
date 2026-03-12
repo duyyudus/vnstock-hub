@@ -141,6 +141,7 @@ class FinanceDataSyncService:
         worker_count = min(total, self._sync_max_workers)
         success_count = 0
         failure_count = 0
+        failed_tickers: list[str] = []
         processed_count = 0
         progress_lock = asyncio.Lock()
 
@@ -180,6 +181,7 @@ class FinanceDataSyncService:
                             processed_count += 1
                             if symbol_failed:
                                 failure_count += 1
+                                failed_tickers.append(symbol)
                             else:
                                 success_count += 1
 
@@ -188,6 +190,7 @@ class FinanceDataSyncService:
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
                                 current_symbol=symbol,
+                                failed_tickers=failed_tickers,
                             )
                     work_queue.task_done()
 

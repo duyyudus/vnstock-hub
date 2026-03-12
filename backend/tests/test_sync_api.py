@@ -21,6 +21,11 @@ async def test_get_sync_status_includes_unified_price_sync(client):
     assert "repair" in payload["price_sync"]
     assert "finance_sync" in payload
     assert "company_sync" in payload
+    assert "failed_tickers" in payload["price_sync"]["sync"]
+    assert "failed_tickers" in payload["price_sync"]["audit"]
+    assert "failed_tickers" in payload["price_sync"]["repair"]
+    assert "failed_tickers" in payload["finance_sync"]
+    assert "failed_tickers" in payload["company_sync"]
 
 
 @pytest.mark.asyncio

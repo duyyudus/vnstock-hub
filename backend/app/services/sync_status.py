@@ -5,7 +5,7 @@ All state modifications are protected by RLock to prevent race conditions
 when multiple threads/coroutines access the sync status concurrently.
 """
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -28,6 +28,7 @@ class PriceJobStatusData:
     processed_symbols: int = 0
     success_symbols: int = 0
     failed_symbols: int = 0
+    failed_tickers: list[str] = field(default_factory=list)
     current_symbol: Optional[str] = None
     last_run_at: Optional[str] = None
     started_at: Optional[str] = None
@@ -59,6 +60,7 @@ class GlobalSyncStatus:
         self._price_sync_processed_symbols = 0
         self._price_sync_success_symbols = 0
         self._price_sync_failed_symbols = 0
+        self._price_sync_failed_tickers: list[str] = []
         self._price_sync_current_symbol: Optional[str] = None
         self._price_sync_last_run_at: Optional[str] = None
         self._price_sync_started_at: Optional[str] = None
@@ -71,6 +73,7 @@ class GlobalSyncStatus:
         self._price_audit_processed_symbols = 0
         self._price_audit_success_symbols = 0
         self._price_audit_failed_symbols = 0
+        self._price_audit_failed_tickers: list[str] = []
         self._price_audit_current_symbol: Optional[str] = None
         self._price_audit_last_run_at: Optional[str] = None
         self._price_audit_started_at: Optional[str] = None
@@ -83,6 +86,7 @@ class GlobalSyncStatus:
         self._price_repair_processed_symbols = 0
         self._price_repair_success_symbols = 0
         self._price_repair_failed_symbols = 0
+        self._price_repair_failed_tickers: list[str] = []
         self._price_repair_current_symbol: Optional[str] = None
         self._price_repair_last_run_at: Optional[str] = None
         self._price_repair_started_at: Optional[str] = None
@@ -95,6 +99,7 @@ class GlobalSyncStatus:
         self._finance_sync_processed_symbols = 0
         self._finance_sync_success_symbols = 0
         self._finance_sync_failed_symbols = 0
+        self._finance_sync_failed_tickers: list[str] = []
         self._finance_sync_current_symbol: Optional[str] = None
         self._finance_sync_last_run_at: Optional[str] = None
         self._finance_sync_started_at: Optional[str] = None
@@ -107,6 +112,7 @@ class GlobalSyncStatus:
         self._company_sync_processed_symbols = 0
         self._company_sync_success_symbols = 0
         self._company_sync_failed_symbols = 0
+        self._company_sync_failed_tickers: list[str] = []
         self._company_sync_current_symbol: Optional[str] = None
         self._company_sync_last_run_at: Optional[str] = None
         self._company_sync_started_at: Optional[str] = None
@@ -143,6 +149,7 @@ class GlobalSyncStatus:
                 processed_symbols=self._price_sync_processed_symbols,
                 success_symbols=self._price_sync_success_symbols,
                 failed_symbols=self._price_sync_failed_symbols,
+                failed_tickers=list(self._price_sync_failed_tickers),
                 current_symbol=self._price_sync_current_symbol,
                 last_run_at=self._price_sync_last_run_at,
                 started_at=self._price_sync_started_at,
@@ -160,6 +167,7 @@ class GlobalSyncStatus:
                 processed_symbols=self._price_audit_processed_symbols,
                 success_symbols=self._price_audit_success_symbols,
                 failed_symbols=self._price_audit_failed_symbols,
+                failed_tickers=list(self._price_audit_failed_tickers),
                 current_symbol=self._price_audit_current_symbol,
                 last_run_at=self._price_audit_last_run_at,
                 started_at=self._price_audit_started_at,
@@ -177,6 +185,7 @@ class GlobalSyncStatus:
                 processed_symbols=self._price_repair_processed_symbols,
                 success_symbols=self._price_repair_success_symbols,
                 failed_symbols=self._price_repair_failed_symbols,
+                failed_tickers=list(self._price_repair_failed_tickers),
                 current_symbol=self._price_repair_current_symbol,
                 last_run_at=self._price_repair_last_run_at,
                 started_at=self._price_repair_started_at,
@@ -194,6 +203,7 @@ class GlobalSyncStatus:
                 processed_symbols=self._finance_sync_processed_symbols,
                 success_symbols=self._finance_sync_success_symbols,
                 failed_symbols=self._finance_sync_failed_symbols,
+                failed_tickers=list(self._finance_sync_failed_tickers),
                 current_symbol=self._finance_sync_current_symbol,
                 last_run_at=self._finance_sync_last_run_at,
                 started_at=self._finance_sync_started_at,
@@ -211,6 +221,7 @@ class GlobalSyncStatus:
                 processed_symbols=self._company_sync_processed_symbols,
                 success_symbols=self._company_sync_success_symbols,
                 failed_symbols=self._company_sync_failed_symbols,
+                failed_tickers=list(self._company_sync_failed_tickers),
                 current_symbol=self._company_sync_current_symbol,
                 last_run_at=self._company_sync_last_run_at,
                 started_at=self._company_sync_started_at,
@@ -305,6 +316,7 @@ class GlobalSyncStatus:
         setattr(self, f"_{prefix}_processed_symbols", 0)
         setattr(self, f"_{prefix}_success_symbols", 0)
         setattr(self, f"_{prefix}_failed_symbols", 0)
+        setattr(self, f"_{prefix}_failed_tickers", [])
         setattr(self, f"_{prefix}_current_symbol", None)
         setattr(self, f"_{prefix}_started_at", datetime.now().isoformat())
         setattr(self, f"_{prefix}_error", None)
@@ -317,10 +329,13 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         setattr(self, f"_{prefix}_processed_symbols", max(0, processed_symbols))
         setattr(self, f"_{prefix}_success_symbols", max(0, success_symbols))
         setattr(self, f"_{prefix}_failed_symbols", max(0, failed_symbols))
+        if failed_tickers is not None:
+            setattr(self, f"_{prefix}_failed_tickers", list(dict.fromkeys(failed_tickers)))
         setattr(self, f"_{prefix}_current_symbol", current_symbol)
 
         total_symbols = getattr(self, f"_{prefix}_total_symbols")
@@ -348,6 +363,7 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         """Update unified price sync progress."""
         with self._lock:
@@ -357,6 +373,7 @@ class GlobalSyncStatus:
                 success_symbols,
                 failed_symbols,
                 current_symbol,
+                failed_tickers,
             )
 
     def complete_price_sync(self, success: bool, error: Optional[str] = None) -> None:
@@ -375,6 +392,7 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         """Update price audit progress."""
         with self._lock:
@@ -384,6 +402,7 @@ class GlobalSyncStatus:
                 success_symbols,
                 failed_symbols,
                 current_symbol,
+                failed_tickers,
             )
 
     def complete_price_audit(self, success: bool, error: Optional[str] = None) -> None:
@@ -402,6 +421,7 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         """Update repair sync progress."""
         with self._lock:
@@ -411,6 +431,7 @@ class GlobalSyncStatus:
                 success_symbols,
                 failed_symbols,
                 current_symbol,
+                failed_tickers,
             )
 
     def complete_price_repair(self, success: bool, error: Optional[str] = None) -> None:
@@ -429,6 +450,7 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         """Update finance sync progress."""
         with self._lock:
@@ -438,6 +460,7 @@ class GlobalSyncStatus:
                 success_symbols,
                 failed_symbols,
                 current_symbol,
+                failed_tickers,
             )
 
     def complete_finance_sync(self, success: bool, error: Optional[str] = None) -> None:
@@ -456,6 +479,7 @@ class GlobalSyncStatus:
         success_symbols: int,
         failed_symbols: int,
         current_symbol: Optional[str],
+        failed_tickers: Optional[list[str]] = None,
     ) -> None:
         """Update company sync progress."""
         with self._lock:
@@ -465,6 +489,7 @@ class GlobalSyncStatus:
                 success_symbols,
                 failed_symbols,
                 current_symbol,
+                failed_tickers,
             )
 
     def complete_company_sync(self, success: bool, error: Optional[str] = None) -> None:
@@ -512,6 +537,7 @@ class GlobalSyncStatus:
                         "processed_symbols": self._price_sync_processed_symbols,
                         "success_symbols": self._price_sync_success_symbols,
                         "failed_symbols": self._price_sync_failed_symbols,
+                        "failed_tickers": list(self._price_sync_failed_tickers),
                         "current_symbol": self._price_sync_current_symbol,
                         "last_run_at": self._price_sync_last_run_at,
                         "started_at": self._price_sync_started_at,
@@ -524,6 +550,7 @@ class GlobalSyncStatus:
                         "processed_symbols": self._price_audit_processed_symbols,
                         "success_symbols": self._price_audit_success_symbols,
                         "failed_symbols": self._price_audit_failed_symbols,
+                        "failed_tickers": list(self._price_audit_failed_tickers),
                         "current_symbol": self._price_audit_current_symbol,
                         "last_run_at": self._price_audit_last_run_at,
                         "started_at": self._price_audit_started_at,
@@ -536,6 +563,7 @@ class GlobalSyncStatus:
                         "processed_symbols": self._price_repair_processed_symbols,
                         "success_symbols": self._price_repair_success_symbols,
                         "failed_symbols": self._price_repair_failed_symbols,
+                        "failed_tickers": list(self._price_repair_failed_tickers),
                         "current_symbol": self._price_repair_current_symbol,
                         "last_run_at": self._price_repair_last_run_at,
                         "started_at": self._price_repair_started_at,
@@ -549,6 +577,7 @@ class GlobalSyncStatus:
                     "processed_symbols": self._finance_sync_processed_symbols,
                     "success_symbols": self._finance_sync_success_symbols,
                     "failed_symbols": self._finance_sync_failed_symbols,
+                    "failed_tickers": list(self._finance_sync_failed_tickers),
                     "current_symbol": self._finance_sync_current_symbol,
                     "last_run_at": self._finance_sync_last_run_at,
                     "started_at": self._finance_sync_started_at,
@@ -561,6 +590,7 @@ class GlobalSyncStatus:
                     "processed_symbols": self._company_sync_processed_symbols,
                     "success_symbols": self._company_sync_success_symbols,
                     "failed_symbols": self._company_sync_failed_symbols,
+                    "failed_tickers": list(self._company_sync_failed_tickers),
                     "current_symbol": self._company_sync_current_symbol,
                     "last_run_at": self._company_sync_last_run_at,
                     "started_at": self._company_sync_started_at,

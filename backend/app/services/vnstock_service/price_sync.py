@@ -340,6 +340,7 @@ class PriceSyncService:
         processed_symbols = 0
         success_symbols = 0
         failed_symbols = 0
+        failed_tickers: List[str] = []
         symbols_with_gaps = 0
         total_missing_dates = 0
         total_repaired_dates = 0
@@ -413,6 +414,7 @@ class PriceSyncService:
 
                         if symbol_failed:
                             failed_symbols += 1
+                            failed_tickers.append(symbol)
                         else:
                             success_symbols += 1
                             if symbol_missing_count > 0:
@@ -426,6 +428,7 @@ class PriceSyncService:
                             success_symbols=success_symbols,
                             failed_symbols=failed_symbols,
                             current_symbol=symbol,
+                            failed_tickers=failed_tickers,
                         )
                     work_queue.task_done()
 
@@ -507,6 +510,7 @@ class PriceSyncService:
 
         success_count = 0
         failure_count = 0
+        failed_tickers: List[str] = []
         processed_count = 0
         progress_lock = asyncio.Lock()
 
@@ -555,6 +559,7 @@ class PriceSyncService:
                             processed_count += 1
                             if symbol_failed:
                                 failure_count += 1
+                                failed_tickers.append(symbol)
                             else:
                                 success_count += 1
 
@@ -563,6 +568,7 @@ class PriceSyncService:
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
                                 current_symbol=symbol,
+                                failed_tickers=failed_tickers,
                             )
                         work_queue.task_done()
 
@@ -629,6 +635,7 @@ class PriceSyncService:
         worker_count = min(total, self._sync_max_workers)
         success_count = 0
         failure_count = 0
+        failed_tickers: List[str] = []
         processed_count = 0
         progress_lock = asyncio.Lock()
 
@@ -667,6 +674,7 @@ class PriceSyncService:
                             processed_count += 1
                             if symbol_failed:
                                 failure_count += 1
+                                failed_tickers.append(meta.symbol)
                             else:
                                 success_count += 1
 
@@ -675,6 +683,7 @@ class PriceSyncService:
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
                                 current_symbol=meta.symbol,
+                                failed_tickers=failed_tickers,
                             )
                     work_queue.task_done()
 

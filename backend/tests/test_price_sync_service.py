@@ -229,8 +229,57 @@ async def test_sync_parallel_workers_update_counters(monkeypatch):
     assert runtime.processed_symbols == 4
     assert runtime.success_symbols == 4
     assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
     assert runtime.progress == 1.0
     assert max_in_flight > 1
+
+
+@pytest.mark.asyncio
+async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    service._sync_max_workers = 1
+    service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
+
+    symbols_meta = [
+        SymbolSyncMeta(symbol="AAA", listing_date=date(2020, 1, 1)),
+        SymbolSyncMeta(symbol="BBB", listing_date=date(2020, 1, 1)),
+        SymbolSyncMeta(symbol="CCC", listing_date=date(2020, 1, 1)),
+    ]
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return symbols_meta
+
+    async def _fake_ensure_sync_state_rows(_symbols_meta):
+        return None
+
+    async def _mark_symbol_failed(_symbol: str, _error_message: str):
+        return None
+
+    async def _fail_on_bbb(meta: SymbolSyncMeta):
+        if meta.symbol == "BBB":
+            raise RuntimeError("sync failed")
+
+    async def _all_success(_meta: SymbolSyncMeta):
+        return None
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_ensure_sync_state_rows", _fake_ensure_sync_state_rows)
+    monkeypatch.setattr(service, "_mark_symbol_failed", _mark_symbol_failed)
+    monkeypatch.setattr(service, "_sync_symbol", _fail_on_bbb)
+
+    await service._run_sync(symbols=None)
+
+    runtime = sync_status.price_sync
+    assert runtime.failed_symbols == 1
+    assert runtime.failed_tickers == ["BBB"]
+
+    monkeypatch.setattr(service, "_sync_symbol", _all_success)
+
+    await service._run_sync(symbols=None)
+
+    runtime = sync_status.price_sync
+    assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
 
 
 @pytest.mark.asyncio
@@ -282,6 +331,7 @@ async def test_audit_parallel_workers_update_counters(monkeypatch):
     assert runtime.processed_symbols == 4
     assert runtime.success_symbols == 4
     assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
     assert runtime.progress == 1.0
 
     assert result["started"] is True
@@ -292,6 +342,45 @@ async def test_audit_parallel_workers_update_counters(monkeypatch):
     assert len(result["results"]) == 4
     assert max_in_flight > 1
     assert max_in_flight <= service._sync_max_workers
+
+
+@pytest.mark.asyncio
+async def test_audit_tracks_failed_tickers(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    service._sync_max_workers = 1
+    service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
+
+    async def _fake_resolve_symbols_filter(symbols=None, index_symbol=None):
+        return ["AAA", "BBB"]
+
+    async def _fake_get_local_history_dates(_symbol: str, _start_date: date, _end_date: date):
+        return {date(2025, 1, 2)}
+
+    async def _fake_fetch_remote_history_dates(symbol: str, _start_date: date, _end_date: date):
+        if symbol == "BBB":
+            raise RuntimeError("upstream failed")
+        return {date(2025, 1, 2), date(2025, 1, 3)}
+
+    async def _fake_mark_symbol_error(_symbol: str, _error_message: str):
+        return None
+
+    monkeypatch.setattr(service, "_resolve_symbols_filter", _fake_resolve_symbols_filter)
+    monkeypatch.setattr(service, "_get_local_history_dates", _fake_get_local_history_dates)
+    monkeypatch.setattr(service, "_fetch_remote_history_dates", _fake_fetch_remote_history_dates)
+    monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
+
+    result = await service.run_audit_sync(
+        symbols=None,
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 3),
+        auto_repair=False,
+        index_symbol="VN30",
+    )
+
+    runtime = sync_status.price_audit
+    assert runtime.failed_symbols == 1
+    assert runtime.failed_tickers == ["BBB"]
+    assert result["failed_symbols"] == 1
 
 
 @pytest.mark.asyncio
@@ -335,6 +424,7 @@ async def test_repair_parallel_workers_update_counters(monkeypatch):
     assert runtime.processed_symbols == 4
     assert runtime.success_symbols == 4
     assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
     assert runtime.progress == 1.0
 
     assert result["started"] is True
@@ -343,6 +433,38 @@ async def test_repair_parallel_workers_update_counters(monkeypatch):
     assert result["failed_symbols"] == 0
     assert max_in_flight > 1
     assert max_in_flight <= service._sync_max_workers
+
+
+@pytest.mark.asyncio
+async def test_repair_tracks_failed_tickers(monkeypatch):
+    service = PriceSyncService(history=HistoryService())
+    service._sync_max_workers = 1
+    service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
+
+    def _fake_upsert(symbol: str, _start_date: date, _end_date: date):
+        if symbol == "BBB":
+            raise RuntimeError("repair failed")
+
+    async def _fake_mark_symbol_sync_result(_symbol: str):
+        return None
+
+    async def _fake_mark_symbol_error(_symbol: str, _error_message: str):
+        return None
+
+    monkeypatch.setattr(service._history, "_upsert_stock_price_history", _fake_upsert)
+    monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
+    monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
+
+    result = await service.run_repair_sync(
+        symbols=["AAA", "BBB", "CCC"],
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 3),
+    )
+
+    runtime = sync_status.price_repair
+    assert runtime.failed_symbols == 1
+    assert runtime.failed_tickers == ["BBB"]
+    assert result["failed_symbols"] == 1
 
 
 @pytest.mark.asyncio

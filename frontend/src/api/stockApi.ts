@@ -625,6 +625,7 @@ export interface PriceJobStatus {
     processed_symbols: number;
     success_symbols: number;
     failed_symbols: number;
+    failed_tickers: string[];
     current_symbol: string | null;
     last_run_at: string | null;
     started_at: string | null;

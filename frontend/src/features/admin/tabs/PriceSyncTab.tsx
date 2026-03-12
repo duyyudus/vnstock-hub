@@ -1,5 +1,6 @@
 import React from 'react';
 import { type IndexInfo, type PriceAuditActionResponse, type PriceJobStatus } from '../../../api/stockApi';
+import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
 interface PriceSyncTabProps {
@@ -91,6 +92,7 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                         <p>Processed: {runtimeSync?.processed_symbols ?? 0} / {runtimeSync?.total_symbols ?? 0}</p>
                         <p>Success: {runtimeSync?.success_symbols ?? 0}</p>
                         <p>Failed: {runtimeSync?.failed_symbols ?? 0}</p>
+                        <FailedTickerList tickers={runtimeSync?.failed_tickers ?? []} />
                         <p>Current symbol: {runtimeSync?.current_symbol ?? '-'}</p>
                         <p>Last run: {formatDateTime(runtimeSync?.last_run_at)}</p>
                         <p>Started: {formatDateTime(runtimeSync?.started_at)}</p>
@@ -105,6 +107,7 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                         <p>Processed: {runtimeAudit?.processed_symbols ?? 0} / {runtimeAudit?.total_symbols ?? 0}</p>
                         <p>Success: {runtimeAudit?.success_symbols ?? 0}</p>
                         <p>Failed: {runtimeAudit?.failed_symbols ?? 0}</p>
+                        <FailedTickerList tickers={runtimeAudit?.failed_tickers ?? []} />
                         <p>Current symbol: {runtimeAudit?.current_symbol ?? '-'}</p>
                         <p>Last run: {formatDateTime(runtimeAudit?.last_run_at)}</p>
                         <p>Error: {runtimeAudit?.error ?? '-'}</p>
@@ -118,6 +121,7 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                         <p>Processed: {runtimeRepair?.processed_symbols ?? 0} / {runtimeRepair?.total_symbols ?? 0}</p>
                         <p>Success: {runtimeRepair?.success_symbols ?? 0}</p>
                         <p>Failed: {runtimeRepair?.failed_symbols ?? 0}</p>
+                        <FailedTickerList tickers={runtimeRepair?.failed_tickers ?? []} />
                         <p>Current symbol: {runtimeRepair?.current_symbol ?? '-'}</p>
                         <p>Last run: {formatDateTime(runtimeRepair?.last_run_at)}</p>
                         <p>Error: {runtimeRepair?.error ?? '-'}</p>

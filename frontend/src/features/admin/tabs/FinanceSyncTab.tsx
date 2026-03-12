@@ -1,5 +1,6 @@
 import React from 'react';
 import { type IndexInfo, type PriceJobStatus } from '../../../api/stockApi';
+import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
 interface FinanceSyncTabProps {
@@ -48,6 +49,7 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
                     <p>Processed: {runtimeFinance?.processed_symbols ?? 0} / {runtimeFinance?.total_symbols ?? 0}</p>
                     <p>Success: {runtimeFinance?.success_symbols ?? 0}</p>
                     <p>Failed: {runtimeFinance?.failed_symbols ?? 0}</p>
+                    <FailedTickerList tickers={runtimeFinance?.failed_tickers ?? []} />
                     <p>Current symbol: {runtimeFinance?.current_symbol ?? '-'}</p>
                     <p>Last run: {formatDateTime(runtimeFinance?.last_run_at)}</p>
                     <p>Started: {formatDateTime(runtimeFinance?.started_at)}</p>

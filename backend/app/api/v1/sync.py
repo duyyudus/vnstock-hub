@@ -28,6 +28,7 @@ class PriceJobStatusResponse(BaseModel):
     processed_symbols: int
     success_symbols: int
     failed_symbols: int
+    failed_tickers: List[str] = Field(default_factory=list)
     current_symbol: Optional[str] = None
     last_run_at: Optional[str] = None
     started_at: Optional[str] = None
@@ -139,6 +140,7 @@ async def get_sync_status():
                 processed_symbols=price_sync_runtime.processed_symbols,
                 success_symbols=price_sync_runtime.success_symbols,
                 failed_symbols=price_sync_runtime.failed_symbols,
+                failed_tickers=price_sync_runtime.failed_tickers,
                 current_symbol=price_sync_runtime.current_symbol,
                 last_run_at=price_sync_runtime.last_run_at,
                 started_at=price_sync_runtime.started_at,
@@ -151,6 +153,7 @@ async def get_sync_status():
                 processed_symbols=price_audit_runtime.processed_symbols,
                 success_symbols=price_audit_runtime.success_symbols,
                 failed_symbols=price_audit_runtime.failed_symbols,
+                failed_tickers=price_audit_runtime.failed_tickers,
                 current_symbol=price_audit_runtime.current_symbol,
                 last_run_at=price_audit_runtime.last_run_at,
                 started_at=price_audit_runtime.started_at,
@@ -163,6 +166,7 @@ async def get_sync_status():
                 processed_symbols=price_repair_runtime.processed_symbols,
                 success_symbols=price_repair_runtime.success_symbols,
                 failed_symbols=price_repair_runtime.failed_symbols,
+                failed_tickers=price_repair_runtime.failed_tickers,
                 current_symbol=price_repair_runtime.current_symbol,
                 last_run_at=price_repair_runtime.last_run_at,
                 started_at=price_repair_runtime.started_at,
@@ -176,6 +180,7 @@ async def get_sync_status():
             processed_symbols=finance_sync_runtime.processed_symbols,
             success_symbols=finance_sync_runtime.success_symbols,
             failed_symbols=finance_sync_runtime.failed_symbols,
+            failed_tickers=finance_sync_runtime.failed_tickers,
             current_symbol=finance_sync_runtime.current_symbol,
             last_run_at=finance_sync_runtime.last_run_at,
             started_at=finance_sync_runtime.started_at,
@@ -188,6 +193,7 @@ async def get_sync_status():
             processed_symbols=company_sync_runtime.processed_symbols,
             success_symbols=company_sync_runtime.success_symbols,
             failed_symbols=company_sync_runtime.failed_symbols,
+            failed_tickers=company_sync_runtime.failed_tickers,
             current_symbol=company_sync_runtime.current_symbol,
             last_run_at=company_sync_runtime.last_run_at,
             started_at=company_sync_runtime.started_at,

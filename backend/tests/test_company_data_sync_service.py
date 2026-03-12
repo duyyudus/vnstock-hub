@@ -45,9 +45,46 @@ async def test_company_sync_parallel_workers_update_counters(monkeypatch):
     assert runtime.processed_symbols == 4
     assert runtime.success_symbols == 4
     assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
     assert runtime.progress == 1.0
     assert max_in_flight > 1
     assert max_in_flight <= service._sync_max_workers
+
+
+@pytest.mark.asyncio
+async def test_company_sync_tracks_failed_tickers_and_resets(monkeypatch):
+    service = CompanyDataSyncService(company=CompanyService())
+    service._sync_max_workers = 1
+    service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
+
+    symbols = ["AAA", "BBB", "CCC"]
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return symbols
+
+    async def _fail_on_bbb(symbol: str):
+        if symbol == "BBB":
+            raise RuntimeError("sync failed")
+
+    async def _all_success(_symbol: str):
+        return None
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_sync_symbol", _fail_on_bbb)
+
+    await service._run_sync(symbols=None)
+
+    runtime = sync_status.company_sync
+    assert runtime.failed_symbols == 1
+    assert runtime.failed_tickers == ["BBB"]
+
+    monkeypatch.setattr(service, "_sync_symbol", _all_success)
+
+    await service._run_sync(symbols=None)
+
+    runtime = sync_status.company_sync
+    assert runtime.failed_symbols == 0
+    assert runtime.failed_tickers == []
 
 
 @pytest.mark.asyncio
