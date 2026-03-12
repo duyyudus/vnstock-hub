@@ -4,12 +4,14 @@
 		{
 			"label": "Run Backend Server",
 			"type": "shell",
-			"command": "./run-server"
+			"command": "./run-server",
+			"problemMatcher": []
 		},
 		{
 			"label": "Run Frontend UI",
 			"type": "shell",
-			"command": "./run-ui"
+			"command": "./run-ui",
+			"problemMatcher": []
 		}
 	]
 }
