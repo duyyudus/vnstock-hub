@@ -24,7 +24,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "vnai>=2.3.9",
     "vnii>=0.1.9",
-    "vnstock>=3.4.2",
+    "vnstock>=3.5.0",
     "pytz>=2025.2",
     "greenlet>=3.3.1",
 ]
