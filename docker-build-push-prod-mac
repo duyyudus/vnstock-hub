@@ -1,0 +1,43 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+REGISTRY_REF="${REGISTRY_REF:-host.docker.internal:5001}"
+RELAY_PORT="${RELAY_PORT:-5001}"
+REMOTE_REGISTRY_HOST="${REMOTE_REGISTRY_HOST:-192.168.100.39}"
+REMOTE_REGISTRY_PORT="${REMOTE_REGISTRY_PORT:-5000}"
+SOCAT_LOG="${SOCAT_LOG:-/tmp/vnstock-hub-socat.log}"
+SOCAT_PID=""
+
+cleanup() {
+  if [[ -n "${SOCAT_PID}" ]] && kill -0 "${SOCAT_PID}" >/dev/null 2>&1; then
+    echo "Stopping relay on port ${RELAY_PORT}"
+    kill "${SOCAT_PID}" >/dev/null 2>&1 || true
+    wait "${SOCAT_PID}" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
+
+if [[ "${REGISTRY_REF}" == "host.docker.internal:${RELAY_PORT}" ]]; then
+  if ! command -v socat >/dev/null 2>&1; then
+    echo "socat is required for Mac relay mode. Install it with: brew install socat"
+    exit 1
+  fi
+
+  if ! lsof -nP -iTCP:"${RELAY_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Starting relay on port ${RELAY_PORT} -> ${REMOTE_REGISTRY_HOST}:${REMOTE_REGISTRY_PORT}"
+    nohup socat \
+      TCP-LISTEN:"${RELAY_PORT}",reuseaddr,fork,bind=0.0.0.0 \
+      TCP:"${REMOTE_REGISTRY_HOST}":"${REMOTE_REGISTRY_PORT}" \
+      >"${SOCAT_LOG}" 2>&1 &
+    SOCAT_PID=$!
+    sleep 1
+  else
+    echo "Reusing existing listener on port ${RELAY_PORT}"
+  fi
+fi
+
+echo "Using registry ${REGISTRY_REF}"
+REGISTRY_REF="${REGISTRY_REF}" docker compose -f prod-docker-compose.yml build
+REGISTRY_REF="${REGISTRY_REF}" docker compose -f prod-docker-compose.yml push
