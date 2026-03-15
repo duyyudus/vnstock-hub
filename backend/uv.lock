@@ -1583,17 +1583,6 @@ wheels = [
 ]
 
 [[package]]
-name = "vnii"
-version = "0.1.9"
-source = { registry = "https://vnstocks.com/api/simple" }
-dependencies = [
-    { name = "cffi" },
-    { name = "cryptography" },
-    { name = "requests" },
-]
-sdist = { url = "https://vnstocks.com/files/vnii-0.1.9.tar.gz" }
-
-[[package]]
 name = "vnstock"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1657,8 +1646,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
-    { name = "vnai" },
-    { name = "vnii" },
     { name = "vnstock" },
 ]
 
@@ -1690,8 +1677,6 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "uvicorn", specifier = ">=0.40.0" },
-    { name = "vnai", specifier = ">=2.3.9" },
-    { name = "vnii", specifier = ">=0.1.9" },
     { name = "vnstock", specifier = ">=3.5.0" },
 ]
 

@@ -1,0 +1,4 @@
+"\nConfiguration management for vnstock_data.\n\nThis module re-exports vnstock's core settings to provide a unified\nconfiguration interface for both vnstock and vnstock_data users.\n\nvnstock_data users can import configuration from here, which references\nvnstock's professional configuration management system.\n"
+from app.lib._vnstock_shared.core.settings import APIKeyConfig,NetworkConfig,CacheConfig,VnstockConfig,get_config,set_config,reset_config,get_api_key,set_api_key,get_timeout,set_timeout,is_debug_mode,set_debug_mode
+VnstockDataConfig=VnstockConfig
+__all__=['APIKeyConfig','NetworkConfig','CacheConfig','VnstockConfig','VnstockDataConfig','get_config','set_config','reset_config','get_api_key','set_api_key','get_timeout','set_timeout','is_debug_mode','set_debug_mode']

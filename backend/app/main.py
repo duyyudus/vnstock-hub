@@ -8,10 +8,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging_config import setup_logging, get_main_logger
 from app.core.exceptions import register_exception_handlers
+from app.lib.vnstock_runtime import install_vnstock_aliases, runtime_vnstock_targets
 
 # Initialize logging before anything else
 setup_logging()
 logger = get_main_logger()
+install_vnstock_aliases()
+runtime_targets = runtime_vnstock_targets()
+logger.info(
+    "Using vnstock runtime bindings: vnstock=%s, vnstock_data=%s",
+    runtime_targets["vnstock"],
+    runtime_targets["vnstock_data"],
+)
 from app.api.v1.stocks import router as stocks_router
 from app.api.v1.funds import router as funds_router
 from app.api.v1.sync import router as sync_router

@@ -1,0 +1,3 @@
+'\nConfiguration for Startup Messages.\nMessages defined here will be displayed to users when they import vnstock_data,\nbased on the constraints (max_displays, expires_at).\n'
+from typing import List,Dict,Any
+STARTUP_MESSAGES=[{'id':'helper_tools_v1','text':'\x1b[93m💡 Tip: vnstock_data vừa ra mắt 2 hàm tiện ích: `show_api(layer)` để hiển thị sơ đồ các hàm có sẵn và `show_doc(method)` để đọc nhanh tài liệu. (from vnstock_data import show_api, show_doc)\x1b[0m','max_displays':3,'expires_at':'2026-03-31T00:00:00'}]

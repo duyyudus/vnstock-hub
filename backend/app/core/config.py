@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     
     # vnstock API
     vnstock_api_key: str | None = None
+    use_vnstock_alt: bool = False
+    use_vnstock_data_alt: bool = False
     sync_target_rpm: int = 150
     sync_max_workers: int = 6
     sync_chunk_days: int = 1095

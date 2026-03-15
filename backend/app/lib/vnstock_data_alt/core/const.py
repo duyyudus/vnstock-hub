@@ -1,0 +1,2 @@
+PACKAGE_MAPPING={'browser':['vnstock3','vnstock'],'charting':['vnstock_ezchart']}
+ERROR_MESSAGES={'missing_ticker':"The 'ticker' parameter is required.",'invalid_interval':'Invalid interval. Supported: 1m, 5m, 15m, 30m, 1H, 4h, 1D, 1W, 1M (or aliases: m, h, d, w, M)','api_failure':'API request failed.','no_data':'No data returned from the API.'}

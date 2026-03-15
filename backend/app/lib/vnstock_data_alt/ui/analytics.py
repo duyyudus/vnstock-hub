@@ -1,0 +1,5 @@
+'\nAnalytics Module Entry Point (Layer 4).\n'
+from app.lib.vnstock_data_alt.ui.domains.analytics.valuation import MarketValuation
+class Analytics:
+	"\n    Central API Gateway for Layer 4 - Analytics (Unified UI).\n    Provides valuation models, risk metrics, and quality scores.\n    \n    ✅ METHODS AVAILABLE:\n    \n    val = Analytics().valuation('VNINDEX')\n    pe_data = val.pe(duration='5Y')\n    "
+	def valuation(A,index='VNINDEX'):"\n        Access historical valuation multiples for market indices (Analytics Layer).\n        \n        Methods available (3 total):\n            - pe(duration)         - P/E ratio (Price-to-Earnings) historical\n            - pb(duration)         - P/B ratio (Price-to-Book) historical\n            - evaluation(duration) - Market evaluation (P/E + P/B overview)\n        \n        Args:\n            index (str): Market index code (e.g. 'VNINDEX', 'HNX')\n        \n        Returns:\n            MarketValuation: Valuation metrics gateway for the specified index\n        ";return MarketValuation(index=index)

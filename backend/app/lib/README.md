@@ -1,0 +1,68 @@
+# Vendored Vnstock Packages
+
+This directory contains the vendored compatibility replacements for the
+upstream `vnstock` and `vnstock_data` packages used by the backend.
+
+## What lives here
+
+- `vnstock_alt`
+  - Vendored replacement for the public-data parts of upstream `vnstock`
+- `vnstock_data_alt`
+  - Vendored replacement for the public-data parts of upstream `vnstock_data`
+- `_vnstock_shared`
+  - Shared helpers, constants, parsers, registry logic, transport helpers,
+    and compatibility shims used by both vendored packages
+- `vnstock_runtime.py`
+  - Runtime aliasing helper that lets the backend keep importing `vnstock`
+    and `vnstock_data` while switching implementations via environment flags
+
+## Design goals
+
+- Preserve the retained upstream public API shape for backend compatibility
+- Remove auth, API-key, and user-tier mechanics from the vendored packages
+- Keep implementation self-contained inside `app.lib`
+- Allow runtime switching between upstream and vendored implementations
+
+## Runtime flags
+
+These are configured in backend settings and exposed in `.env.example`:
+
+- `USE_VNSTOCK_ALT`
+  - When true, public `vnstock` imports resolve to `app.lib.vnstock_alt`
+- `USE_VNSTOCK_DATA_ALT`
+  - When true, public `vnstock_data` imports resolve to
+    `app.lib.vnstock_data_alt`
+
+The aliasing logic is implemented in `vnstock_runtime.py`.
+
+## Intentional differences from upstream
+
+- No auth or API-key registration helpers in the vendored public surface
+- No local API-limit behavior copied from upstream
+- No startup upgrade/auth notices in `vnstock_alt`
+- Charting helpers are intentionally disabled and replaced with clear stubs
+
+## Testing map
+
+The main compatibility coverage lives in `backend/tests/`:
+
+- `test_alt_package_compat.py`
+  - import smoke, self-containment, signature parity, root-surface checks
+- `test_alt_package_differential_live.py`
+  - live upstream-vs-alt comparisons for backend-used `vnstock` paths
+- `test_vnstock_service_shadow_live.py`
+  - backend service-level live comparisons
+- `test_alt_package_extended_live.py`
+  - broader live coverage for retained public surfaces
+- `test_vnstock_runtime.py`
+  - runtime alias switching behavior
+
+## Before changing these packages
+
+Read `VNSTOCK_VENDORING_GUIDE.md` in this folder. It documents:
+
+- what was intentionally kept or removed
+- how to back-port features from future upstream releases
+- what tests to run before trusting a change
+
+For a package-level usage guide, read `VNSTOCK_API_GUIDE.md`.

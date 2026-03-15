@@ -1,0 +1,17 @@
+'\nEvents schemas mapping definitions.\n'
+_N='ex_right_date'
+_M='event_title'
+_L='organ_name'
+_K='symbol'
+_J='events.market'
+_I='events.calendar'
+_H='duration'
+_G='date'
+_F='issue_date'
+_E='public_date'
+_D='payout_date'
+_C='record_date'
+_B='event_type'
+_A='event_name'
+SCHEMA_MAP={_I:{'vci':{'ticker':_K,'event_name_vi':_A,'organ_name_vi':_L,'event_title_vi':_M,'exright_date':_N,_C:_C,_D:_D,_E:_E,_F:_F,'value_per_share':'value','exercise_ratio':'ratio','event_code':_B}},_J:{'vnstock':{_G:_G,'event':_A,'type':_B,_H:_H}}}
+STANDARD_COLUMNS={_I:[_K,_A,_M,_N,_C,_D,'value','ratio',_L,_E,_F,_B],_J:[_G,_A,_B,_H]}
