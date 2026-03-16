@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-03-16T11:15:16.098035+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "ETFMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
+  "method": "summary",
+  "source": "kbs",
+  "schema_key": "market.etf.summary",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "E1VFVN30"
+  },
+  "method_kwargs": {
+    "show_log": false,
+    "to_df": true
+  },
+  "success": true,
+  "row_count": 1,
+  "columns": [
+    "high_52w",
+    "low_52w",
+    "dividend",
+    "beta",
+    "eps",
+    "bvps",
+    "market_cap",
+    "pe",
+    "pb",
+    "roe",
+    "change_1m",
+    "change_1y",
+    "dividend_yield",
+    "foreign_ownership_pct"
+  ],
+  "dtypes": {
+    "high_52w": "int64",
+    "low_52w": "int64",
+    "dividend": "int64",
+    "beta": "int64",
+    "eps": "int64",
+    "bvps": "int64",
+    "market_cap": "int64",
+    "pe": "float64",
+    "pb": "float64",
+    "roe": "float64",
+    "change_1m": "str",
+    "change_1y": "str",
+    "dividend_yield": "int64",
+    "foreign_ownership_pct": "float64"
+  },
+  "preview_rows": [
+    {
+      "high_52w": 37030,
+      "low_52w": 20640,
+      "dividend": 0,
+      "beta": 0,
+      "eps": 0,
+      "bvps": 0,
+      "market_cap": 7864896000000,
+      "pe": 21.77,
+      "pb": 1.12,
+      "roe": 5.2,
+      "change_1m": "-8.67",
+      "change_1y": "35.64",
+      "dividend_yield": 0,
+      "foreign_ownership_pct": 56.2645
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

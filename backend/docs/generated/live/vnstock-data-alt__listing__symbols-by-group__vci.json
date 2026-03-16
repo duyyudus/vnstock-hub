@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-03-16T11:19:44.375375+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "symbols_by_group",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci"
+  },
+  "method_kwargs": {
+    "group": "VN30",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": null,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": "0     ACB\n1     BID\n2     CTG\n3     DGC\n4     FPT\n5     GAS\n6     GVR\n7     HDB\n8     HPG\n9     LPB\n10    MBB\n11    MSN\n12    MWG\n13    PLX\n14    SAB\n15    SHB\n16    SSB\n17    SSI\n18    STB\n19    TCB\n20    TPB\n21    VCB\n22    VHM\n23    VIB\n24    VIC\n25    VJC\n26    VNM\n27    VPB\n28    VPL\n29    VRE\nName: symbol, dtype: str",
+  "result_type": "Series",
+  "error": null
+}

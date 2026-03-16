@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-03-16T11:16:26.946949+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Company",
+  "class_path": "app.lib.vnstock_alt.api.company.Company",
+  "method": "officers",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 22,
+  "columns": [
+    "from_date",
+    "position",
+    "name",
+    "position_en",
+    "owner_code"
+  ],
+  "dtypes": {
+    "from_date": "str",
+    "position": "str",
+    "name": "str",
+    "position_en": "str",
+    "owner_code": "str"
+  },
+  "preview_rows": [
+    {
+      "from_date": "2021",
+      "position": "CTHĐQT",
+      "name": "Ông Nguyễn Thanh Tùng",
+      "position_en": "CTHĐQT (Chairman of BOD)",
+      "owner_code": "CTHĐQT"
+    },
+    {
+      "from_date": "2025",
+      "position": "TVHĐQT",
+      "name": "Ông Kohei Matsuoka",
+      "position_en": "TVHĐQT (Member of BOD)",
+      "owner_code": "TVHĐQT"
+    },
+    {
+      "from_date": "TV Độc lập",
+      "position": "TVHĐQT",
+      "name": "Ông Vũ Viết Ngoạn",
+      "position_en": "TVHĐQT (Member of BOD)",
+      "owner_code": "TVHĐQT"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

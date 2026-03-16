@@ -113,6 +113,40 @@ Run backend and open:
 
 - `http://localhost:8000/docs`
 
+## Vendored API Docs
+
+The vendored `vnstock_alt` and `vnstock_data_alt` packages also have a local,
+generated docs site under `backend/docs/generated`.
+
+Generate the source-derived docs:
+
+```bash
+cd backend
+uv run python scripts/generate_vnstock_api_docs.py
+```
+
+Refresh live samples, then regenerate docs:
+
+```bash
+cd backend
+uv run python scripts/capture_vnstock_api_samples.py
+uv run python scripts/generate_vnstock_api_docs.py
+```
+
+Browse the local docs site:
+
+```bash
+cd backend
+uv run mkdocs serve -f mkdocs.yml
+```
+
+Build static HTML output:
+
+```bash
+cd backend
+uv run mkdocs build -f mkdocs.yml
+```
+
 ## Module Docs
 
 - Backend details: `backend/README.md`

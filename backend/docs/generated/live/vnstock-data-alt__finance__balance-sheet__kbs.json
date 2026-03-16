@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-03-16T11:18:42.169658+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_data_alt.api.financial.Finance",
+  "method": "balance_sheet",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "kbs",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "limit": 5,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 77,
+  "columns": [
+    "item",
+    "item_id",
+    "2025",
+    "2024",
+    "2023",
+    "2022",
+    "2021"
+  ],
+  "dtypes": {
+    "item": "str",
+    "item_id": "str",
+    "2025": "float64",
+    "2024": "float64",
+    "2023": "float64",
+    "2022": "float64",
+    "2021": "float64"
+  },
+  "preview_rows": [
+    {
+      "item": "1. Các khoản phải thu",
+      "item_id": "1_accounts_receivables",
+      "2025": 18039522000.0,
+      "2024": 14040294000.0,
+      "2023": 11790173000.0,
+      "2022": 24483406000.0,
+      "2021": 15803945000.0
+    },
+    {
+      "item": "1. Chứng khoán đầu tư sẵn sàng để bán",
+      "item_id": "1_available_for_sales_securities",
+      "2025": 143080817000.0,
+      "2024": 86799901000.0,
+      "2023": 67882480000.0,
+      "2022": 100739670000.0,
+      "2021": 71114698000.0
+    },
+    {
+      "item": "1. Vốn của TCTD",
+      "item_id": "1_capital",
+      "2025": 89361977000.0,
+      "2024": 61696139000.0,
+      "2023": 61696139000.0,
+      "2022": 53130392000.0,
+      "2021": 42428821000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

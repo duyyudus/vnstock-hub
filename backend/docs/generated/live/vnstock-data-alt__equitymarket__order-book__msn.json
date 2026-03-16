@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-03-16T11:15:13.322700+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "EquityMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.equity.EquityMarket",
+  "method": "order_book",
+  "source": "msn",
+  "schema_key": "market.equity.order_book",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "symbols_list": "VCB",
+    "exchange": "HOSE",
+    "show_log": false,
+    "get_all": true
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "ValueError('Invalid symbol. Your symbol format is not recognized!')"
+}

@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-03-16T11:15:15.839609+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "ETFMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
+  "method": "ohlcv",
+  "source": "msn",
+  "schema_key": "market.etf.ohlcv",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "E1VFVN30"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "interval": "1D",
+    "count_back": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "dtypes": {
+    "time": "datetime64[ns]",
+    "open": "float64",
+    "high": "float64",
+    "low": "float64",
+    "close": "float64",
+    "volume": "int64"
+  },
+  "preview_rows": [
+    {
+      "time": "2025-03-03T07:00:00",
+      "open": 23.7,
+      "high": 23.78,
+      "low": 23.67,
+      "close": 23.76,
+      "volume": 358300
+    },
+    {
+      "time": "2025-03-04T07:00:00",
+      "open": 23.76,
+      "high": 23.84,
+      "low": 23.61,
+      "close": 23.83,
+      "volume": 713600
+    },
+    {
+      "time": "2025-03-05T07:00:00",
+      "open": 23.83,
+      "high": 23.99,
+      "low": 23.83,
+      "close": 23.88,
+      "volume": 1507000
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

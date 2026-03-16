@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-03-16T11:15:03.804165+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "EquityReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.equity.EquityReference",
+  "method": "list",
+  "source": "kbs",
+  "schema_key": "equity.list",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "show_log": false,
+    "to_df": true
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "TypeError(\"EquityReference.list() got an unexpected keyword argument 'show_log'\")"
+}

@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-03-16T11:16:27.553063+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Company",
+  "class_path": "app.lib.vnstock_alt.api.company.Company",
+  "method": "shareholders",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 3,
+  "columns": [
+    "name",
+    "update_date",
+    "shares_owned",
+    "ownership_percentage"
+  ],
+  "dtypes": {
+    "name": "str",
+    "update_date": "str",
+    "shares_owned": "int64",
+    "ownership_percentage": "float64"
+  },
+  "preview_rows": [
+    {
+      "name": "Ngân hàng Nhà nước Việt Nam",
+      "update_date": "2025-03-17T00:00:00",
+      "shares_owned": 6250338579,
+      "ownership_percentage": 74.8
+    },
+    {
+      "name": "Mizuho Bank, Ltd",
+      "update_date": "2025-03-17T00:00:00",
+      "shares_owned": 1253366534,
+      "ownership_percentage": 15.0
+    },
+    {
+      "name": "Quỹ đầu tư chính phủ Singapore (GIC)",
+      "update_date": "2025-07-23T00:00:00",
+      "shares_owned": 84503639,
+      "ownership_percentage": 1.01
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,53 @@
+[
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.Listing",
+    "method": "all_symbols",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.Quote",
+    "method": "history",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "kbs",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "start": "2025-03-01",
+      "end": "2025-03-07",
+      "interval": "1D"
+    }
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+    "method": "info",
+    "source": "vci",
+    "schema_key": "company.info",
+    "init_kwargs": {
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.ui.domains.market.equity.EquityMarket",
+    "method": "ohlcv",
+    "source": "kbs",
+    "schema_key": "market.equity.ohlcv",
+    "init_kwargs": {
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "start": "2025-03-01",
+      "end": "2025-03-07",
+      "interval": "1D"
+    }
+  }
+]

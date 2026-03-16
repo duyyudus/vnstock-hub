@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-03-16T11:20:15.135530+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Trading",
+  "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
+  "method": "price_history",
+  "source": "cafef",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "cafef",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "page": 1,
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "adjusted_price",
+    "change_pct",
+    "matched_volume",
+    "matched_value",
+    "deal_volume",
+    "deal_value"
+  ],
+  "dtypes": {
+    "open": "float64",
+    "high": "float64",
+    "low": "float64",
+    "close": "float64",
+    "adjusted_price": "float64",
+    "change_pct": "float64",
+    "matched_volume": "int64",
+    "matched_value": "int64",
+    "deal_volume": "int64",
+    "deal_value": "int64"
+  },
+  "preview_rows": [
+    {
+      "open": 93.6,
+      "high": 95.3,
+      "low": 93.5,
+      "close": 95.1,
+      "adjusted_price": 53.47,
+      "change_pct": NaN,
+      "matched_volume": 3999500,
+      "matched_value": 376981000000,
+      "deal_volume": 0,
+      "deal_value": 0
+    },
+    {
+      "open": 93.5,
+      "high": 94.2,
+      "low": 93.2,
+      "close": 93.5,
+      "adjusted_price": 52.57,
+      "change_pct": NaN,
+      "matched_volume": 2357600,
+      "matched_value": 220606000000,
+      "deal_volume": 0,
+      "deal_value": 0
+    },
+    {
+      "open": 93.0,
+      "high": 93.8,
+      "low": 93.0,
+      "close": 93.0,
+      "adjusted_price": 52.29,
+      "change_pct": NaN,
+      "matched_volume": 1820200,
+      "matched_value": 169769000000,
+      "deal_volume": 0,
+      "deal_value": 0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

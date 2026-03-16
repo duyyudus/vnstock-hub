@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-03-16T11:19:39.076583+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "indices_by_group",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "kbs"
+  },
+  "method_kwargs": {
+    "group": "VN30",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": null,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": null,
+  "result_type": "NoneType",
+  "error": null
+}

@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-03-16T11:17:52.612298+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
+  "method": "history",
+  "source": "mas",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "mas",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "interval": "1D",
+    "to_df": true,
+    "show_log": false,
+    "count_back": 5,
+    "get_all": true
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "dtypes": {
+    "time": "datetime64[ns]",
+    "open": "float64",
+    "high": "float64",
+    "low": "float64",
+    "close": "float64",
+    "volume": "int64"
+  },
+  "preview_rows": [
+    {
+      "time": "2025-03-03T00:00:00",
+      "open": 62.1,
+      "high": 62.1,
+      "low": 61.76,
+      "close": 61.96,
+      "volume": 1251000
+    },
+    {
+      "time": "2025-03-04T00:00:00",
+      "open": 61.9,
+      "high": 62.03,
+      "low": 61.56,
+      "close": 61.76,
+      "volume": 2498900
+    },
+    {
+      "time": "2025-03-05T00:00:00",
+      "open": 61.76,
+      "high": 62.29,
+      "low": 61.76,
+      "close": 61.76,
+      "volume": 1820200
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

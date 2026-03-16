@@ -1,0 +1,100 @@
+{
+  "captured_at": "2026-03-16T11:18:07.661972+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Company",
+  "class_path": "app.lib.vnstock_data_alt.api.company.Company",
+  "method": "events",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "page": 1,
+    "page_size": 5,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 32,
+  "columns": [
+    "id",
+    "event_title",
+    "en__event_title",
+    "public_date",
+    "issue_date",
+    "source_url",
+    "event_list_code",
+    "ratio",
+    "value",
+    "record_date",
+    "exright_date",
+    "event_list_name",
+    "en__event_list_name"
+  ],
+  "dtypes": {
+    "id": "str",
+    "event_title": "str",
+    "en__event_title": "str",
+    "public_date": "str",
+    "issue_date": "str",
+    "source_url": "str",
+    "event_list_code": "str",
+    "ratio": "float64",
+    "value": "float64",
+    "record_date": "str",
+    "exright_date": "str",
+    "event_list_name": "str",
+    "en__event_list_name": "str"
+  },
+  "preview_rows": [
+    {
+      "id": "34191",
+      "event_title": "VCB-Niêm yết bổ sung 719.276.804",
+      "en__event_title": "VCB-Lists 719,276,804 additional shares ",
+      "public_date": "2016-11-22",
+      "issue_date": "1753-01-01",
+      "source_url": "http://fiinpro.com/News/Detail/323795?lang=vi-VN",
+      "event_list_code": "AIS",
+      "ratio": NaN,
+      "value": NaN,
+      "record_date": "1753-01-01",
+      "exright_date": "1753-01-01",
+      "event_list_name": "Niêm yết thêm",
+      "en__event_list_name": "Additional Listing"
+    },
+    {
+      "id": "27101879",
+      "event_title": "VCB - Niêm yết bổ sung 856,574,691 cổ phiếu",
+      "en__event_title": "VCB- Lists additional 856,574,691 shares",
+      "public_date": "2023-08-31",
+      "issue_date": "2023-08-30",
+      "source_url": "http://fiinpro.com/News/Detail/10915684?lang=vi-vn",
+      "event_list_code": "AIS",
+      "ratio": 0.0,
+      "value": 0.0,
+      "record_date": "1753-01-01",
+      "exright_date": "1753-01-01",
+      "event_list_name": "Niêm yết thêm",
+      "en__event_list_name": "Additional Listing"
+    },
+    {
+      "id": "34209",
+      "event_title": "VCB-Niêm yết bổ sung 213.471.437 cổ phiếu",
+      "en__event_title": "VCB-Lists 213,471,437 additional shares",
+      "public_date": "2016-11-22",
+      "issue_date": "2016-11-30",
+      "source_url": "http://fiinpro.com/News/Detail/323795?lang=vi-VN",
+      "event_list_code": "AIS",
+      "ratio": NaN,
+      "value": NaN,
+      "record_date": "1753-01-01",
+      "exright_date": "1753-01-01",
+      "event_list_name": "Niêm yết thêm",
+      "en__event_list_name": "Additional Listing"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

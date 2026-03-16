@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-03-16T11:16:08.811306+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+  "method": "symbols_by_exchange",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "VCI"
+  },
+  "method_kwargs": {
+    "get_all": true,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 3308,
+  "columns": [
+    "symbol",
+    "exchange",
+    "type",
+    "organ_short_name",
+    "organ_name",
+    "product_grp_id",
+    "icb_code2"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "exchange": "str",
+    "type": "str",
+    "organ_short_name": "str",
+    "organ_name": "str",
+    "product_grp_id": "str",
+    "icb_code2": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": "YTC",
+      "exchange": "UPCOM",
+      "type": "STOCK",
+      "organ_short_name": "XNK Y tế TP.HCM",
+      "organ_name": "Công ty Cổ phần Xuất nhập khẩu Y tế Thành phố Hồ Chí Minh",
+      "product_grp_id": "UPX",
+      "icb_code2": "4500"
+    },
+    {
+      "symbol": "YEG",
+      "exchange": "HSX",
+      "type": "STOCK",
+      "organ_short_name": "Tập đoàn Yeah1",
+      "organ_name": "Công ty Cổ phần Tập đoàn Yeah1",
+      "product_grp_id": "STO",
+      "icb_code2": "5500"
+    },
+    {
+      "symbol": "YBM",
+      "exchange": "HSX",
+      "type": "STOCK",
+      "organ_short_name": "Khoáng sản CN Yên Bái",
+      "organ_name": "Công ty Cổ phần Khoáng sản Công nghiệp Yên Bái",
+      "product_grp_id": "STO",
+      "icb_code2": "1700"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

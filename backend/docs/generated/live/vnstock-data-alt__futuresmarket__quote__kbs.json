@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-03-16T11:15:19.905814+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "FuturesMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.derivatives.FuturesMarket",
+  "method": "quote",
+  "source": "kbs",
+  "schema_key": "market.futures.quote",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VN30F1M"
+  },
+  "method_kwargs": {
+    "symbols_list": "VCB",
+    "exchange": "HOSE",
+    "show_log": false,
+    "get_all": true
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "ValueError('Invalid symbol. Your symbol format is not recognized!')"
+}

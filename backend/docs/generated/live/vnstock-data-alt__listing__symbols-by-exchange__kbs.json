@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-03-16T11:19:43.823421+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "symbols_by_exchange",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "kbs"
+  },
+  "method_kwargs": {
+    "get_all": true,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 1967,
+  "columns": [
+    "symbol",
+    "organ_name",
+    "en_organ_name",
+    "exchange",
+    "type",
+    "id",
+    "re",
+    "ceiling",
+    "floor"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "organ_name": "str",
+    "en_organ_name": "str",
+    "exchange": "str",
+    "type": "str",
+    "id": "int64",
+    "re": "float64",
+    "ceiling": "float64",
+    "floor": "float64"
+  },
+  "preview_rows": [
+    {
+      "symbol": "TCB",
+      "organ_name": "Ngân hàng TMCP Kỹ thương Việt Nam",
+      "en_organ_name": "Vietnam Technological and Commercial Joint Stock Bank",
+      "exchange": "HOSE",
+      "type": "stock",
+      "id": 1,
+      "re": 30000.0,
+      "ceiling": 32100.0,
+      "floor": 27900.0
+    },
+    {
+      "symbol": "VGI",
+      "organ_name": "Tổng Công ty cổ phần Đầu tư Quốc tế Viettel",
+      "en_organ_name": "Viettel Global Investment Joint Stock Company",
+      "exchange": "UPCOM",
+      "type": "stock",
+      "id": 1,
+      "re": 83000.0,
+      "ceiling": 95400.0,
+      "floor": 70600.0
+    },
+    {
+      "symbol": "VKP",
+      "organ_name": "CTCP Nhựa Tân Hóa",
+      "en_organ_name": "Viky Plastic Joint Stock Company",
+      "exchange": "UPCOM",
+      "type": "stock",
+      "id": 1,
+      "re": 500.0,
+      "ceiling": 600.0,
+      "floor": 400.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

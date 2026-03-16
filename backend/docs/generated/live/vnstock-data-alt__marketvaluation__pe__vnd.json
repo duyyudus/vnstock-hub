@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-03-16T11:15:06.761435+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "MarketValuation",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.analytics.valuation.MarketValuation",
+  "method": "pe",
+  "source": "vnd",
+  "schema_key": "insights.valuation.pe",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "index": "VNINDEX"
+  },
+  "method_kwargs": {
+    "duration": "1Y"
+  },
+  "success": true,
+  "row_count": 247,
+  "columns": [
+    "pe"
+  ],
+  "dtypes": {
+    "pe": "float64"
+  },
+  "preview_rows": [
+    {
+      "pe": 13.263777753970954
+    },
+    {
+      "pe": 13.210795996016383
+    },
+    {
+      "pe": 13.147344392107996
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-03-16T11:15:15.841745+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "ETFMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
+  "method": "order_book",
+  "source": "kbs",
+  "schema_key": "market.etf.order_book",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "E1VFVN30"
+  },
+  "method_kwargs": {
+    "symbols_list": "VCB",
+    "exchange": "HOSE",
+    "show_log": false,
+    "get_all": true
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "ValueError('Invalid symbol. Your symbol format is not recognized!')"
+}

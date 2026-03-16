@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-03-16T11:20:49.794419+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CommodityPrice",
+  "class_path": "app.lib.vnstock_data_alt.api.commodity.CommodityPrice",
+  "method": "soybean",
+  "source": "spl",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "spl"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07"
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "dtypes": {
+    "open": "float64",
+    "high": "float64",
+    "low": "float64",
+    "close": "float64",
+    "volume": "float64"
+  },
+  "preview_rows": [
+    {
+      "open": 1026.0,
+      "high": 1031.25,
+      "low": 1008.0,
+      "close": 1011.5,
+      "volume": 154480.0
+    },
+    {
+      "open": 1010.75,
+      "high": 1013.0,
+      "low": 991.0,
+      "close": 999.0,
+      "volume": 211927.0
+    },
+    {
+      "open": 1004.0,
+      "high": 1015.0,
+      "low": 995.75,
+      "close": 1011.75,
+      "volume": 159722.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

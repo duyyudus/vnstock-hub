@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-03-16T11:16:59.046703+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Trading",
+  "class_path": "app.lib.vnstock_alt.api.trading.Trading",
+  "method": "history",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "VCI",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {},
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "RetryError(<Future at 0x114a6d790 state=finished raised AttributeError>)"
+}

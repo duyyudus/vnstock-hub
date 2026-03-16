@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-03-16T11:15:03.803087+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CompanyReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+  "method": "subsidiaries",
+  "source": "vci",
+  "schema_key": "company.subsidiaries",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "filter_by": "all"
+  },
+  "success": true,
+  "row_count": 12,
+  "columns": [
+    "name",
+    "rate",
+    "sub_symbol",
+    "type"
+  ],
+  "dtypes": {
+    "name": "str",
+    "rate": "float64",
+    "sub_symbol": "str",
+    "type": "str"
+  },
+  "preview_rows": [
+    {
+      "name": "Công ty Chuyển tiền Vietcombank",
+      "rate": 0.875,
+      "sub_symbol": "2646966",
+      "type": "Subsidiary"
+    },
+    {
+      "name": "Ngân hàng Thương mại TNHH MTV Ngoại thương Công nghệ Số",
+      "rate": 1.0,
+      "sub_symbol": "TB",
+      "type": "Subsidiary"
+    },
+    {
+      "name": "Công ty TNHH Cao Ốc Vietcombank 198",
+      "rate": 0.7,
+      "sub_symbol": "VCB198",
+      "type": "Subsidiary"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

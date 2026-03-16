@@ -1,0 +1,178 @@
+{
+  "captured_at": "2026-03-16T11:16:43.014913+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+  "method": "ratio",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "VCI",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 13,
+  "columns": [
+    [
+      "Meta",
+      "ticker"
+    ],
+    [
+      "Meta",
+      "yearReport"
+    ],
+    [
+      "Meta",
+      "lengthReport"
+    ],
+    [
+      "Chỉ tiêu cơ cấu nguồn vốn",
+      "Fixed Asset-To-Equity"
+    ],
+    [
+      "Chỉ tiêu cơ cấu nguồn vốn",
+      "Owners' Equity/Charter Capital"
+    ],
+    [
+      "Chỉ tiêu khả năng sinh lợi",
+      "Net Profit Margin (%)"
+    ],
+    [
+      "Chỉ tiêu khả năng sinh lợi",
+      "ROE (%)"
+    ],
+    [
+      "Chỉ tiêu khả năng sinh lợi",
+      "ROA (%)"
+    ],
+    [
+      "Chỉ tiêu khả năng sinh lợi",
+      "Dividend yield (%)"
+    ],
+    [
+      "Chỉ tiêu thanh khoản",
+      "Financial Leverage"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "Market Capital (Bn. VND)"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "Outstanding Share (Mil. Shares)"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "P/E"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "P/B"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "P/S"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "P/Cash Flow"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "EPS (VND)"
+    ],
+    [
+      "Chỉ tiêu định giá",
+      "BVPS (VND)"
+    ]
+  ],
+  "dtypes": {
+    "('Meta', 'ticker')": "str",
+    "('Meta', 'yearReport')": "int64",
+    "('Meta', 'lengthReport')": "int64",
+    "('Chỉ tiêu cơ cấu nguồn vốn', 'Fixed Asset-To-Equity')": "float64",
+    "('Chỉ tiêu cơ cấu nguồn vốn', \"Owners' Equity/Charter Capital\")": "float64",
+    "('Chỉ tiêu khả năng sinh lợi', 'Net Profit Margin (%)')": "float64",
+    "('Chỉ tiêu khả năng sinh lợi', 'ROE (%)')": "float64",
+    "('Chỉ tiêu khả năng sinh lợi', 'ROA (%)')": "float64",
+    "('Chỉ tiêu khả năng sinh lợi', 'Dividend yield (%)')": "float64",
+    "('Chỉ tiêu thanh khoản', 'Financial Leverage')": "float64",
+    "('Chỉ tiêu định giá', 'Market Capital (Bn. VND)')": "int64",
+    "('Chỉ tiêu định giá', 'Outstanding Share (Mil. Shares)')": "int64",
+    "('Chỉ tiêu định giá', 'P/E')": "float64",
+    "('Chỉ tiêu định giá', 'P/B')": "float64",
+    "('Chỉ tiêu định giá', 'P/S')": "float64",
+    "('Chỉ tiêu định giá', 'P/Cash Flow')": "float64",
+    "('Chỉ tiêu định giá', 'EPS (VND)')": "float64",
+    "('Chỉ tiêu định giá', 'BVPS (VND)')": "float64"
+  },
+  "preview_rows": [
+    {
+      "('Meta', 'ticker')": "VCB",
+      "('Meta', 'yearReport')": 2025,
+      "('Meta', 'lengthReport')": 5,
+      "('Chỉ tiêu cơ cấu nguồn vốn', 'Fixed Asset-To-Equity')": 0.03618288308961001,
+      "('Chỉ tiêu cơ cấu nguồn vốn', \"Owners' Equity/Charter Capital\")": 2.723129770368738,
+      "('Chỉ tiêu khả năng sinh lợi', 'Net Profit Margin (%)')": 0.5995488660935886,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROE (%)')": 0.1661302403,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROA (%)')": 0.0155476893,
+      "('Chỉ tiêu khả năng sinh lợi', 'Dividend yield (%)')": 0.0,
+      "('Chỉ tiêu thanh khoản', 'Financial Leverage')": 10.732061193725775,
+      "('Chỉ tiêu định giá', 'Market Capital (Bn. VND)')": 492984830900000,
+      "('Chỉ tiêu định giá', 'Outstanding Share (Mil. Shares)')": 8355675100,
+      "('Chỉ tiêu định giá', 'P/E')": 14.0139478861,
+      "('Chỉ tiêu định giá', 'P/B')": 2.167305866,
+      "('Chỉ tiêu định giá', 'P/S')": 6.8131741004,
+      "('Chỉ tiêu định giá', 'P/Cash Flow')": 4.2741427889,
+      "('Chỉ tiêu định giá', 'EPS (VND)')": 4210.091294717766,
+      "('Chỉ tiêu định giá', 'BVPS (VND)')": 27222.7381124477
+    },
+    {
+      "('Meta', 'ticker')": "VCB",
+      "('Meta', 'yearReport')": 2024,
+      "('Meta', 'lengthReport')": 5,
+      "('Chỉ tiêu cơ cấu nguồn vốn', 'Fixed Asset-To-Equity')": 0.041246171534655304,
+      "('Chỉ tiêu cơ cấu nguồn vốn', \"Owners' Equity/Charter Capital\")": 2.3482144266343346,
+      "('Chỉ tiêu khả năng sinh lợi', 'Net Profit Margin (%)')": 0.6106116271176621,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROE (%)')": 0.1874015281,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROA (%)')": 0.0172473678,
+      "('Chỉ tiêu khả năng sinh lợi', 'Dividend yield (%)')": 0.007826087,
+      "('Chỉ tiêu thanh khoản', 'Financial Leverage')": 10.630866759498211,
+      "('Chỉ tiêu định giá', 'Market Capital (Bn. VND)')": 321372749750000,
+      "('Chỉ tiêu định giá', 'Outstanding Share (Mil. Shares)')": 5589091300,
+      "('Chỉ tiêu định giá', 'P/E')": 10.3303411404,
+      "('Chỉ tiêu định giá', 'P/B')": 1.6387128959,
+      "('Chỉ tiêu định giá', 'P/S')": 4.6862029425,
+      "('Chỉ tiêu định giá', 'P/Cash Flow')": 5.435679319,
+      "('Chỉ tiêu định giá', 'EPS (VND)')": 6053.110279304258,
+      "('Chỉ tiêu định giá', 'BVPS (VND)')": 35088.5137625145
+    },
+    {
+      "('Meta', 'ticker')": "VCB",
+      "('Meta', 'yearReport')": 2023,
+      "('Meta', 'lengthReport')": 5,
+      "('Chỉ tiêu cơ cấu nguồn vốn', 'Fixed Asset-To-Equity')": 0.04728045088792746,
+      "('Chỉ tiêu cơ cấu nguồn vốn', \"Owners' Equity/Charter Capital\")": 1.9756690888871462,
+      "('Chỉ tiêu khả năng sinh lợi', 'Net Profit Margin (%)')": 0.6173902507703569,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROE (%)')": 0.2198801657,
+      "('Chỉ tiêu khả năng sinh lợi', 'ROA (%)')": 0.01809503,
+      "('Chỉ tiêu khả năng sinh lợi', 'Dividend yield (%)')": 0.0,
+      "('Chỉ tiêu thanh khoản', 'Financial Leverage')": 11.144409372664208,
+      "('Chỉ tiêu định giá', 'Market Capital (Bn. VND)')": 509725126560000,
+      "('Chỉ tiêu định giá', 'Outstanding Share (Mil. Shares)')": 5589091300,
+      "('Chỉ tiêu định giá', 'P/E')": 16.7480098322,
+      "('Chỉ tiêu định giá', 'P/B')": 3.0907665458,
+      "('Chỉ tiêu định giá', 'P/S')": 7.5265662963,
+      "('Chỉ tiêu định giá', 'P/Cash Flow')": -13.2253474774,
+      "('Chỉ tiêu định giá', 'EPS (VND)')": 5922.434475171303,
+      "('Chỉ tiêu định giá', 'BVPS (VND)')": 29507.2431541779
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-03-16T11:20:10.234933+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Trading",
+  "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
+  "method": "order_stats",
+  "source": "cafef",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "cafef",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "page": 1,
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "buy_orders",
+    "sell_orders",
+    "buy_volume",
+    "sell_volume",
+    "volume_diff",
+    "avg_buy_order_volume",
+    "avg_sell_order_volume"
+  ],
+  "dtypes": {
+    "buy_orders": "int64",
+    "sell_orders": "int64",
+    "buy_volume": "int64",
+    "sell_volume": "int64",
+    "volume_diff": "str",
+    "avg_buy_order_volume": "int64",
+    "avg_sell_order_volume": "int64"
+  },
+  "preview_rows": [
+    {
+      "buy_orders": 3438,
+      "sell_orders": 3404,
+      "buy_volume": 7961700,
+      "sell_volume": 6151500,
+      "volume_diff": "1.810.200",
+      "avg_buy_order_volume": 2316,
+      "avg_sell_order_volume": 1807
+    },
+    {
+      "buy_orders": 2733,
+      "sell_orders": 2924,
+      "buy_volume": 3875900,
+      "sell_volume": 4743500,
+      "volume_diff": "-867.600",
+      "avg_buy_order_volume": 1418,
+      "avg_sell_order_volume": 1622
+    },
+    {
+      "buy_orders": 2053,
+      "sell_orders": 1741,
+      "buy_volume": 3057400,
+      "sell_volume": 3680100,
+      "volume_diff": "-622.700",
+      "avg_buy_order_volume": 1489,
+      "avg_sell_order_volume": 2114
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

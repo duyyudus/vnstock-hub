@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-03-16T11:19:14.553398+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_data_alt.api.financial.Finance",
+  "method": "ratio",
+  "source": "mas",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "mas",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "limit": 5,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 14,
+  "columns": [
+    "period",
+    "year_period",
+    "Thu nhập trên mỗi cổ phần của 4 quý gần nhất (EPS)",
+    "Giá trị sổ sách của cổ phiếu (BVPS)",
+    "Chỉ số giá thị trường trên thu nhập (P/E)",
+    "Chỉ số giá thị trường trên giá trị sổ sách (P/B)",
+    "Tỷ suất cổ tức",
+    "Beta"
+  ],
+  "dtypes": {
+    "period": "int64",
+    "year_period": "int64",
+    "Thu nhập trên mỗi cổ phần của 4 quý gần nhất (EPS)": "str",
+    "Giá trị sổ sách của cổ phiếu (BVPS)": "str",
+    "Chỉ số giá thị trường trên thu nhập (P/E)": "str",
+    "Chỉ số giá thị trường trên giá trị sổ sách (P/B)": "str",
+    "Tỷ suất cổ tức": "str",
+    "Beta": "str"
+  },
+  "preview_rows": [
+    {
+      "period": 2025,
+      "year_period": 2025,
+      "Thu nhập trên mỗi cổ phần của 4 quý gần nhất (EPS)": "4542",
+      "Giá trị sổ sách của cổ phiếu (BVPS)": "27231",
+      "Chỉ số giá thị trường trên thu nhập (P/E)": "12.66",
+      "Chỉ số giá thị trường trên giá trị sổ sách (P/B)": "2.11",
+      "Tỷ suất cổ tức": "0.01",
+      "Beta": "0.67"
+    },
+    {
+      "period": 2024,
+      "year_period": 2024,
+      "Thu nhập trên mỗi cổ phần của 4 quý gần nhất (EPS)": "6053",
+      "Giá trị sổ sách của cổ phiếu (BVPS)": "35106",
+      "Chỉ số giá thị trường trên thu nhập (P/E)": "15.07",
+      "Chỉ số giá thị trường trên giá trị sổ sách (P/B)": "2.6",
+      "Tỷ suất cổ tức": "0",
+      "Beta": "0.65"
+    },
+    {
+      "period": 2023,
+      "year_period": 2023,
+      "Thu nhập trên mỗi cổ phần của 4 quý gần nhất (EPS)": "6507",
+      "Giá trị sổ sách của cổ phiếu (BVPS)": "29524",
+      "Chỉ số giá thị trường trên thu nhập (P/E)": "12.34",
+      "Chỉ số giá thị trường trên giá trị sổ sách (P/B)": "2.72",
+      "Tỷ suất cổ tức": "0",
+      "Beta": "0.75"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

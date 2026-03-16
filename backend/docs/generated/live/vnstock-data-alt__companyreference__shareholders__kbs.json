@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-03-16T11:15:03.408906+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CompanyReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+  "method": "shareholders",
+  "source": "kbs",
+  "schema_key": "company.shareholders",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {},
+  "success": true,
+  "row_count": 48,
+  "columns": [
+    "name",
+    "total_shares",
+    "rate",
+    "date"
+  ],
+  "dtypes": {
+    "name": "str",
+    "total_shares": "int64",
+    "rate": "float64",
+    "date": "str"
+  },
+  "preview_rows": [
+    {
+      "name": "Ngân Hàng Nhà Nước Việt Nam",
+      "total_shares": 6250338579,
+      "rate": 0.748,
+      "date": "2026-02-02"
+    },
+    {
+      "name": "Mizuho Bank Limited",
+      "total_shares": 1253366534,
+      "rate": 0.15,
+      "date": "2025-11-21"
+    },
+    {
+      "name": "Quỹ Đầu tư Chính phủ Singapore (GIC)",
+      "total_shares": 84503639,
+      "rate": 0.0101,
+      "date": "2025-10-05"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

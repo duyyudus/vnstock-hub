@@ -66,3 +66,41 @@ Read `VNSTOCK_VENDORING_GUIDE.md` in this folder. It documents:
 - what tests to run before trusting a change
 
 For a package-level usage guide, read `VNSTOCK_API_GUIDE.md`.
+
+## Local API docs
+
+The vendored packages now ship with a generated local docs workflow that
+combines source-derived API reference with optional live-observed samples.
+
+From `backend/`:
+
+Generate docs from source:
+
+```bash
+uv run python scripts/generate_vnstock_api_docs.py
+```
+
+Capture live samples, then regenerate docs:
+
+```bash
+uv run python scripts/capture_vnstock_api_samples.py
+uv run python scripts/generate_vnstock_api_docs.py
+```
+
+Browse the local site:
+
+```bash
+uv run mkdocs serve -f mkdocs.yml
+```
+
+Build static HTML:
+
+```bash
+uv run mkdocs build -f mkdocs.yml
+```
+
+Key paths:
+
+- generated docs source: `backend/docs/generated/`
+- live probe manifest: `backend/docs/live_probe_manifest.json`
+- live snapshot outputs: `backend/docs/generated/live/`

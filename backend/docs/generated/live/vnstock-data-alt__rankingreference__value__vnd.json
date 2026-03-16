@@ -1,0 +1,65 @@
+{
+  "captured_at": "2026-03-16T11:15:05.724698+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "RankingReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.insights.ranking.RankingReference",
+  "method": "value",
+  "source": "vnd",
+  "schema_key": "insights.ranking.value",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "symbol",
+    "exchange",
+    "last_price",
+    "last_updated",
+    "price_change_1d",
+    "price_change_pct_1d",
+    "total_value"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "exchange": "str",
+    "last_price": "float64",
+    "last_updated": "str",
+    "price_change_1d": "float64",
+    "price_change_pct_1d": "float64",
+    "total_value": "float64"
+  },
+  "preview_rows": [
+    {
+      "symbol": "SHB",
+      "exchange": "HOSE",
+      "last_price": 15.2,
+      "last_updated": "2026-03-16 15:59",
+      "price_change_1d": 0.25,
+      "price_change_pct_1d": 1.6722408026755842,
+      "total_value": 1258550880000.0
+    },
+    {
+      "symbol": "SSI",
+      "exchange": "HOSE",
+      "last_price": 28.4,
+      "last_updated": "2026-03-16 15:59",
+      "price_change_1d": 0.0,
+      "price_change_pct_1d": 0.0,
+      "total_value": 744127825000.0
+    },
+    {
+      "symbol": "STB",
+      "exchange": "HOSE",
+      "last_price": 66.6,
+      "last_updated": "2026-03-16 15:59",
+      "price_change_1d": 0.7999999999999972,
+      "price_change_pct_1d": 1.2158054711246091,
+      "total_value": 734224430000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-03-16T11:15:04.256171+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "EventsReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.events.EventsReference",
+  "method": "calendar",
+  "source": "vci",
+  "schema_key": "events.calendar",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "page": 1,
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "symbol",
+    "event_name",
+    "event_title",
+    "organ_name",
+    "public_date",
+    "event_type"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "event_name": "str",
+    "event_title": "str",
+    "organ_name": "str",
+    "public_date": "datetime64[us]",
+    "event_type": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": "VST",
+      "event_name": "Giao dịch nội bộ: Giao dịch tổ chức",
+      "event_title": "Công Đoàn Công ty Cổ Phần Vận Tải Và Thuê Tàu Biển Việt Nam - Đăng kí Bán 30,000 VST",
+      "organ_name": "Công ty Cổ phần Vận tải và Thuê Tàu biển Việt Nam",
+      "public_date": "2025-04-04T00:00:00",
+      "event_type": "DDINS"
+    },
+    {
+      "symbol": "HCB",
+      "event_name": "Giao dịch nội bộ: Giao dịch cá nhân",
+      "event_title": "Phạm Phú Kiệt - Đăng kí Mua HCB",
+      "organ_name": "Công ty Cổ phần Dệt may 29/3",
+      "public_date": "2025-03-31T00:00:00",
+      "event_type": "DDIND"
+    },
+    {
+      "symbol": "HNI",
+      "event_name": "Giao dịch nội bộ: Giao dịch cá nhân",
+      "event_title": "Hà Hải Ninh - Đăng kí Mua 200,000 HNI",
+      "organ_name": "Công ty Cổ phần May Hữu Nghị",
+      "public_date": "2025-03-28T00:00:00",
+      "event_type": "DDIND"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

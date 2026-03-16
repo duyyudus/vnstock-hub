@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-03-16T11:19:53.591517+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Trading",
+  "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
+  "method": "foreign_trade",
+  "source": "cafef",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "cafef",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "page": 1,
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "fr_net_volume",
+    "fr_net_value",
+    "fr_buy_volume",
+    "fr_buy_value",
+    "fr_sell_volume",
+    "fr_sell_value",
+    "fr_remaining_room",
+    "fr_ownership"
+  ],
+  "dtypes": {
+    "fr_net_volume": "int64",
+    "fr_net_value": "int64",
+    "fr_buy_volume": "int64",
+    "fr_buy_value": "int64",
+    "fr_sell_volume": "int64",
+    "fr_sell_value": "int64",
+    "fr_remaining_room": "int64",
+    "fr_ownership": "float64"
+  },
+  "preview_rows": [
+    {
+      "fr_net_volume": 373500,
+      "fr_net_value": 35519010000,
+      "fr_buy_volume": 1329100,
+      "fr_buy_value": 125242390000,
+      "fr_sell_volume": 955600,
+      "fr_sell_value": 89723380000,
+      "fr_remaining_room": 405027508,
+      "fr_ownership": 22.75
+    },
+    {
+      "fr_net_volume": -423000,
+      "fr_net_value": -39502260000,
+      "fr_buy_volume": 736400,
+      "fr_buy_value": 68907160000,
+      "fr_sell_volume": 1159400,
+      "fr_sell_value": 108409420000,
+      "fr_remaining_room": 405270507,
+      "fr_ownership": 22.75
+    },
+    {
+      "fr_net_volume": -709800,
+      "fr_net_value": -66168180000,
+      "fr_buy_volume": 370300,
+      "fr_buy_value": 34526320000,
+      "fr_sell_volume": 1080100,
+      "fr_sell_value": 100694500000,
+      "fr_remaining_room": 405049681,
+      "fr_ownership": 22.75
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

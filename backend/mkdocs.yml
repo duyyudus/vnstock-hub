@@ -1,0 +1,43 @@
+site_name: Vendored vnstock Docs
+site_description: Local, source-derived API docs for vnstock_alt and vnstock_data_alt
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+nav:
+  - Overview: index.md
+  - Vendored vnstock Overview:
+      - Vendored Package Architecture: architecture.md
+  - Vendored vnstock API:
+      - vnstock_alt: generated/packages/vnstock_alt/index.md
+      - vnstock_data_alt: generated/packages/vnstock_data_alt/index.md
+  - Data Contracts:
+      - Overview: data-contracts.md
+      - Output Schemas: generated/schemas/index.md
+      - Live Samples: generated/live-samples/index.md
+      - Coverage / Limitations: generated/coverage.md

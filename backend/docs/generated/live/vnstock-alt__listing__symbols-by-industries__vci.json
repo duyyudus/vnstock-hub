@@ -1,0 +1,83 @@
+{
+  "captured_at": "2026-03-16T11:16:17.632300+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+  "method": "symbols_by_industries",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "VCI"
+  },
+  "method_kwargs": {
+    "lang": "vi",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 1550,
+  "columns": [
+    "symbol",
+    "organ_name",
+    "icb_name3",
+    "icb_name2",
+    "icb_name4",
+    "com_type_code",
+    "icb_code1",
+    "icb_code2",
+    "icb_code3",
+    "icb_code4"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "organ_name": "str",
+    "icb_name3": "str",
+    "icb_name2": "str",
+    "icb_name4": "str",
+    "com_type_code": "str",
+    "icb_code1": "str",
+    "icb_code2": "str",
+    "icb_code3": "str",
+    "icb_code4": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": "VLS",
+      "organ_name": "Công ty Cổ phần Sản xuất Thép Việt Long",
+      "icb_name3": "Kim loại",
+      "icb_name2": "Tài nguyên Cơ bản",
+      "icb_name4": "Thép và sản phẩm thép",
+      "com_type_code": "CT",
+      "icb_code1": "1000",
+      "icb_code2": "1700",
+      "icb_code3": "1750",
+      "icb_code4": "1757"
+    },
+    {
+      "symbol": "BQP",
+      "organ_name": "Công ty Cổ phần Nhựa chất lượng cao Bình Thuận",
+      "icb_name3": "Hóa chất",
+      "icb_name2": "Hóa chất",
+      "icb_name4": "Nhựa, cao su & sợi",
+      "com_type_code": "CT",
+      "icb_code1": "1000",
+      "icb_code2": "1300",
+      "icb_code3": "1350",
+      "icb_code4": "1353"
+    },
+    {
+      "symbol": "RYG",
+      "organ_name": "Công ty Cổ phần Sản xuất và Đầu tư Hoàng Gia",
+      "icb_name3": "Xây dựng và Vật liệu",
+      "icb_name2": "Xây dựng và Vật liệu",
+      "icb_name4": "Vật liệu xây dựng & Nội thất",
+      "com_type_code": "CT",
+      "icb_code1": "2000",
+      "icb_code2": "2300",
+      "icb_code3": "2350",
+      "icb_code4": "2353"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

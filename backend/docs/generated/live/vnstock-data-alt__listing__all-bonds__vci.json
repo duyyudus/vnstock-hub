@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-03-16T11:19:20.948392+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "all_bonds",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": null,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": "0     BAB123032\n1     BAB124015\n2     BAB124016\n3     BAB124024\n4     BAB124025\n        ...    \n78    VIC124003\n79    VIC124005\n80    VND125032\n81    VND125033\n82    VPI124001\nName: symbol, Length: 83, dtype: str",
+  "result_type": "Series",
+  "error": null
+}

@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-03-16T11:16:17.144810+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+  "method": "symbols_by_industries",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS"
+  },
+  "method_kwargs": {
+    "lang": "vi",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 698,
+  "columns": [
+    "symbol",
+    "industry_code",
+    "industry_name"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "industry_code": "int64",
+    "industry_name": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": "AFX",
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    },
+    {
+      "symbol": "ANT",
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    },
+    {
+      "symbol": "BAF",
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-03-16T11:15:22.534666+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "SearchReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.search.SearchReference",
+  "method": "symbol",
+  "source": "msn",
+  "schema_key": "search.symbol",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "query": "sample",
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 2,
+  "columns": [
+    "symbol",
+    "name",
+    "exchange",
+    "short_name",
+    "description",
+    "name_en",
+    "name_local",
+    "symbol_id"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "name": "str",
+    "exchange": "str",
+    "short_name": "str",
+    "description": "str",
+    "name_en": "str",
+    "name_local": "str",
+    "symbol_id": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": "1708",
+      "name": "Sample Tech",
+      "exchange": "Hong Kong",
+      "short_name": "Sample Tech",
+      "description": "Nanjing Sample Technology Co Ltd is a China-based company primarily engaged in the provision of system integration services. The Company mainly operates two businesses. The intelligent transportation business is engaged in the development and application in areas such as highway toll systems, command and dispatch systems, tunnel control systems, and guidance systems. The smart logistics business is engaged in providing comprehensive intelligent solutions including information planning, software products, hardware products, information system integration, and operation and maintenance services for logistics customers such as customs, special customs supervision zones (including bonded zones and cross-border comprehensive experimental zones), port terminals and airports. The Company conducts its business in the domestic market.",
+      "name_en": "Nanjing Sample Technology Co Ltd",
+      "name_local": "三寶科技",
+      "symbol_id": "ah34jc"
+    },
+    {
+      "symbol": "",
+      "name": "Sample Growth Fund;A",
+      "exchange": "",
+      "short_name": "Sample Growth Fund;A",
+      "description": "",
+      "name_en": "Sample Growth A",
+      "name_local": "Sample Growth A",
+      "symbol_id": "cax13m"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

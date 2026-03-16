@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-03-16T11:19:43.409441+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "industries_icb",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 155,
+  "columns": [
+    "icb_name",
+    "en_icb_name",
+    "icb_code",
+    "level"
+  ],
+  "dtypes": {
+    "icb_name": "str",
+    "en_icb_name": "str",
+    "icb_code": "str",
+    "level": "int64"
+  },
+  "preview_rows": [
+    {
+      "icb_name": "Sản xuất Dầu khí",
+      "en_icb_name": "Oil & Gas Producers",
+      "icb_code": "0530",
+      "level": 3
+    },
+    {
+      "icb_name": "Thiết bị, Dịch vụ và Phân phối Dầu khí",
+      "en_icb_name": "Oil Equipment, Services & Distribution",
+      "icb_code": "0570",
+      "level": 3
+    },
+    {
+      "icb_name": "Hóa chất",
+      "en_icb_name": "Chemicals",
+      "icb_code": "1350",
+      "level": 3
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

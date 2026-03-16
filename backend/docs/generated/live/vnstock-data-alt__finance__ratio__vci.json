@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-03-16T11:19:20.433285+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_data_alt.api.financial.Finance",
+  "method": "ratio",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "limit": 5,
+    "show_log": false
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "RetryError(<Future at 0x114d127e0 state=finished raised AttributeError>)"
+}

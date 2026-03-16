@@ -1,0 +1,87 @@
+{
+  "captured_at": "2026-03-16T11:17:53.214799+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
+  "method": "intraday",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "kbs",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "page_size": 5,
+    "page": 1,
+    "to_df": true,
+    "get_all": true,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "price",
+    "volume",
+    "match_type",
+    "id",
+    "trading_date",
+    "symbol",
+    "price_change",
+    "accumulated_volume",
+    "accumulated_value"
+  ],
+  "dtypes": {
+    "time": "datetime64[us]",
+    "price": "float64",
+    "volume": "int64",
+    "match_type": "object",
+    "id": "str",
+    "trading_date": "object",
+    "symbol": "object",
+    "price_change": "float64",
+    "accumulated_volume": "int64",
+    "accumulated_value": "float64"
+  },
+  "preview_rows": [
+    {
+      "time": "2026-03-16T14:29:38",
+      "price": 58.9,
+      "volume": 700,
+      "match_type": "sell",
+      "id": "2026-03-16_142938_589000_700",
+      "trading_date": "16/03/2026",
+      "symbol": "VCB",
+      "price_change": -100.0,
+      "accumulated_volume": 3811100,
+      "accumulated_value": 224685000000.0
+    },
+    {
+      "time": "2026-03-16T14:29:46",
+      "price": 59.0,
+      "volume": 300,
+      "match_type": "buy",
+      "id": "2026-03-16_142946_590000_300",
+      "trading_date": "16/03/2026",
+      "symbol": "VCB",
+      "price_change": 0.0,
+      "accumulated_volume": 3811400,
+      "accumulated_value": 224702700000.0
+    },
+    {
+      "time": "2026-03-16T14:29:48",
+      "price": 58.9,
+      "volume": 5000,
+      "match_type": "sell",
+      "id": "2026-03-16_142948_589000_5000",
+      "trading_date": "16/03/2026",
+      "symbol": "VCB",
+      "price_change": -100.0,
+      "accumulated_volume": 3816400,
+      "accumulated_value": 224997200000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,58 @@
+{
+  "captured_at": "2026-03-16T11:17:54.636879+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
+  "method": "price_depth",
+  "source": "mas",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "mas",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 13,
+  "columns": [
+    "price",
+    "volume",
+    "buy_volume",
+    "sell_volume",
+    "undefined_volume"
+  ],
+  "dtypes": {
+    "price": "int64",
+    "volume": "int64",
+    "buy_volume": "int64",
+    "sell_volume": "int64",
+    "undefined_volume": "int64"
+  },
+  "preview_rows": [
+    {
+      "price": 58600,
+      "volume": 80600,
+      "buy_volume": 0,
+      "sell_volume": 80600,
+      "undefined_volume": 0
+    },
+    {
+      "price": 58700,
+      "volume": 423800,
+      "buy_volume": 94200,
+      "sell_volume": 329400,
+      "undefined_volume": 200
+    },
+    {
+      "price": 58800,
+      "volume": 900100,
+      "buy_volume": 185000,
+      "sell_volume": 685600,
+      "undefined_volume": 29500
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

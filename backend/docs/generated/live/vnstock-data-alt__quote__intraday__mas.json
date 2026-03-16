@@ -1,0 +1,87 @@
+{
+  "captured_at": "2026-03-16T11:17:53.391500+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
+  "method": "intraday",
+  "source": "mas",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "mas",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "page_size": 5,
+    "page": 1,
+    "to_df": true,
+    "get_all": true,
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "price",
+    "volume",
+    "value",
+    "match_type",
+    "high",
+    "low",
+    "change",
+    "change_pct",
+    "agg_volume"
+  ],
+  "dtypes": {
+    "time": "datetime64[ms, Asia/Ho_Chi_Minh]",
+    "price": "float64",
+    "volume": "int64",
+    "value": "float64",
+    "match_type": "str",
+    "high": "float64",
+    "low": "float64",
+    "change": "float64",
+    "change_pct": "float64",
+    "agg_volume": "int64"
+  },
+  "preview_rows": [
+    {
+      "time": "2026-03-16T14:45:00+07:00",
+      "price": 58.8,
+      "volume": 6100,
+      "value": 234964000000.0,
+      "match_type": "Sell",
+      "high": 59800.0,
+      "low": 58600.0,
+      "change": -200.0,
+      "change_pct": -0.0034,
+      "agg_volume": 3985900
+    },
+    {
+      "time": "2026-03-16T14:45:00+07:00",
+      "price": 58.8,
+      "volume": 7800,
+      "value": 234605000000.0,
+      "match_type": "Sell",
+      "high": 59800.0,
+      "low": 58600.0,
+      "change": -200.0,
+      "change_pct": -0.0034,
+      "agg_volume": 3979800
+    },
+    {
+      "time": "2026-03-16T14:45:00+07:00",
+      "price": 58.8,
+      "volume": 13400,
+      "value": 234146000000.0,
+      "match_type": "Sell",
+      "high": 59800.0,
+      "low": 58600.0,
+      "change": -200.0,
+      "change_pct": -0.0034,
+      "agg_volume": 3972000
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

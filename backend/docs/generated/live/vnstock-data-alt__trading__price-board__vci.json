@@ -1,0 +1,172 @@
+{
+  "captured_at": "2026-03-16T11:20:14.438460+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Trading",
+  "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
+  "method": "price_board",
+  "source": "vci",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "vci",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "symbols_list": "VCB",
+    "exchange": "HOSE",
+    "show_log": false,
+    "get_all": true
+  },
+  "success": true,
+  "row_count": 3,
+  "columns": [
+    [
+      "listing",
+      NaN
+    ],
+    [
+      "bid_ask",
+      "type"
+    ],
+    [
+      "bid_ask",
+      "bid_count"
+    ],
+    [
+      "bid_ask",
+      "ask_count"
+    ],
+    [
+      "match",
+      "type"
+    ],
+    [
+      "match",
+      "match_price"
+    ],
+    [
+      "match",
+      "match_vol"
+    ],
+    [
+      "match",
+      "highest"
+    ],
+    [
+      "match",
+      "lowest"
+    ],
+    [
+      "match",
+      "foreign_buy_volume"
+    ],
+    [
+      "match",
+      "foreign_sell_volume"
+    ],
+    [
+      "match",
+      "foreign_buy_value"
+    ],
+    [
+      "match",
+      "foreign_sell_value"
+    ],
+    [
+      "match",
+      "reference_price"
+    ],
+    [
+      "match",
+      "ceiling_price"
+    ],
+    [
+      "match",
+      "floor_price"
+    ],
+    [
+      "match",
+      "accumulated_volume"
+    ]
+  ],
+  "dtypes": {
+    "('listing', nan)": "object",
+    "('bid_ask', 'type')": "object",
+    "('bid_ask', 'bid_count')": "int64",
+    "('bid_ask', 'ask_count')": "int64",
+    "('match', 'type')": "object",
+    "('match', 'match_price')": "int64",
+    "('match', 'match_vol')": "int64",
+    "('match', 'highest')": "int64",
+    "('match', 'lowest')": "int64",
+    "('match', 'foreign_buy_volume')": "int64",
+    "('match', 'foreign_sell_volume')": "int64",
+    "('match', 'foreign_buy_value')": "int64",
+    "('match', 'foreign_sell_value')": "int64",
+    "('match', 'reference_price')": "int64",
+    "('match', 'ceiling_price')": "int64",
+    "('match', 'floor_price')": "int64",
+    "('match', 'accumulated_volume')": "int64"
+  },
+  "preview_rows": [
+    {
+      "('listing', nan)": null,
+      "('bid_ask', 'type')": null,
+      "('bid_ask', 'bid_count')": 0,
+      "('bid_ask', 'ask_count')": 0,
+      "('match', 'type')": null,
+      "('match', 'match_price')": 0,
+      "('match', 'match_vol')": 0,
+      "('match', 'highest')": 0,
+      "('match', 'lowest')": 0,
+      "('match', 'foreign_buy_volume')": 0,
+      "('match', 'foreign_sell_volume')": 0,
+      "('match', 'foreign_buy_value')": 0,
+      "('match', 'foreign_sell_value')": 0,
+      "('match', 'reference_price')": 0,
+      "('match', 'ceiling_price')": 0,
+      "('match', 'floor_price')": 0,
+      "('match', 'accumulated_volume')": 0
+    },
+    {
+      "('listing', nan)": null,
+      "('bid_ask', 'type')": null,
+      "('bid_ask', 'bid_count')": 0,
+      "('bid_ask', 'ask_count')": 0,
+      "('match', 'type')": null,
+      "('match', 'match_price')": 0,
+      "('match', 'match_vol')": 0,
+      "('match', 'highest')": 0,
+      "('match', 'lowest')": 0,
+      "('match', 'foreign_buy_volume')": 0,
+      "('match', 'foreign_sell_volume')": 0,
+      "('match', 'foreign_buy_value')": 0,
+      "('match', 'foreign_sell_value')": 0,
+      "('match', 'reference_price')": 0,
+      "('match', 'ceiling_price')": 0,
+      "('match', 'floor_price')": 0,
+      "('match', 'accumulated_volume')": 0
+    },
+    {
+      "('listing', nan)": null,
+      "('bid_ask', 'type')": null,
+      "('bid_ask', 'bid_count')": 0,
+      "('bid_ask', 'ask_count')": 0,
+      "('match', 'type')": null,
+      "('match', 'match_price')": 0,
+      "('match', 'match_vol')": 0,
+      "('match', 'highest')": 0,
+      "('match', 'lowest')": 0,
+      "('match', 'foreign_buy_volume')": 0,
+      "('match', 'foreign_sell_volume')": 0,
+      "('match', 'foreign_buy_value')": 0,
+      "('match', 'foreign_sell_value')": 0,
+      "('match', 'reference_price')": 0,
+      "('match', 'ceiling_price')": 0,
+      "('match', 'floor_price')": 0,
+      "('match', 'accumulated_volume')": 0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

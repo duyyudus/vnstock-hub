@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-03-16T11:15:20.449227+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "FuturesMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.derivatives.FuturesMarket",
+  "method": "trades",
+  "source": "msn",
+  "schema_key": "market.futures.trades",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VN30F1M"
+  },
+  "method_kwargs": {
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "price",
+    "volume",
+    "match_type",
+    "id"
+  ],
+  "dtypes": {
+    "time": "datetime64[us]",
+    "price": "float64",
+    "volume": "int64",
+    "match_type": "object",
+    "id": "str"
+  },
+  "preview_rows": [
+    {
+      "time": "2026-03-16T14:45:01",
+      "price": 1.85,
+      "volume": 1133,
+      "match_type": "Unknown",
+      "id": "2026-03-16_144501_18513_1133"
+    },
+    {
+      "time": "2026-03-16T14:45:01",
+      "price": 1.85,
+      "volume": 1218,
+      "match_type": "Unknown",
+      "id": "2026-03-16_144501_18513_1218"
+    },
+    {
+      "time": "2026-03-16T14:45:00",
+      "price": 1.85,
+      "volume": 1993,
+      "match_type": "Unknown",
+      "id": "2026-03-16_144500_18513_1993"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

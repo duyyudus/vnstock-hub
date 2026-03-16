@@ -12,6 +12,15 @@
 			"type": "shell",
 			"command": "./run-ui",
 			"problemMatcher": []
+		},
+		{
+			"label": "Run Backend MkDocs",
+			"type": "shell",
+			"command": "uv run mkdocs serve -f mkdocs.yml",
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			},
+			"problemMatcher": []
 		}
 	]
 }

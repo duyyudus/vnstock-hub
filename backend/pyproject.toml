@@ -35,6 +35,9 @@ asyncio_default_test_loop_scope = "function"
 [tool.uv]
 dev-dependencies = [
     "httpx>=0.28.1",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.15",
+    "pymdown-extensions>=10.16",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
 ]

@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-03-16T11:15:04.898231+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "RankingReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.insights.ranking.RankingReference",
+  "method": "foreign_buy",
+  "source": "vnd",
+  "schema_key": "insights.ranking.foreign_buy",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "symbol",
+    "date",
+    "net_value"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "date": "str",
+    "net_value": "float64"
+  },
+  "preview_rows": [
+    {
+      "symbol": "MCH",
+      "date": "2026-03-16",
+      "net_value": 114295100000.0
+    },
+    {
+      "symbol": "PVS",
+      "date": "2026-03-16",
+      "net_value": 81343240000.0
+    },
+    {
+      "symbol": "VCK",
+      "date": "2026-03-16",
+      "net_value": 55230680000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-03-16T11:15:07.964555+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CommodityMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.commodity.CommodityMarket",
+  "method": "quote",
+  "source": "msn",
+  "schema_key": "market.commodity.quote",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "GC=F"
+  },
+  "method_kwargs": {},
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "NotImplementedError(\"Method 'quote' not implemented for domain 'market.commodity'\")"
+}

@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-03-16T11:19:52.409337+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Listing",
+  "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
+  "method": "symbols_by_industries",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "kbs"
+  },
+  "method_kwargs": {
+    "lang": "vi",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 625,
+  "columns": [
+    "symbol",
+    "industry_code",
+    "industry_name"
+  ],
+  "dtypes": {
+    "symbol": "object",
+    "industry_code": "int64",
+    "industry_name": "str"
+  },
+  "preview_rows": [
+    {
+      "symbol": {
+        "name": "SX Phụ trợ",
+        "code": 26,
+        "change": -4.99161
+      },
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    },
+    {
+      "symbol": {
+        "name": "SX Nhựa - Hóa chất",
+        "code": 18,
+        "change": -3.115701
+      },
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    },
+    {
+      "symbol": {
+        "name": "Tiện ích",
+        "code": 22,
+        "change": -2.717101
+      },
+      "industry_code": 19,
+      "industry_name": "Thực phẩm - Đồ uống"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

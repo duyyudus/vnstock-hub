@@ -1,0 +1,59 @@
+{
+  "captured_at": "2026-03-16T11:15:23.053558+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_alt.api.quote.Quote",
+  "method": "intraday",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "page_size": 5,
+    "page": 1
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "price",
+    "volume",
+    "match_type",
+    "id"
+  ],
+  "dtypes": {
+    "time": "datetime64[us]",
+    "price": "float64",
+    "volume": "int64",
+    "match_type": "object",
+    "id": "str"
+  },
+  "preview_rows": [
+    {
+      "time": "2026-03-16T14:29:38",
+      "price": 58.9,
+      "volume": 700,
+      "match_type": "sell",
+      "id": "2026-03-16_142938_589000_700"
+    },
+    {
+      "time": "2026-03-16T14:29:46",
+      "price": 59.0,
+      "volume": 300,
+      "match_type": "buy",
+      "id": "2026-03-16_142946_590000_300"
+    },
+    {
+      "time": "2026-03-16T14:29:48",
+      "price": 58.9,
+      "volume": 5000,
+      "match_type": "sell",
+      "id": "2026-03-16_142948_589000_5000"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

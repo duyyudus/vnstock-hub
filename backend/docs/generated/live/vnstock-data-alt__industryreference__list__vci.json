@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-03-16T11:15:04.398488+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "IndustryReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.industry.IndustryReference",
+  "method": "list",
+  "source": "vci",
+  "schema_key": "industry.list",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "lang": "vi"
+  },
+  "success": true,
+  "row_count": 155,
+  "columns": [
+    "icb_code",
+    "icb_name",
+    "icb_level"
+  ],
+  "dtypes": {
+    "icb_code": "str",
+    "icb_name": "str",
+    "icb_level": "int64"
+  },
+  "preview_rows": [
+    {
+      "icb_code": "0530",
+      "icb_name": "Sản xuất Dầu khí",
+      "icb_level": 3
+    },
+    {
+      "icb_code": "0570",
+      "icb_name": "Thiết bị, Dịch vụ và Phân phối Dầu khí",
+      "icb_level": 3
+    },
+    {
+      "icb_code": "1350",
+      "icb_name": "Hóa chất",
+      "icb_level": 3
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,82 @@
+{
+  "captured_at": "2026-03-16T11:15:21.125519+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "IndexMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.index.IndexMarket",
+  "method": "summary",
+  "source": "kbs",
+  "schema_key": "market.index.summary",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VNINDEX"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 1,
+  "columns": [
+    "symbol",
+    "time",
+    "close_price",
+    "price_change",
+    "percent_change",
+    "open_price",
+    "high_price",
+    "low_price",
+    "reference_price",
+    "advances",
+    "declines",
+    "no_change",
+    "accumulated_volume",
+    "accumulated_value",
+    "total_volume",
+    "put_through_volume",
+    "put_through_value",
+    "previous_close"
+  ],
+  "dtypes": {
+    "symbol": "str",
+    "time": "datetime64[ms]",
+    "close_price": "float64",
+    "price_change": "float64",
+    "percent_change": "str",
+    "open_price": "float64",
+    "high_price": "float64",
+    "low_price": "float64",
+    "reference_price": "float64",
+    "advances": "int64",
+    "declines": "int64",
+    "no_change": "int64",
+    "accumulated_volume": "int64",
+    "accumulated_value": "float64",
+    "total_volume": "float64",
+    "put_through_volume": "float64",
+    "put_through_value": "float64",
+    "previous_close": "float64"
+  },
+  "preview_rows": [
+    {
+      "symbol": "VNINDEX",
+      "time": "2026-03-16T08:33:15.351000",
+      "close_price": 1693.21,
+      "price_change": -3.03,
+      "percent_change": "-0.18",
+      "open_price": 1697.34,
+      "high_price": 1707.0,
+      "low_price": 1680.7,
+      "reference_price": 1696.24,
+      "advances": 149,
+      "declines": 155,
+      "no_change": 74,
+      "accumulated_volume": 418435480,
+      "accumulated_value": 23059878527710.0,
+      "total_volume": 873491825.0,
+      "put_through_volume": 127185506.0,
+      "put_through_value": 2714721841620.0,
+      "previous_close": 1696.24
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

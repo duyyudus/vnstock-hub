@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-03-16T11:16:41.110397+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+  "method": "income_statement",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 24,
+  "columns": [
+    "item",
+    "item_id",
+    "2025",
+    "2024",
+    "2023",
+    "2022"
+  ],
+  "dtypes": {
+    "item": "str",
+    "item_id": "str",
+    "2025": "float64",
+    "2024": "float64",
+    "2023": "float64",
+    "2022": "float64"
+  },
+  "preview_rows": [
+    {
+      "item": "1. Thu nhập lãi và các khoản thu nhập tương tự",
+      "item_id": "n_1.interest_income_and_similar_income",
+      "2025": 105119449000.0,
+      "2024": 93654841000.0,
+      "2023": 108122278000.0,
+      "2022": 88112700000.0
+    },
+    {
+      "item": "2. Chi phí lãi và các chi phí tương tự",
+      "item_id": "n_2.interest_expense_and_similar_expenses",
+      "2025": 46445074000.0,
+      "2024": 38249106000.0,
+      "2023": 54501409000.0,
+      "2022": 34866222000.0
+    },
+    {
+      "item": "I. Thu nhập lãi thuần",
+      "item_id": "i.net_interest_income",
+      "2025": 58674375000.0,
+      "2024": 55405735000.0,
+      "2023": 53620869000.0,
+      "2022": 53246478000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

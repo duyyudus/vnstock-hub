@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-03-16T11:16:28.861153+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Finance",
+  "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+  "method": "balance_sheet",
+  "source": "kbs",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "KBS",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "period": "year",
+    "show_log": false
+  },
+  "success": true,
+  "row_count": 77,
+  "columns": [
+    "item",
+    "item_id",
+    "2025",
+    "2024",
+    "2023",
+    "2022"
+  ],
+  "dtypes": {
+    "item": "str",
+    "item_id": "str",
+    "2025": "float64",
+    "2024": "float64",
+    "2023": "float64",
+    "2022": "float64"
+  },
+  "preview_rows": [
+    {
+      "item": "A. TÀI SẢN",
+      "item_id": "assets",
+      "2025": NaN,
+      "2024": NaN,
+      "2023": NaN,
+      "2022": NaN
+    },
+    {
+      "item": "I. Tiền mặt, vàng bạc, đá quý",
+      "item_id": "i.cash_gold_and_silver_precious_stones",
+      "2025": 15542768000.0,
+      "2024": 14268064000.0,
+      "2023": 14504849000.0,
+      "2022": 18348534000.0
+    },
+    {
+      "item": "II. Tiền gửi tại NHNN",
+      "item_id": "ii.balances_with_the_state_bank_of_vietnam",
+      "2025": 37445504000.0,
+      "2024": 49340493000.0,
+      "2023": 58104503000.0,
+      "2022": 92557809000.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-03-16T11:15:27.168725+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Quote",
+  "class_path": "app.lib.vnstock_alt.api.quote.Quote",
+  "method": "price_depth",
+  "source": "msn",
+  "schema_key": null,
+  "probe_origin": "auto-package",
+  "init_kwargs": {
+    "source": "MSN",
+    "symbol": "VCB"
+  },
+  "method_kwargs": {},
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "TypeError(\"Quote.__init__() missing 1 required positional argument: 'symbol_id'\")"
+}

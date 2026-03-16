@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-03-16T11:15:17.432006+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "ETFMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
+  "method": "trades",
+  "source": "kbs",
+  "schema_key": "market.etf.trades",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "E1VFVN30"
+  },
+  "method_kwargs": {
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "price",
+    "volume",
+    "match_type",
+    "id"
+  ],
+  "dtypes": {
+    "time": "datetime64[us]",
+    "price": "float64",
+    "volume": "int64",
+    "match_type": "object",
+    "id": "str"
+  },
+  "preview_rows": [
+    {
+      "time": "2026-03-16T14:45:20",
+      "price": 32.88,
+      "volume": 3200,
+      "match_type": "Unknown",
+      "id": "2026-03-16_144520_328800_3200"
+    },
+    {
+      "time": "2026-03-16T14:29:41",
+      "price": 32.87,
+      "volume": 100,
+      "match_type": "Buy",
+      "id": "2026-03-16_142941_328700_100"
+    },
+    {
+      "time": "2026-03-16T14:29:09",
+      "price": 32.87,
+      "volume": 100,
+      "match_type": "Buy",
+      "id": "2026-03-16_142909_328700_100"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

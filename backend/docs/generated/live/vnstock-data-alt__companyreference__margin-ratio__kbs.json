@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-03-16T11:15:03.104587+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CompanyReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+  "method": "margin_ratio",
+  "source": "kbs",
+  "schema_key": "company.margin_ratio",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "show_log": false
+  },
+  "success": false,
+  "row_count": 0,
+  "columns": [],
+  "dtypes": {},
+  "preview_rows": [],
+  "result_type": null,
+  "error": "TypeError(\"CompanyReference.margin_ratio() got an unexpected keyword argument 'show_log'\")"
+}

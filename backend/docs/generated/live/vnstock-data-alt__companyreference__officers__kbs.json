@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-03-16T11:15:03.214871+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "CompanyReference",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+  "method": "officers",
+  "source": "kbs",
+  "schema_key": "company.officers",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "filter_by": "all"
+  },
+  "success": true,
+  "row_count": 53,
+  "columns": [
+    "name",
+    "position",
+    "rate"
+  ],
+  "dtypes": {
+    "name": "str",
+    "position": "str",
+    "rate": "float64"
+  },
+  "preview_rows": [
+    {
+      "name": "Phùng Nguyễn Hải Yến",
+      "position": "Phụ trách Công bố thông tin/Phó Tổng Giám đốc",
+      "rate": 6.3e-06
+    },
+    {
+      "name": "Nguyễn Thanh Tùng",
+      "position": "Phó Tổng Giám đốc",
+      "rate": 2.7e-06
+    },
+    {
+      "name": "Đào Minh Tuấn",
+      "position": "Phó Tổng Giám đốc",
+      "rate": 2e-06
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

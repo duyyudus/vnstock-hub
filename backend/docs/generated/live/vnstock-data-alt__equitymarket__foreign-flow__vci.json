@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-03-16T11:15:12.807725+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "EquityMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.equity.EquityMarket",
+  "method": "foreign_flow",
+  "source": "vci",
+  "schema_key": "market.equity.foreign_flow",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "start": "2025-03-01",
+    "end": "2025-03-07",
+    "limit": 5
+  },
+  "success": true,
+  "row_count": 5,
+  "columns": [
+    "time",
+    "buy_vol",
+    "buy_val",
+    "sell_vol",
+    "sell_val",
+    "net_vol",
+    "net_val"
+  ],
+  "dtypes": {
+    "time": "datetime64[us]",
+    "buy_vol": "float64",
+    "buy_val": "float64",
+    "sell_vol": "float64",
+    "sell_val": "float64",
+    "net_vol": "float64",
+    "net_val": "float64"
+  },
+  "preview_rows": [
+    {
+      "time": "2025-03-07T00:00:00",
+      "buy_vol": 1329100.0,
+      "buy_val": 125242390000.0,
+      "sell_vol": 955602.0,
+      "sell_val": 89723568200.0,
+      "net_vol": 373498.0,
+      "net_val": 35518821800.0
+    },
+    {
+      "time": "2025-03-06T00:00:00",
+      "buy_vol": 736400.0,
+      "buy_val": 68907160000.0,
+      "sell_vol": 1159400.0,
+      "sell_val": 108409420000.0,
+      "net_vol": -423000.0,
+      "net_val": -39502260000.0
+    },
+    {
+      "time": "2025-03-05T00:00:00",
+      "buy_vol": 370330.0,
+      "buy_val": 34529117500.0,
+      "sell_vol": 1080101.0,
+      "sell_val": 100694593300.0,
+      "net_vol": -709771.0,
+      "net_val": -66165475800.0
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

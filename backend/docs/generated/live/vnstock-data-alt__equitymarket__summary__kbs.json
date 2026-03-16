@@ -1,0 +1,71 @@
+{
+  "captured_at": "2026-03-16T11:15:13.564064+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "EquityMarket",
+  "class_path": "app.lib.vnstock_data_alt.ui.domains.market.equity.EquityMarket",
+  "method": "summary",
+  "source": "kbs",
+  "schema_key": "market.equity.summary",
+  "probe_origin": "auto-schema",
+  "init_kwargs": {
+    "symbol": "VCB"
+  },
+  "method_kwargs": {
+    "show_log": false,
+    "to_df": true
+  },
+  "success": true,
+  "row_count": 1,
+  "columns": [
+    "high_52w",
+    "low_52w",
+    "dividend",
+    "beta",
+    "eps",
+    "bvps",
+    "market_cap",
+    "pe",
+    "pb",
+    "roe",
+    "change_1m",
+    "change_1y",
+    "dividend_yield",
+    "foreign_ownership_pct"
+  ],
+  "dtypes": {
+    "high_52w": "int64",
+    "low_52w": "int64",
+    "dividend": "int64",
+    "beta": "float64",
+    "eps": "int64",
+    "bvps": "float64",
+    "market_cap": "int64",
+    "pe": "str",
+    "pb": "str",
+    "roe": "float64",
+    "change_1m": "str",
+    "change_1y": "str",
+    "dividend_yield": "float64",
+    "foreign_ownership_pct": "float64"
+  },
+  "preview_rows": [
+    {
+      "high_52w": 76000,
+      "low_52w": 52162,
+      "dividend": 450,
+      "beta": 0.77,
+      "eps": 4542,
+      "bvps": 27231.3,
+      "market_cap": 491313695527200,
+      "pe": "12.99",
+      "pb": "2.17",
+      "roe": 16.61,
+      "change_1m": "-8.70",
+      "change_1y": "-10.33",
+      "dividend_yield": 0.007653061224489796,
+      "foreign_ownership_pct": 20.539
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}
