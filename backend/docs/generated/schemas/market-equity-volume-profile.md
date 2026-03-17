@@ -56,9 +56,9 @@ price, buy_volume, sell_volume, unknown_volume, total_volume, match_percent
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:15.276495+00:00`
+- Captured at: `2026-03-17T05:27:00.721529+00:00`
 - Success: `True`
-- Row count: `13`
+- Row count: `8`
 
 ```text
 price, buy_volume, sell_volume, unknown_volume, total_volume
@@ -68,25 +68,25 @@ price, buy_volume, sell_volume, unknown_volume, total_volume
 ```json
 [
   {
-    "price": 58600,
+    "price": 59400,
     "buy_volume": 0,
-    "sell_volume": 80600,
+    "sell_volume": 2400,
     "unknown_volume": 0,
-    "total_volume": 80600
+    "total_volume": 2400
   },
   {
-    "price": 58700,
-    "buy_volume": 89900,
-    "sell_volume": 333900,
-    "unknown_volume": 0,
-    "total_volume": 423800
+    "price": 59500,
+    "buy_volume": 55400,
+    "sell_volume": 2000,
+    "unknown_volume": 64300,
+    "total_volume": 121700
   },
   {
-    "price": 58800,
-    "buy_volume": 210900,
-    "sell_volume": 521800,
-    "unknown_volume": 169500,
-    "total_volume": 902200
+    "price": 59600,
+    "buy_volume": 20700,
+    "sell_volume": 150300,
+    "unknown_volume": 0,
+    "total_volume": 171000
   }
 ]
 ```
@@ -120,9 +120,9 @@ price, buy_volume, sell_volume, unknown_volume, total_volume, match_percent
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:15.439380+00:00`
+- Captured at: `2026-03-17T05:27:01.994622+00:00`
 - Success: `True`
-- Row count: `13`
+- Row count: `8`
 
 ```text
 price, buy_volume, sell_volume, unknown_volume, total_volume
@@ -132,25 +132,25 @@ price, buy_volume, sell_volume, unknown_volume, total_volume
 ```json
 [
   {
-    "price": 58600,
+    "price": 59400,
     "buy_volume": 0,
-    "sell_volume": 80600,
+    "sell_volume": 2400,
     "unknown_volume": 0,
-    "total_volume": 80600
+    "total_volume": 2400
   },
   {
-    "price": 58700,
-    "buy_volume": 89900,
-    "sell_volume": 333900,
-    "unknown_volume": 0,
-    "total_volume": 423800
+    "price": 59500,
+    "buy_volume": 55400,
+    "sell_volume": 2000,
+    "unknown_volume": 64300,
+    "total_volume": 121700
   },
   {
-    "price": 58800,
-    "buy_volume": 210900,
-    "sell_volume": 521800,
-    "unknown_volume": 169500,
-    "total_volume": 902200
+    "price": 59600,
+    "buy_volume": 20700,
+    "sell_volume": 150300,
+    "unknown_volume": 0,
+    "total_volume": 171000
   }
 ]
 ```

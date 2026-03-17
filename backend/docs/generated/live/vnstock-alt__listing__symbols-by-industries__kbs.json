@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:16:17.144810+00:00",
+  "captured_at": "2026-03-17T05:27:37.113965+00:00",
   "package": "vnstock_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_alt.api.listing.Listing",
@@ -28,19 +28,19 @@
   },
   "preview_rows": [
     {
-      "symbol": "AFX",
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "symbol": "AGR",
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     },
     {
-      "symbol": "ANT",
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "symbol": "APG",
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     },
     {
-      "symbol": "BAF",
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "symbol": "APS",
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     }
   ],
   "result_type": "DataFrame",

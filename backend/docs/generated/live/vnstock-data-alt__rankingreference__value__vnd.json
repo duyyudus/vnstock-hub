@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:05.724698+00:00",
+  "captured_at": "2026-03-17T05:26:52.100948+00:00",
   "package": "vnstock_data_alt",
   "class_name": "RankingReference",
   "class_path": "app.lib.vnstock_data_alt.ui.domains.insights.ranking.RankingReference",
@@ -33,31 +33,31 @@
   },
   "preview_rows": [
     {
-      "symbol": "SHB",
+      "symbol": "VIX",
       "exchange": "HOSE",
-      "last_price": 15.2,
-      "last_updated": "2026-03-16 15:59",
-      "price_change_1d": 0.25,
-      "price_change_pct_1d": 1.6722408026755842,
-      "total_value": 1258550880000.0
+      "last_price": 17.1,
+      "last_updated": "2026-03-17 12:26",
+      "price_change_1d": 0.9000000000000021,
+      "price_change_pct_1d": 5.555555555555558,
+      "total_value": 531107880000.0
     },
     {
       "symbol": "SSI",
       "exchange": "HOSE",
-      "last_price": 28.4,
-      "last_updated": "2026-03-16 15:59",
-      "price_change_1d": 0.0,
-      "price_change_pct_1d": 0.0,
-      "total_value": 744127825000.0
+      "last_price": 29.15,
+      "last_updated": "2026-03-17 12:26",
+      "price_change_1d": 0.75,
+      "price_change_pct_1d": 2.640845070422526,
+      "total_value": 501466090000.0
     },
     {
-      "symbol": "STB",
+      "symbol": "FPT",
       "exchange": "HOSE",
-      "last_price": 66.6,
-      "last_updated": "2026-03-16 15:59",
-      "price_change_1d": 0.7999999999999972,
-      "price_change_pct_1d": 1.2158054711246091,
-      "total_value": 734224430000.0
+      "last_price": 80.3,
+      "last_updated": "2026-03-17 12:26",
+      "price_change_1d": 2.0999999999999943,
+      "price_change_pct_1d": 2.6854219948849067,
+      "total_value": 414958600000.0
     }
   ],
   "result_type": "DataFrame",

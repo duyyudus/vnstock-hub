@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:17:55.357392+00:00",
+  "captured_at": "2026-03-17T05:27:43.813060+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Quote",
   "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
@@ -15,7 +15,7 @@
     "show_log": false
   },
   "success": true,
-  "row_count": 10,
+  "row_count": 8,
   "columns": [
     "price",
     "volume",
@@ -32,25 +32,25 @@
   },
   "preview_rows": [
     {
-      "price": "59500.0",
-      "volume": "21400.0",
-      "buy_volume": "21400.0",
+      "price": "60100.0",
+      "volume": "15000.0",
+      "buy_volume": "15000.0",
       "sell_volume": "0.0",
       "undefined_volume": "0.0"
     },
     {
-      "price": "59400.0",
-      "volume": "86500.0",
-      "buy_volume": "53300.0",
-      "sell_volume": "33200.0",
+      "price": "60000.0",
+      "volume": "252200.0",
+      "buy_volume": "189600.0",
+      "sell_volume": "62600.0",
       "undefined_volume": "0.0"
     },
     {
-      "price": "59300.0",
-      "volume": "109700.0",
-      "buy_volume": "28400.0",
-      "sell_volume": "59100.0",
-      "undefined_volume": "22200.0"
+      "price": "59900.0",
+      "volume": "569800.0",
+      "buy_volume": "519100.0",
+      "sell_volume": "50700.0",
+      "undefined_volume": "0.0"
     }
   ],
   "result_type": "DataFrame",

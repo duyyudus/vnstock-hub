@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:18:40.773405+00:00",
+  "captured_at": "2026-03-17T05:28:21.478130+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_data_alt.api.company.Company",
@@ -32,21 +32,21 @@
   },
   "preview_rows": [
     {
-      "id": "28530742",
+      "id": "28550524",
       "sub_organ_code": "2646966",
       "ownership_percent": 0.875,
       "organ_name": "Công ty Chuyển tiền Vietcombank",
       "type": "công ty con"
     },
     {
-      "id": "28530743",
+      "id": "28550525",
       "sub_organ_code": "TB",
       "ownership_percent": 1.0,
       "organ_name": "Ngân hàng Thương mại TNHH MTV Ngoại thương Công nghệ Số",
       "type": "công ty con"
     },
     {
-      "id": "28530744",
+      "id": "28550526",
       "sub_organ_code": "VCB198",
       "ownership_percent": 0.7,
       "organ_name": "Công ty TNHH Cao Ốc Vietcombank 198",

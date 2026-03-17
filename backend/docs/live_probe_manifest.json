@@ -1,13 +1,304 @@
 [
   {
     "package": "vnstock_alt",
-    "class_path": "app.lib.vnstock_alt.Listing",
+    "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+    "method": "all_indices",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+    "method": "industries_icb",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+    "method": "symbols_by_industries",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.listing.Listing",
+    "method": "symbols_by_group",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI"
+    },
+    "method_kwargs": {
+      "group": "VN30"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.listing.Listing",
     "method": "all_symbols",
     "source": "vci",
     "init_kwargs": {
       "source": "VCI"
     },
     "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.trading.Trading",
+    "method": "price_board",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "symbols_list": [
+        "VCB",
+        "TCB"
+      ],
+      "exchange": "HOSE",
+      "show_log": false,
+      "get_all": true
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.trading.Trading",
+    "method": "price_board",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "symbols_list": [
+        "VCB",
+        "TCB"
+      ],
+      "exchange": "HOSE",
+      "show_log": false,
+      "get_all": true
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.quote.Quote",
+    "method": "history",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "start": "2025-03-01",
+      "end": "2025-03-07",
+      "interval": "1D"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+    "method": "income_statement",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "period": "quarter",
+      "lang": "en"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+    "method": "balance_sheet",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "period": "quarter",
+      "lang": "en"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+    "method": "cash_flow",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "period": "quarter",
+      "lang": "en"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.financial.Finance",
+    "method": "ratio",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {
+      "period": "quarter",
+      "lang": "en"
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "overview",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "shareholders",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "officers",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "subsidiaries",
+    "source": "vci",
+    "init_kwargs": {
+      "source": "VCI",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+    "method": "listing",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+    "method": "nav_report",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+    "method": "top_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+    "method": "industry_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+    "method": "asset_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+    "method": "listing",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+    "method": "nav_report",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+    "method": "top_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+    "method": "industry_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
+  },
+  {
+    "package": "vnstock_data_alt",
+    "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+    "method": "asset_holding",
+    "source": "fmarket",
+    "init_kwargs": {},
+    "method_kwargs": {
+      "fundId": 11
+    }
   },
   {
     "package": "vnstock_data_alt",

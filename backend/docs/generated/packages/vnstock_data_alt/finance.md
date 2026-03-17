@@ -51,7 +51,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:42.169658+00:00`
+- Captured at: `2026-03-17T05:28:23.568611+00:00`
 - Success: `True`
 - Row count: `77`
 
@@ -109,7 +109,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:49.735148+00:00`
+- Captured at: `2026-03-17T05:28:24.424323+00:00`
 - Success: `True`
 - Row count: `14`
 
@@ -383,7 +383,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:51.610109+00:00`
+- Captured at: `2026-03-17T05:28:25.397041+00:00`
 - Success: `True`
 - Row count: `8`
 
@@ -746,14 +746,14 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:53.167470+00:00`
+- Captured at: `2026-03-17T05:28:28.069586+00:00`
 - Success: `True`
 - Row count: `50`
 
 ```text
-item, item_id, 2025, 2024, 2023, 2022, 2020
+item, item_id, 2025, 2024, 2023, 2022, 2021
 ```
-- Dtypes: `{'item': 'str', 'item_id': 'str', '2025': 'float64', '2024': 'float64', '2023': 'float64', '2022': 'float64', '2020': 'float64'}`
+- Dtypes: `{'item': 'str', 'item_id': 'str', '2025': 'float64', '2024': 'float64', '2023': 'float64', '2022': 'float64', '2021': 'float64'}`
 
 ```json
 [
@@ -764,7 +764,7 @@ item, item_id, 2025, 2024, 2023, 2022, 2020
     "2024": -24134346000.0,
     "2023": 19792999000.0,
     "2022": 5431755000.0,
-    "2020": 10336784000.0
+    "2021": -14079392000.0
   },
   {
     "item": "11. (Tăng)/Giảm các công cụ tài chính phái sinh và các công cụ tài chính khác",
@@ -773,7 +773,7 @@ item, item_id, 2025, 2024, 2023, 2022, 2020
     "2024": -1314434000.0,
     "2023": 156515000.0,
     "2022": 146687000.0,
-    "2020": 98312000.0
+    "2021": -303202000.0
   },
   {
     "item": "12. (Tăng)/Giảm các khoản cho vay khách hàng",
@@ -782,7 +782,7 @@ item, item_id, 2025, 2024, 2023, 2022, 2020
     "2024": -178839881000.0,
     "2023": -125292768000.0,
     "2022": -184316295000.0,
-    "2020": -105081370000.0
+    "2021": -120961694000.0
   }
 ]
 ```
@@ -804,7 +804,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:56.358065+00:00`
+- Captured at: `2026-03-17T05:28:28.829690+00:00`
 - Success: `True`
 - Row count: `14`
 
@@ -997,7 +997,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:57.032181+00:00`
+- Captured at: `2026-03-17T05:28:29.926676+00:00`
 - Success: `True`
 - Row count: `8`
 
@@ -1174,77 +1174,6 @@ report_period, ticker, Operating profit/(loss) before changes in Working Capital
 
 Retrieve cash flow statement data.
 
-### history
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `mas`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
 ### income_statement
 
 - Kind: `method`
@@ -1285,7 +1214,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:09.945057+00:00`
+- Captured at: `2026-03-17T05:28:31.107729+00:00`
 - Success: `True`
 - Row count: `24`
 
@@ -1343,7 +1272,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:11.373089+00:00`
+- Captured at: `2026-03-17T05:28:31.956212+00:00`
 - Success: `True`
 - Row count: `14`
 
@@ -1458,7 +1387,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:12.237087+00:00`
+- Captured at: `2026-03-17T05:28:34.647356+00:00`
 - Success: `True`
 - Row count: `8`
 
@@ -1632,7 +1561,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:12.817939+00:00`
+- Captured at: `2026-03-17T05:28:35.342346+00:00`
 - Success: `True`
 - Row count: `8`
 
@@ -2276,7 +2205,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:13.658042+00:00`
+- Captured at: `2026-03-17T05:28:36.243125+00:00`
 - Success: `True`
 - Row count: `32`
 
@@ -2334,7 +2263,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:14.553398+00:00`
+- Captured at: `2026-03-17T05:28:37.022478+00:00`
 - Success: `True`
 - Row count: `14`
 

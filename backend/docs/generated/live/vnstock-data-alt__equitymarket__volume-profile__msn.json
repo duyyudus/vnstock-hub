@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:15.439380+00:00",
+  "captured_at": "2026-03-17T05:27:01.994622+00:00",
   "package": "vnstock_data_alt",
   "class_name": "EquityMarket",
   "class_path": "app.lib.vnstock_data_alt.ui.domains.market.equity.EquityMarket",
@@ -14,7 +14,7 @@
     "show_log": false
   },
   "success": true,
-  "row_count": 13,
+  "row_count": 8,
   "columns": [
     "price",
     "buy_volume",
@@ -31,25 +31,25 @@
   },
   "preview_rows": [
     {
-      "price": 58600,
+      "price": 59400,
       "buy_volume": 0,
-      "sell_volume": 80600,
+      "sell_volume": 2400,
       "unknown_volume": 0,
-      "total_volume": 80600
+      "total_volume": 2400
     },
     {
-      "price": 58700,
-      "buy_volume": 89900,
-      "sell_volume": 333900,
-      "unknown_volume": 0,
-      "total_volume": 423800
+      "price": 59500,
+      "buy_volume": 55400,
+      "sell_volume": 2000,
+      "unknown_volume": 64300,
+      "total_volume": 121700
     },
     {
-      "price": 58800,
-      "buy_volume": 210900,
-      "sell_volume": 521800,
-      "unknown_volume": 169500,
-      "total_volume": 902200
+      "price": 59600,
+      "buy_volume": 20700,
+      "sell_volume": 150300,
+      "unknown_volume": 0,
+      "total_volume": 171000
     }
   ],
   "result_type": "DataFrame",

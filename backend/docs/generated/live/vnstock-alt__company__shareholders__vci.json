@@ -1,21 +1,19 @@
 {
-  "captured_at": "2026-03-16T11:16:27.661204+00:00",
+  "captured_at": "2026-03-17T05:26:43.807089+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
   "method": "shareholders",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI",
     "symbol": "VCB"
   },
-  "method_kwargs": {
-    "show_log": false
-  },
+  "method_kwargs": {},
   "success": true,
-  "row_count": 48,
+  "row_count": 47,
   "columns": [
     "id",
     "share_holder",
@@ -32,21 +30,21 @@
   },
   "preview_rows": [
     {
-      "id": "100687276",
+      "id": "100755807",
       "share_holder": "Ngân Hàng Nhà Nước Việt Nam",
       "quantity": 6250338579,
       "share_own_percent": 0.748,
       "update_date": "2026-02-02"
     },
     {
-      "id": "100687221",
+      "id": "100755752",
       "share_holder": "Mizuho Bank Limited",
       "quantity": 1253366534,
       "share_own_percent": 0.15,
       "update_date": "2025-11-21"
     },
     {
-      "id": "100699825",
+      "id": "100768368",
       "share_holder": "Quỹ Đầu tư Chính phủ Singapore (GIC)",
       "quantity": 84503639,
       "share_own_percent": 0.0101,

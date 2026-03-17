@@ -50,7 +50,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:42.391556+00:00`
+- Captured at: `2026-03-17T05:29:07.368083+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -122,7 +122,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:42.606330+00:00`
+- Captured at: `2026-03-17T05:29:07.659770+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -194,7 +194,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:42.893358+00:00`
+- Captured at: `2026-03-17T05:29:07.837837+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -266,7 +266,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:43.084791+00:00`
+- Captured at: `2026-03-17T05:29:08.035844+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -338,7 +338,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:43.790817+00:00`
+- Captured at: `2026-03-17T05:29:09.754873+00:00`
 - Success: `True`
 - Row count: `7`
 
@@ -404,7 +404,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:43.986859+00:00`
+- Captured at: `2026-03-17T05:29:09.926769+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -476,7 +476,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:44.461579+00:00`
+- Captured at: `2026-03-17T05:29:10.403077+00:00`
 - Success: `True`
 - Row count: `6`
 
@@ -505,39 +505,6 @@ buy, sell
 #### Notes / caveats
 
 Vietnam gold prices (buy & sell).
-
-### history
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `spl`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
 
 ### iron_ore
 
@@ -572,7 +539,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:48.695614+00:00`
+- Captured at: `2026-03-17T05:29:10.605375+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -644,7 +611,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:49.133630+00:00`
+- Captured at: `2026-03-17T05:29:10.884304+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -716,7 +683,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:49.329335+00:00`
+- Captured at: `2026-03-17T05:29:11.060577+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -770,7 +737,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:49.622660+00:00`
+- Captured at: `2026-03-17T05:29:11.346204+00:00`
 - Success: `True`
 - Row count: `4`
 
@@ -830,7 +797,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:49.794419+00:00`
+- Captured at: `2026-03-17T05:29:11.545434+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -902,7 +869,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:50.081660+00:00`
+- Captured at: `2026-03-17T05:29:11.795884+00:00`
 - Success: `True`
 - Row count: `7`
 
@@ -962,7 +929,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:50.301262+00:00`
+- Captured at: `2026-03-17T05:29:13.029226+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -1034,7 +1001,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:50.509319+00:00`
+- Captured at: `2026-03-17T05:29:13.203142+00:00`
 - Success: `True`
 - Row count: `5`
 

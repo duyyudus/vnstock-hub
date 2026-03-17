@@ -63,7 +63,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:22.534666+00:00`
+- Captured at: `2026-03-17T05:27:09.260820+00:00`
 - Success: `True`
 - Row count: `2`
 

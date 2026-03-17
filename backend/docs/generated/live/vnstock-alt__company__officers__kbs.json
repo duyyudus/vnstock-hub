@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:16:26.946949+00:00",
+  "captured_at": "2026-03-17T05:27:38.215140+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
@@ -39,16 +39,16 @@
       "owner_code": "CTHĐQT"
     },
     {
-      "from_date": "2025",
-      "position": "TVHĐQT",
-      "name": "Ông Kohei Matsuoka",
-      "position_en": "TVHĐQT (Member of BOD)",
-      "owner_code": "TVHĐQT"
+      "from_date": "2017",
+      "position": "TGĐ/TVHĐQT",
+      "name": "Ông Lê Quang Vinh",
+      "position_en": "TGĐ (CEO)",
+      "owner_code": "TGĐ"
     },
     {
-      "from_date": "TV Độc lập",
+      "from_date": "N/A",
       "position": "TVHĐQT",
-      "name": "Ông Vũ Viết Ngoạn",
+      "name": "Ông Đỗ Việt Hùng",
       "position_en": "TVHĐQT (Member of BOD)",
       "owner_code": "TVHĐQT"
     }

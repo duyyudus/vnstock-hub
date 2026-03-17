@@ -73,7 +73,7 @@ symbol, event_name, event_title, ex_right_date, record_date, payout_date, value,
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:04.256171+00:00`
+- Captured at: `2026-03-17T05:26:49.713312+00:00`
 - Success: `True`
 - Row count: `5`
 

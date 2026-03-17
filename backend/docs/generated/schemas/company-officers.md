@@ -50,7 +50,7 @@ symbol, name, position, from_date, total_shares, rate
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:03.214871+00:00`
+- Captured at: `2026-03-17T05:26:47.876673+00:00`
 - Success: `True`
 - Row count: `53`
 
@@ -108,7 +108,7 @@ symbol, name, position, from_date, total_shares, rate
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:03.308823+00:00`
+- Captured at: `2026-03-17T05:26:48.008865+00:00`
 - Success: `True`
 - Row count: `53`
 

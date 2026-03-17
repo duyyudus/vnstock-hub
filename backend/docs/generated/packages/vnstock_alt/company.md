@@ -47,7 +47,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:17.784073+00:00`
+- Captured at: `2026-03-17T05:27:37.268176+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -86,7 +86,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:17.870430+00:00`
+- Captured at: `2026-03-17T05:27:37.425767+00:00`
 - Success: `True`
 - Row count: `4`
 
@@ -98,19 +98,19 @@ id, sub_organ_code, organ_name, ownership_percent
 ```json
 [
   {
-    "id": "28530750",
+    "id": "28550532",
     "sub_organ_code": "VCBB",
     "organ_name": "Công Ty Liên Doanh Trách Nhiệm Hữu Hạn Vietcombank-bonday-benthanh",
     "ownership_percent": 0.52
   },
   {
-    "id": "28530752",
+    "id": "28550534",
     "sub_organ_code": "VCBBONDAY",
     "organ_name": "Công ty Liên Doanh Hữu Hạn Vietcombank-bonday",
     "ownership_percent": 0.16
   },
   {
-    "id": "28530751",
+    "id": "28550533",
     "sub_organ_code": "VCBF",
     "organ_name": "Công ty TNHH Quản lý quỹ đầu tư chứng khoán Vietcombank",
     "ownership_percent": 0.51
@@ -159,7 +159,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:18.092369+00:00`
+- Captured at: `2026-03-17T05:27:37.571691+00:00`
 - Success: `True`
 - Row count: `0`
 
@@ -180,7 +180,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:18.178944+00:00`
+- Captured at: `2026-03-17T05:27:37.675645+00:00`
 - Success: `True`
 - Row count: `32`
 
@@ -243,58 +243,6 @@ id, event_title, en__event_title, public_date, issue_date, source_url, event_lis
 
 Retrieve company events.
 
-### history
-
-- Kind: `method`
-- Signature: `(*args, **kwargs)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `args` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `kwargs` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
 ### news
 
 - Kind: `method`
@@ -331,7 +279,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:26.498598+00:00`
+- Captured at: `2026-03-17T05:27:37.831127+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -343,11 +291,11 @@ head, article_id, title, publish_time, url
 ```json
 [
   {
-    "head": "Cổ phiếu ngân hàng năm 2026 được nhận định sẽ mang gam màu hoàn toàn mới: Bền vững và chọn lọc. Theo đó, động lực bứt phá của các nhà băng giờ đây không chỉ nằm ở chất lượng tài sản hay bộ đệm vốn mà còn đến từ những yếu tố đột biến như các thương vụ M&A, tái cơ cấu, và khả năng nắm bắt những dư địa lợi nhuận mới.",
-    "article_id": 1409519,
-    "title": "Cổ phiếu “vua\" 2026: Đón chu kỳ bền vững và các \"ẩn số\" tỷ đô",
-    "publish_time": "2026-03-09T11:02:00",
-    "url": "/2026/03/co-phieu-vua-2026-don-chu-ky-ben-vung-va-cac-an-so-ty-do-757-1409519.htm"
+    "head": "Các công ty chứng khoán (CTCK) khuyến nghị mua NLG nhờ doanh số bán hàng dự kiến tăng mạnh và lợi thế quỹ đất lớn; mua VCB nhờ kỳ vọng tăng trưởng tín dụng và chất lượng tài sản duy trì ở mức tốt; mua GMD nhờ triển vọng tăng trưởng lợi nhuận từ hệ thống cảng và câu chuyện định giá hấp dẫn.",
+    "article_id": 1409791,
+    "title": "NLG, VCB và GMD có gì hấp dẫn?",
+    "publish_time": "2026-03-09T12:58:41.84",
+    "url": "/2026/03/nlg-vcb-va-gmd-co-gi-hap-dan-145-1409791.htm"
   }
 ]
 ```
@@ -369,7 +317,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:26.615613+00:00`
+- Captured at: `2026-03-17T05:27:38.056002+00:00`
 - Success: `True`
 - Row count: `10`
 
@@ -481,7 +429,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:26.946949+00:00`
+- Captured at: `2026-03-17T05:27:38.215140+00:00`
 - Success: `True`
 - Row count: `22`
 
@@ -500,16 +448,16 @@ from_date, position, name, position_en, owner_code
     "owner_code": "CTHĐQT"
   },
   {
-    "from_date": "2025",
-    "position": "TVHĐQT",
-    "name": "Ông Kohei Matsuoka",
-    "position_en": "TVHĐQT (Member of BOD)",
-    "owner_code": "TVHĐQT"
+    "from_date": "2017",
+    "position": "TGĐ/TVHĐQT",
+    "name": "Ông Lê Quang Vinh",
+    "position_en": "TGĐ (CEO)",
+    "owner_code": "TGĐ"
   },
   {
-    "from_date": "TV Độc lập",
+    "from_date": "N/A",
     "position": "TVHĐQT",
-    "name": "Ông Vũ Viết Ngoạn",
+    "name": "Ông Đỗ Việt Hùng",
     "position_en": "TVHĐQT (Member of BOD)",
     "owner_code": "TVHĐQT"
   }
@@ -533,7 +481,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.066575+00:00`
+- Captured at: `2026-03-17T05:26:44.212948+00:00`
 - Success: `True`
 - Row count: `21`
 
@@ -613,7 +561,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.214645+00:00`
+- Captured at: `2026-03-17T05:27:38.482808+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -676,7 +624,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.403202+00:00`
+- Captured at: `2026-03-17T05:26:43.700876+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -740,7 +688,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.553063+00:00`
+- Captured at: `2026-03-17T05:27:38.635280+00:00`
 - Success: `True`
 - Row count: `3`
 
@@ -789,9 +737,9 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.661204+00:00`
+- Captured at: `2026-03-17T05:26:43.807089+00:00`
 - Success: `True`
-- Row count: `48`
+- Row count: `47`
 
 ```text
 id, share_holder, quantity, share_own_percent, update_date
@@ -801,21 +749,21 @@ id, share_holder, quantity, share_own_percent, update_date
 ```json
 [
   {
-    "id": "100687276",
+    "id": "100755807",
     "share_holder": "Ngân Hàng Nhà Nước Việt Nam",
     "quantity": 6250338579,
     "share_own_percent": 0.748,
     "update_date": "2026-02-02"
   },
   {
-    "id": "100687221",
+    "id": "100755752",
     "share_holder": "Mizuho Bank Limited",
     "quantity": 1253366534,
     "share_own_percent": 0.15,
     "update_date": "2025-11-21"
   },
   {
-    "id": "100699825",
+    "id": "100768368",
     "share_holder": "Quỹ Đầu tư Chính phủ Singapore (GIC)",
     "quantity": 84503639,
     "share_own_percent": 0.0101,
@@ -862,7 +810,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.813546+00:00`
+- Captured at: `2026-03-17T05:27:38.791656+00:00`
 - Success: `True`
 - Row count: `10`
 
@@ -917,7 +865,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:16:27.999104+00:00`
+- Captured at: `2026-03-17T05:26:44.320714+00:00`
 - Success: `True`
 - Row count: `12`
 
@@ -929,21 +877,21 @@ id, sub_organ_code, ownership_percent, organ_name, type
 ```json
 [
   {
-    "id": "28530742",
+    "id": "28550524",
     "sub_organ_code": "2646966",
     "ownership_percent": 0.875,
     "organ_name": "Công ty Chuyển tiền Vietcombank",
     "type": "công ty con"
   },
   {
-    "id": "28530743",
+    "id": "28550525",
     "sub_organ_code": "TB",
     "ownership_percent": 1.0,
     "organ_name": "Ngân hàng Thương mại TNHH MTV Ngoại thương Công nghệ Số",
     "type": "công ty con"
   },
   {
-    "id": "28530744",
+    "id": "28550526",
     "sub_organ_code": "VCB198",
     "ownership_percent": 0.7,
     "organ_name": "Công ty TNHH Cao Ốc Vietcombank 198",

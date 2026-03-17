@@ -28,6 +28,7 @@ def test_build_docs_metadata_contains_representative_surfaces(docs_metadata: dic
     assert "Market" in vnstock_data_exports
 
     alt_quote_methods = {method["name"]: method for method in vnstock_alt_exports["Quote"]["methods"]}
+    alt_trading_methods = {method["name"]: method for method in vnstock_alt_exports["Trading"]["methods"]}
     data_market_methods = {method["name"]: method for method in vnstock_data_exports["Market"]["methods"]}
     data_finance_methods = {method["name"]: method for method in vnstock_data_exports["Finance"]["methods"]}
     alt_listing_methods = {method["name"]: method for method in vnstock_alt_exports["Listing"]["methods"]}
@@ -51,6 +52,11 @@ def test_build_docs_metadata_contains_representative_surfaces(docs_metadata: dic
         "type",
         "id",
     ]
+    assert "price_board" in alt_trading_methods
+    assert "foreign_trade" not in alt_trading_methods
+    assert "history" not in alt_trading_methods
+    assert "price_depth" not in alt_quote_methods
+    assert "history" not in {method["name"] for method in vnstock_alt_exports["Listing"]["methods"]}
     assert data_trading_methods["price_board"]["raw_outputs"][1]["coverage"] == "declared"
 
 
@@ -58,7 +64,46 @@ def test_collect_probe_definitions_auto_expands_manifest() -> None:
     manifest_only = collect_probe_definitions(include_auto=False)
     auto_expanded = collect_probe_definitions(include_auto=True)
 
-    assert len(manifest_only) == 4
+    manifest_keys = {
+        (
+            probe["package"],
+            probe["class_path"],
+            probe["method"],
+            probe.get("source"),
+        )
+        for probe in manifest_only
+    }
+    expected_backend_manifest_keys = {
+        ("vnstock_alt", "app.lib.vnstock_alt.api.listing.Listing", "all_indices", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.listing.Listing", "industries_icb", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.listing.Listing", "symbols_by_industries", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.listing.Listing", "symbols_by_group", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.listing.Listing", "all_symbols", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.trading.Trading", "price_board", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.trading.Trading", "price_board", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.quote.Quote", "history", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "income_statement", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "balance_sheet", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "cash_flow", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "ratio", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "overview", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "shareholders", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "officers", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "subsidiaries", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "listing", "fmarket"),
+        ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "nav_report", "fmarket"),
+        ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "top_holding", "fmarket"),
+        ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "industry_holding", "fmarket"),
+        ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "asset_holding", "fmarket"),
+        ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "listing", "fmarket"),
+        ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "nav_report", "fmarket"),
+        ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "top_holding", "fmarket"),
+        ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "industry_holding", "fmarket"),
+        ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "asset_holding", "fmarket"),
+    }
+
+    assert len(manifest_only) == 29
+    assert expected_backend_manifest_keys <= manifest_keys
     assert len(auto_expanded) > len(manifest_only)
 
     auto_by_schema = {probe.get("schema_key") for probe in auto_expanded if probe.get("schema_key")}
@@ -74,6 +119,48 @@ def test_collect_probe_definitions_auto_expands_manifest() -> None:
         and probe["method"] == "history"
     }
     assert {"kbs", "msn", "vci"} <= quote_history_sources
+
+    price_board_probes = [
+        probe
+        for probe in auto_expanded
+        if probe["package"] == "vnstock_alt"
+        and probe["class_path"] == "app.lib.vnstock_alt.api.trading.Trading"
+        and probe["method"] == "price_board"
+    ]
+    assert {probe["source"] for probe in price_board_probes} >= {"kbs", "vci"}
+    for probe in price_board_probes:
+        assert probe["method_kwargs"]["symbols_list"] == ["VCB", "TCB"]
+
+    fund_probes = [
+        probe
+        for probe in manifest_only
+        if probe["class_path"] in {
+            "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+            "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+        }
+        and probe["method"] in {
+            "listing",
+            "nav_report",
+            "top_holding",
+            "industry_holding",
+            "asset_holding",
+        }
+    ]
+    assert {
+        (probe["package"], probe["method"])
+        for probe in fund_probes
+    } >= {
+        ("vnstock_alt", "listing"),
+        ("vnstock_alt", "nav_report"),
+        ("vnstock_alt", "top_holding"),
+        ("vnstock_alt", "industry_holding"),
+        ("vnstock_alt", "asset_holding"),
+        ("vnstock_data_alt", "listing"),
+        ("vnstock_data_alt", "nav_report"),
+        ("vnstock_data_alt", "top_holding"),
+        ("vnstock_data_alt", "industry_holding"),
+        ("vnstock_data_alt", "asset_holding"),
+    }
 
 
 def test_schema_metadata_matches_registered_schema_contract(docs_metadata: dict) -> None:
@@ -150,6 +237,7 @@ def test_render_docs_creates_expected_pages(tmp_path: Path, docs_metadata: dict)
     live_index = (tmp_path / "live-samples" / "index.md").read_text()
     fund_page = (tmp_path / "packages" / "vnstock_alt" / "fund.md").read_text()
     quote_page = (tmp_path / "packages" / "vnstock_alt" / "quote.md").read_text()
+    alt_trading_page = (tmp_path / "packages" / "vnstock_alt" / "trading.md").read_text()
     trading_page = (tmp_path / "packages" / "vnstock_data_alt" / "trading.md").read_text()
     assert "Declared signature" in schema_page
     assert "## Source details" in schema_page
@@ -172,6 +260,9 @@ def test_render_docs_creates_expected_pages(tmp_path: Path, docs_metadata: dict)
     assert "`2025-03-01`" in quote_page
     assert "`1m`, `5m`, `15m`, `30m`, `1H`, `D`, `1W`, `1M`" in quote_page
     assert "| `start` | `POSITIONAL_OR_KEYWORD` | `True` | `None` | `` | `2025-03-01` |" in trading_page
+    assert "### price_board" in alt_trading_page
+    assert "### foreign_trade" not in alt_trading_page
+    assert '"symbol": "V"' not in alt_trading_page
 
 
 def test_live_sampled_package_methods_always_render_observed_example_column(docs_metadata: dict, tmp_path: Path) -> None:

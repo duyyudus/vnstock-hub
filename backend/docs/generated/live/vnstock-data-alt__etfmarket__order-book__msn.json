@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:15.842338+00:00",
+  "captured_at": "2026-03-17T05:27:02.650919+00:00",
   "package": "vnstock_data_alt",
   "class_name": "ETFMarket",
   "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
@@ -11,16 +11,74 @@
     "symbol": "E1VFVN30"
   },
   "method_kwargs": {
-    "symbols_list": "VCB",
+    "symbols_list": [
+      "VCB",
+      "TCB"
+    ],
     "exchange": "HOSE",
     "show_log": false,
     "get_all": true
   },
-  "success": false,
-  "row_count": 0,
-  "columns": [],
-  "dtypes": {},
-  "preview_rows": [],
-  "result_type": null,
-  "error": "ValueError('Invalid symbol. Your symbol format is not recognized!')"
+  "success": true,
+  "row_count": 2,
+  "columns": [
+    "bid_price_1",
+    "bid_vol_1",
+    "bid_price_2",
+    "bid_vol_2",
+    "bid_price_3",
+    "bid_vol_3",
+    "ask_price_1",
+    "ask_vol_1",
+    "ask_price_2",
+    "ask_vol_2",
+    "ask_price_3",
+    "ask_vol_3"
+  ],
+  "dtypes": {
+    "bid_price_1": "str",
+    "bid_vol_1": "int64",
+    "bid_price_2": "int64",
+    "bid_vol_2": "int64",
+    "bid_price_3": "int64",
+    "bid_vol_3": "int64",
+    "ask_price_1": "str",
+    "ask_vol_1": "int64",
+    "ask_price_2": "int64",
+    "ask_vol_2": "int64",
+    "ask_price_3": "int64",
+    "ask_vol_3": "int64"
+  },
+  "preview_rows": [
+    {
+      "bid_price_1": "59900.0",
+      "bid_vol_1": 33900,
+      "bid_price_2": 59800,
+      "bid_vol_2": 111300,
+      "bid_price_3": 59700,
+      "bid_vol_3": 209300,
+      "ask_price_1": "60000.0",
+      "ask_vol_1": 269400,
+      "ask_price_2": 60100,
+      "ask_vol_2": 279400,
+      "ask_price_3": 60200,
+      "ask_vol_3": 167400
+    },
+    {
+      "bid_price_1": "30650.0",
+      "bid_vol_1": 19400,
+      "bid_price_2": 30600,
+      "bid_vol_2": 45300,
+      "bid_price_3": 30550,
+      "bid_vol_3": 68900,
+      "ask_price_1": "30700.0",
+      "ask_vol_1": 4900,
+      "ask_price_2": 30750,
+      "ask_vol_2": 25000,
+      "ask_price_3": 30800,
+      "ask_vol_3": 297500
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
 }

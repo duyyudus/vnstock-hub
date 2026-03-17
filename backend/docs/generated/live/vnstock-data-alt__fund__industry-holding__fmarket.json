@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-03-17T05:26:46.893102+00:00",
+  "package": "vnstock_data_alt",
+  "class_name": "Fund",
+  "class_path": "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund",
+  "method": "industry_holding",
+  "source": "fmarket",
+  "schema_key": null,
+  "probe_origin": "manifest",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "fundId": 11
+  },
+  "success": true,
+  "row_count": 14,
+  "columns": [
+    "industry",
+    "net_asset_percent"
+  ],
+  "dtypes": {
+    "industry": "str",
+    "net_asset_percent": "float64"
+  },
+  "preview_rows": [
+    {
+      "industry": "Ngân hàng",
+      "net_asset_percent": 34.59
+    },
+    {
+      "industry": "Bất động sản",
+      "net_asset_percent": 11.9
+    },
+    {
+      "industry": "Bán lẻ",
+      "net_asset_percent": 11.2
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

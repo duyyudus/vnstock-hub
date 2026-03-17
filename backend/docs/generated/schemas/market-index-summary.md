@@ -69,7 +69,7 @@ symbol, time, close_price, price_change, percent_change, open_price, high_price,
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:21.125519+00:00`
+- Captured at: `2026-03-17T05:27:08.441143+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -82,23 +82,23 @@ symbol, time, close_price, price_change, percent_change, open_price, high_price,
 [
   {
     "symbol": "VNINDEX",
-    "time": "2026-03-16T08:33:15.351000",
-    "close_price": 1693.21,
-    "price_change": -3.03,
-    "percent_change": "-0.18",
-    "open_price": 1697.34,
-    "high_price": 1707.0,
-    "low_price": 1680.7,
-    "reference_price": 1696.24,
-    "advances": 149,
-    "declines": 155,
-    "no_change": 74,
-    "accumulated_volume": 418435480,
-    "accumulated_value": 23059878527710.0,
-    "total_volume": 873491825.0,
-    "put_through_volume": 127185506.0,
-    "put_through_value": 2714721841620.0,
-    "previous_close": 1696.24
+    "time": "2026-03-17T05:27:05.386000",
+    "close_price": 1725.78,
+    "price_change": 32.57,
+    "percent_change": "1.92",
+    "open_price": 1701.15,
+    "high_price": 1732.31,
+    "low_price": 1693.21,
+    "reference_price": 1693.21,
+    "advances": 223,
+    "declines": 81,
+    "no_change": 64,
+    "accumulated_volume": 312609162,
+    "accumulated_value": 11771272972880.0,
+    "total_volume": 423510825.0,
+    "put_through_volume": 62836229.0,
+    "put_through_value": 1387540929530.0,
+    "previous_close": 1693.21
   }
 ]
 ```

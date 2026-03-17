@@ -84,7 +84,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:13.022692+00:00`
+- Captured at: `2026-03-17T05:26:56.742128+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -98,28 +98,28 @@ symbol, exchange, reference_price, ceiling_price, floor_price, open_price, high_
   {
     "symbol": "VCB",
     "exchange": "HOSE",
-    "reference_price": 59000,
-    "ceiling_price": 63100,
-    "floor_price": 54900,
+    "reference_price": 58800,
+    "ceiling_price": 62900,
+    "floor_price": 54700,
     "open_price": 59300,
-    "high_price": 59900,
-    "low_price": 59000,
-    "close_price": 59000,
-    "match_vol": 1,
-    "total_volume": 17451,
-    "bid_price_1": "59000.0",
-    "bid_vol_1": 916,
-    "bid_price_2": 58900,
-    "bid_vol_2": 4934,
-    "bid_price_3": 58800,
-    "bid_vol_3": 6292,
-    "ask_price_1": "59200.0",
-    "ask_vol_1": 43,
-    "ask_price_2": 59300,
-    "ask_vol_2": 76,
-    "ask_price_3": 59400,
-    "ask_vol_3": 25,
-    "foreign_buy_volume": 356600,
+    "high_price": 60200,
+    "low_price": 59300,
+    "close_price": 60000,
+    "match_vol": 27,
+    "total_volume": 5254,
+    "bid_price_1": "59900.0",
+    "bid_vol_1": 1119,
+    "bid_price_2": 59800,
+    "bid_vol_2": 4191,
+    "bid_price_3": 59700,
+    "bid_vol_3": 3420,
+    "ask_price_1": "60000.0",
+    "ask_vol_1": 299,
+    "ask_price_2": 60100,
+    "ask_vol_2": 173,
+    "ask_price_3": 60200,
+    "ask_vol_3": 141,
+    "foreign_buy_volume": 0,
     "foreign_sell_volume": 0
   }
 ]
@@ -180,7 +180,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:13.170398+00:00`
+- Captured at: `2026-03-17T05:26:56.893173+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -194,28 +194,28 @@ symbol, exchange, reference_price, ceiling_price, floor_price, open_price, high_
   {
     "symbol": "VCB",
     "exchange": "HOSE",
-    "reference_price": 59000,
-    "ceiling_price": 63100,
-    "floor_price": 54900,
+    "reference_price": 58800,
+    "ceiling_price": 62900,
+    "floor_price": 54700,
     "open_price": 59300,
-    "high_price": 59900,
-    "low_price": 59000,
-    "close_price": 59000,
-    "match_vol": 1,
-    "total_volume": 17451,
-    "bid_price_1": "59000.0",
-    "bid_vol_1": 916,
-    "bid_price_2": 58900,
-    "bid_vol_2": 4934,
-    "bid_price_3": 58800,
-    "bid_vol_3": 6292,
-    "ask_price_1": "59200.0",
-    "ask_vol_1": 43,
-    "ask_price_2": 59300,
-    "ask_vol_2": 76,
-    "ask_price_3": 59400,
-    "ask_vol_3": 25,
-    "foreign_buy_volume": 356600,
+    "high_price": 60200,
+    "low_price": 59300,
+    "close_price": 60000,
+    "match_vol": 27,
+    "total_volume": 5254,
+    "bid_price_1": "59900.0",
+    "bid_vol_1": 1119,
+    "bid_price_2": 59800,
+    "bid_vol_2": 4191,
+    "bid_price_3": 59700,
+    "bid_vol_3": 3420,
+    "ask_price_1": "60000.0",
+    "ask_vol_1": 299,
+    "ask_price_2": 60100,
+    "ask_vol_2": 173,
+    "ask_price_3": 60200,
+    "ask_vol_3": 141,
+    "foreign_buy_volume": 0,
     "foreign_sell_volume": 0
   }
 ]

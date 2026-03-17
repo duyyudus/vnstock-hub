@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:50.170783+00:00",
+  "captured_at": "2026-03-17T05:27:27.055598+00:00",
   "package": "vnstock_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_alt.api.listing.Listing",
@@ -17,7 +17,7 @@
   "row_count": null,
   "columns": [],
   "dtypes": {},
-  "preview_rows": "0    41B5G3000\n1    41B5G6000\n2    41B5G9000\n3    41B5GC000\n4    41BAG3000\n5    41BAG6000\n6    41BAG9000\nName: symbol, dtype: str",
+  "preview_rows": "0    41B5G6000\n1    41B5G9000\n2    41B5GC000\n3    41BAG3000\n4    41BAG6000\n5    41BAG9000\nName: symbol, dtype: str",
   "result_type": "Series",
   "error": null
 }

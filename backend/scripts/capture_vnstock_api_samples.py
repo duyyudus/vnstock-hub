@@ -111,6 +111,8 @@ def _sample_value_for_param(
     lowered = name.lower()
     if lowered == "source" and source:
         return _normalize_source_value(package, source)
+    if lowered == "symbols_list":
+        return ["VCB", "TCB"]
     if lowered in {"symbol", "ticker", "code", "index_symbol"}:
         return _choose_symbol(class_path, schema_key)
     if lowered == "index":
@@ -340,10 +342,17 @@ def collect_probe_definitions(
     return list(ordered.values())
 
 
+def _resolve_method(instance: Any, method_path: str) -> Any:
+    target = instance
+    for part in method_path.split("."):
+        target = getattr(target, part)
+    return target
+
+
 def run_probe(probe: dict[str, Any]) -> dict[str, Any]:
     class_obj = import_from_path(probe["class_path"])
     instance = class_obj(**probe.get("init_kwargs", {}))
-    method = getattr(instance, probe["method"])
+    method = _resolve_method(instance, probe["method"])
     result = method(**probe.get("method_kwargs", {}))
 
     payload = {

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:19:43.823421+00:00",
+  "captured_at": "2026-03-17T05:28:55.030535+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
@@ -46,9 +46,9 @@
       "exchange": "HOSE",
       "type": "stock",
       "id": 1,
-      "re": 30000.0,
-      "ceiling": 32100.0,
-      "floor": 27900.0
+      "re": 30200.0,
+      "ceiling": 32300.0,
+      "floor": 28100.0
     },
     {
       "symbol": "VGI",
@@ -57,9 +57,9 @@
       "exchange": "UPCOM",
       "type": "stock",
       "id": 1,
-      "re": 83000.0,
-      "ceiling": 95400.0,
-      "floor": 70600.0
+      "re": 84300.0,
+      "ceiling": 96900.0,
+      "floor": 71700.0
     },
     {
       "symbol": "VKP",

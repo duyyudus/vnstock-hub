@@ -68,7 +68,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:17:59.474845+00:00`
+- Captured at: `2026-03-17T05:27:47.985484+00:00`
 - Success: `True`
 - Row count: `4`
 
@@ -80,19 +80,19 @@ id, sub_organ_code, organ_name, ownership_percent
 ```json
 [
   {
-    "id": "28530750",
+    "id": "28550532",
     "sub_organ_code": "VCBB",
     "organ_name": "Công Ty Liên Doanh Trách Nhiệm Hữu Hạn Vietcombank-bonday-benthanh",
     "ownership_percent": 0.52
   },
   {
-    "id": "28530752",
+    "id": "28550534",
     "sub_organ_code": "VCBBONDAY",
     "organ_name": "Công ty Liên Doanh Hữu Hạn Vietcombank-bonday",
     "ownership_percent": 0.16
   },
   {
-    "id": "28530751",
+    "id": "28550533",
     "sub_organ_code": "VCBF",
     "organ_name": "Công ty TNHH Quản lý quỹ đầu tư chứng khoán Vietcombank",
     "ownership_percent": 0.51
@@ -223,7 +223,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:07.661972+00:00`
+- Captured at: `2026-03-17T05:27:56.112560+00:00`
 - Success: `True`
 - Row count: `32`
 
@@ -285,58 +285,6 @@ id, event_title, en__event_title, public_date, issue_date, source_url, event_lis
 #### Notes / caveats
 
 Retrieve company events.
-
-### history
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
 
 ### insider_trading
 
@@ -458,7 +406,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:24.213380+00:00`
+- Captured at: `2026-03-17T05:28:04.269556+00:00`
 - Success: `True`
 - Row count: `10`
 
@@ -591,7 +539,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:28.318087+00:00`
+- Captured at: `2026-03-17T05:28:08.466821+00:00`
 - Success: `True`
 - Row count: `21`
 
@@ -692,7 +640,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:32.517974+00:00`
+- Captured at: `2026-03-17T05:28:12.644684+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -777,9 +725,9 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:36.614793+00:00`
+- Captured at: `2026-03-17T05:28:16.985570+00:00`
 - Success: `True`
-- Row count: `48`
+- Row count: `47`
 
 ```text
 id, share_holder, quantity, share_own_percent, update_date
@@ -789,21 +737,21 @@ id, share_holder, quantity, share_own_percent, update_date
 ```json
 [
   {
-    "id": "100687276",
+    "id": "100755807",
     "share_holder": "Ngân Hàng Nhà Nước Việt Nam",
     "quantity": 6250338579,
     "share_own_percent": 0.748,
     "update_date": "2026-02-02"
   },
   {
-    "id": "100687221",
+    "id": "100755752",
     "share_holder": "Mizuho Bank Limited",
     "quantity": 1253366534,
     "share_own_percent": 0.15,
     "update_date": "2025-11-21"
   },
   {
-    "id": "100699825",
+    "id": "100768368",
     "share_holder": "Quỹ Đầu tư Chính phủ Singapore (GIC)",
     "quantity": 84503639,
     "share_own_percent": 0.0101,
@@ -871,7 +819,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:18:40.773405+00:00`
+- Captured at: `2026-03-17T05:28:21.478130+00:00`
 - Success: `True`
 - Row count: `12`
 
@@ -883,21 +831,21 @@ id, sub_organ_code, ownership_percent, organ_name, type
 ```json
 [
   {
-    "id": "28530742",
+    "id": "28550524",
     "sub_organ_code": "2646966",
     "ownership_percent": 0.875,
     "organ_name": "Công ty Chuyển tiền Vietcombank",
     "type": "công ty con"
   },
   {
-    "id": "28530743",
+    "id": "28550525",
     "sub_organ_code": "TB",
     "ownership_percent": 1.0,
     "organ_name": "Ngân hàng Thương mại TNHH MTV Ngoại thương Công nghệ Số",
     "type": "công ty con"
   },
   {
-    "id": "28530744",
+    "id": "28550526",
     "sub_organ_code": "VCB198",
     "ownership_percent": 0.7,
     "organ_name": "Công ty TNHH Cao Ốc Vietcombank 198",

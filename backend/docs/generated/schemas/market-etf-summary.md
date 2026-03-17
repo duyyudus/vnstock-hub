@@ -65,14 +65,14 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:16.098035+00:00`
+- Captured at: `2026-03-17T05:27:03.218312+00:00`
 - Success: `True`
 - Row count: `1`
 
 ```text
-high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m, change_1y, dividend_yield, foreign_ownership_pct
+high_52w, low_52w, dividend, beta, eps, bvps, market_cap, change_1m, change_1y, dividend_yield, foreign_ownership_pct
 ```
-- Dtypes: `{'high_52w': 'int64', 'low_52w': 'int64', 'dividend': 'int64', 'beta': 'int64', 'eps': 'int64', 'bvps': 'int64', 'market_cap': 'int64', 'pe': 'float64', 'pb': 'float64', 'roe': 'float64', 'change_1m': 'str', 'change_1y': 'str', 'dividend_yield': 'int64', 'foreign_ownership_pct': 'float64'}`
+- Dtypes: `{'high_52w': 'int64', 'low_52w': 'int64', 'dividend': 'int64', 'beta': 'int64', 'eps': 'int64', 'bvps': 'int64', 'market_cap': 'int64', 'change_1m': 'str', 'change_1y': 'str', 'dividend_yield': 'int64', 'foreign_ownership_pct': 'float64'}`
 
 ```json
 [
@@ -83,12 +83,9 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
     "beta": 0,
     "eps": 0,
     "bvps": 0,
-    "market_cap": 7864896000000,
-    "pe": 21.77,
-    "pb": 1.12,
-    "roe": 5.2,
-    "change_1m": "-8.67",
-    "change_1y": "35.64",
+    "market_cap": 8013200000000,
+    "change_1m": "-6.94",
+    "change_1y": "37.52",
     "dividend_yield": 0,
     "foreign_ownership_pct": 56.2645
   }
@@ -132,7 +129,7 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:16.277151+00:00`
+- Captured at: `2026-03-17T05:27:03.485455+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -150,12 +147,12 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
     "beta": 0,
     "eps": 0,
     "bvps": 0,
-    "market_cap": 7864896000000,
+    "market_cap": 8013200000000,
     "pe": 21.77,
     "pb": 1.12,
     "roe": 5.2,
-    "change_1m": "-8.67",
-    "change_1y": "35.64",
+    "change_1m": "-6.94",
+    "change_1y": "37.52",
     "dividend_yield": 0,
     "foreign_ownership_pct": 56.2645
   }

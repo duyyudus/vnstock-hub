@@ -1,27 +1,583 @@
 {
-  "captured_at": "2026-03-16T11:17:19.937871+00:00",
+  "captured_at": "2026-03-17T05:26:38.565640+00:00",
   "package": "vnstock_alt",
   "class_name": "Trading",
   "class_path": "app.lib.vnstock_alt.api.trading.Trading",
   "method": "price_board",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI",
     "symbol": "VCB"
   },
   "method_kwargs": {
-    "symbols_list": "VCB",
+    "symbols_list": [
+      "VCB",
+      "TCB"
+    ],
     "exchange": "HOSE",
     "show_log": false,
     "get_all": true
   },
-  "success": false,
-  "row_count": 0,
-  "columns": [],
-  "dtypes": {},
-  "preview_rows": [],
-  "result_type": null,
-  "error": "RetryError(<Future at 0x114a6d310 state=finished raised ConnectionError>)"
+  "success": true,
+  "row_count": 2,
+  "columns": [
+    [
+      "listing",
+      "symbol"
+    ],
+    [
+      "listing",
+      "ceiling"
+    ],
+    [
+      "listing",
+      "floor"
+    ],
+    [
+      "listing",
+      "ref_price"
+    ],
+    [
+      "listing",
+      "stock_type"
+    ],
+    [
+      "listing",
+      "exchange"
+    ],
+    [
+      "listing",
+      "trading_status"
+    ],
+    [
+      "listing",
+      "trading_status_code"
+    ],
+    [
+      "listing",
+      "trading_status_group"
+    ],
+    [
+      "listing",
+      "security_status"
+    ],
+    [
+      "listing",
+      "last_trading_date"
+    ],
+    [
+      "listing",
+      "issue_date"
+    ],
+    [
+      "listing",
+      "listed_share"
+    ],
+    [
+      "listing",
+      "coupon_rate"
+    ],
+    [
+      "listing",
+      "yield"
+    ],
+    [
+      "listing",
+      "sending_time"
+    ],
+    [
+      "listing",
+      "type"
+    ],
+    [
+      "listing",
+      "organ_name"
+    ],
+    [
+      "listing",
+      "mapping_symbol"
+    ],
+    [
+      "listing",
+      "product_grp_id"
+    ],
+    [
+      "listing",
+      "partition"
+    ],
+    [
+      "listing",
+      "index_type"
+    ],
+    [
+      "listing",
+      "trading_date"
+    ],
+    [
+      "listing",
+      "lst_trading_status"
+    ],
+    [
+      "listing",
+      "is_delisted"
+    ],
+    [
+      "bid_ask",
+      "transaction_time"
+    ],
+    [
+      "bid_ask",
+      "bid_count"
+    ],
+    [
+      "bid_ask",
+      "ask_count"
+    ],
+    [
+      "match",
+      "accumulated_value"
+    ],
+    [
+      "match",
+      "accumulated_volume"
+    ],
+    [
+      "match",
+      "accumulated_value_g1"
+    ],
+    [
+      "match",
+      "accumulated_volume_g1"
+    ],
+    [
+      "match",
+      "match_price_ato"
+    ],
+    [
+      "match",
+      "match_volume_ato"
+    ],
+    [
+      "match",
+      "match_price_atc"
+    ],
+    [
+      "match",
+      "match_volume_atc"
+    ],
+    [
+      "match",
+      "trading_session_id"
+    ],
+    [
+      "match",
+      "is_last_ato"
+    ],
+    [
+      "match",
+      "avg_match_price"
+    ],
+    [
+      "match",
+      "current_room"
+    ],
+    [
+      "match",
+      "foreign_buy_volume"
+    ],
+    [
+      "match",
+      "foreign_sell_volume"
+    ],
+    [
+      "match",
+      "foreign_buy_value"
+    ],
+    [
+      "match",
+      "foreign_sell_value"
+    ],
+    [
+      "match",
+      "highest"
+    ],
+    [
+      "match",
+      "lowest"
+    ],
+    [
+      "match",
+      "match_price"
+    ],
+    [
+      "match",
+      "open_price"
+    ],
+    [
+      "match",
+      "first_time_match_price"
+    ],
+    [
+      "match",
+      "match_type"
+    ],
+    [
+      "match",
+      "match_vol"
+    ],
+    [
+      "match",
+      "sending_time"
+    ],
+    [
+      "match",
+      "total_room"
+    ],
+    [
+      "match",
+      "total_buy_orders"
+    ],
+    [
+      "match",
+      "total_sell_orders"
+    ],
+    [
+      "match",
+      "bid_count"
+    ],
+    [
+      "match",
+      "ask_count"
+    ],
+    [
+      "match",
+      "underlying"
+    ],
+    [
+      "match",
+      "open_interest"
+    ],
+    [
+      "match",
+      "stock_type"
+    ],
+    [
+      "match",
+      "partition"
+    ],
+    [
+      "match",
+      "is_match_price"
+    ],
+    [
+      "match",
+      "ceiling_price"
+    ],
+    [
+      "match",
+      "floor_price"
+    ],
+    [
+      "match",
+      "reference_price"
+    ],
+    [
+      "match",
+      "last_ato"
+    ],
+    [
+      "bid_ask",
+      "bid_1_price"
+    ],
+    [
+      "bid_ask",
+      "bid_1_volume"
+    ],
+    [
+      "bid_ask",
+      "bid_2_price"
+    ],
+    [
+      "bid_ask",
+      "bid_2_volume"
+    ],
+    [
+      "bid_ask",
+      "bid_3_price"
+    ],
+    [
+      "bid_ask",
+      "bid_3_volume"
+    ],
+    [
+      "bid_ask",
+      "ask_1_price"
+    ],
+    [
+      "bid_ask",
+      "ask_1_volume"
+    ],
+    [
+      "bid_ask",
+      "ask_2_price"
+    ],
+    [
+      "bid_ask",
+      "ask_2_volume"
+    ],
+    [
+      "bid_ask",
+      "ask_3_price"
+    ],
+    [
+      "bid_ask",
+      "ask_3_volume"
+    ]
+  ],
+  "dtypes": {
+    "('listing', 'symbol')": "str",
+    "('listing', 'ceiling')": "int64",
+    "('listing', 'floor')": "int64",
+    "('listing', 'ref_price')": "int64",
+    "('listing', 'stock_type')": "str",
+    "('listing', 'exchange')": "str",
+    "('listing', 'trading_status')": "str",
+    "('listing', 'trading_status_code')": "str",
+    "('listing', 'trading_status_group')": "str",
+    "('listing', 'security_status')": "str",
+    "('listing', 'last_trading_date')": "object",
+    "('listing', 'issue_date')": "object",
+    "('listing', 'listed_share')": "int64",
+    "('listing', 'coupon_rate')": "int64",
+    "('listing', 'yield')": "int64",
+    "('listing', 'sending_time')": "str",
+    "('listing', 'type')": "str",
+    "('listing', 'organ_name')": "str",
+    "('listing', 'mapping_symbol')": "object",
+    "('listing', 'product_grp_id')": "str",
+    "('listing', 'partition')": "int64",
+    "('listing', 'index_type')": "object",
+    "('listing', 'trading_date')": "str",
+    "('listing', 'lst_trading_status')": "object",
+    "('listing', 'is_delisted')": "int64",
+    "('bid_ask', 'transaction_time')": "str",
+    "('bid_ask', 'bid_count')": "int64",
+    "('bid_ask', 'ask_count')": "int64",
+    "('match', 'accumulated_value')": "float64",
+    "('match', 'accumulated_volume')": "int64",
+    "('match', 'accumulated_value_g1')": "float64",
+    "('match', 'accumulated_volume_g1')": "int64",
+    "('match', 'match_price_ato')": "int64",
+    "('match', 'match_volume_ato')": "int64",
+    "('match', 'match_price_atc')": "int64",
+    "('match', 'match_volume_atc')": "int64",
+    "('match', 'trading_session_id')": "str",
+    "('match', 'is_last_ato')": "bool",
+    "('match', 'avg_match_price')": "float64",
+    "('match', 'current_room')": "int64",
+    "('match', 'foreign_buy_volume')": "int64",
+    "('match', 'foreign_sell_volume')": "int64",
+    "('match', 'foreign_buy_value')": "int64",
+    "('match', 'foreign_sell_value')": "int64",
+    "('match', 'highest')": "int64",
+    "('match', 'lowest')": "int64",
+    "('match', 'match_price')": "int64",
+    "('match', 'open_price')": "int64",
+    "('match', 'first_time_match_price')": "str",
+    "('match', 'match_type')": "str",
+    "('match', 'match_vol')": "int64",
+    "('match', 'sending_time')": "str",
+    "('match', 'total_room')": "int64",
+    "('match', 'total_buy_orders')": "int64",
+    "('match', 'total_sell_orders')": "int64",
+    "('match', 'bid_count')": "int64",
+    "('match', 'ask_count')": "int64",
+    "('match', 'underlying')": "object",
+    "('match', 'open_interest')": "object",
+    "('match', 'stock_type')": "str",
+    "('match', 'partition')": "int64",
+    "('match', 'is_match_price')": "bool",
+    "('match', 'ceiling_price')": "int64",
+    "('match', 'floor_price')": "int64",
+    "('match', 'reference_price')": "int64",
+    "('match', 'last_ato')": "bool",
+    "('bid_ask', 'bid_1_price')": "int64",
+    "('bid_ask', 'bid_1_volume')": "int64",
+    "('bid_ask', 'bid_2_price')": "int64",
+    "('bid_ask', 'bid_2_volume')": "int64",
+    "('bid_ask', 'bid_3_price')": "int64",
+    "('bid_ask', 'bid_3_volume')": "int64",
+    "('bid_ask', 'ask_1_price')": "int64",
+    "('bid_ask', 'ask_1_volume')": "int64",
+    "('bid_ask', 'ask_2_price')": "int64",
+    "('bid_ask', 'ask_2_volume')": "int64",
+    "('bid_ask', 'ask_3_price')": "int64",
+    "('bid_ask', 'ask_3_volume')": "int64"
+  },
+  "preview_rows": [
+    {
+      "('listing', 'symbol')": "VCB",
+      "('listing', 'ceiling')": 62900,
+      "('listing', 'floor')": 54700,
+      "('listing', 'ref_price')": 58800,
+      "('listing', 'stock_type')": "STOCK",
+      "('listing', 'exchange')": "HSX",
+      "('listing', 'trading_status')": "TRADING_ACTIVATED",
+      "('listing', 'trading_status_code')": "20",
+      "('listing', 'trading_status_group')": "2",
+      "('listing', 'security_status')": "N",
+      "('listing', 'last_trading_date')": null,
+      "('listing', 'issue_date')": null,
+      "('listing', 'listed_share')": 8355675094,
+      "('listing', 'coupon_rate')": 0,
+      "('listing', 'yield')": 0,
+      "('listing', 'sending_time')": "20260317 01:43:58.508",
+      "('listing', 'type')": "STOCK",
+      "('listing', 'organ_name')": "Ngân hàng Thương mại Cổ phần Ngoại thương Việt Nam",
+      "('listing', 'mapping_symbol')": null,
+      "('listing', 'product_grp_id')": "STO",
+      "('listing', 'partition')": 4,
+      "('listing', 'index_type')": null,
+      "('listing', 'trading_date')": "2026-03-17",
+      "('listing', 'lst_trading_status')": null,
+      "('listing', 'is_delisted')": 0,
+      "('bid_ask', 'transaction_time')": "042958739",
+      "('bid_ask', 'bid_count')": 0,
+      "('bid_ask', 'ask_count')": 0,
+      "('match', 'accumulated_value')": 173411.56,
+      "('match', 'accumulated_volume')": 2900300,
+      "('match', 'accumulated_value_g1')": 173411.56,
+      "('match', 'accumulated_volume_g1')": 2900300,
+      "('match', 'match_price_ato')": 59500,
+      "('match', 'match_volume_ato')": 64300,
+      "('match', 'match_price_atc')": 0,
+      "('match', 'match_volume_atc')": 0,
+      "('match', 'trading_session_id')": "40",
+      "('match', 'is_last_ato')": false,
+      "('match', 'avg_match_price')": 59790.90438920112,
+      "('match', 'current_room')": 790700917,
+      "('match', 'foreign_buy_volume')": 671400,
+      "('match', 'foreign_sell_volume')": 253800,
+      "('match', 'foreign_buy_value')": 40147440000,
+      "('match', 'foreign_sell_value')": 15172170000,
+      "('match', 'highest')": 60100,
+      "('match', 'lowest')": 59400,
+      "('match', 'match_price')": 60000,
+      "('match', 'open_price')": 59500,
+      "('match', 'first_time_match_price')": "2026-03-17T02:15:00.006Z",
+      "('match', 'match_type')": "b",
+      "('match', 'match_vol')": 200,
+      "('match', 'sending_time')": "20260317 04:29:58.739",
+      "('match', 'total_room')": 2506702528,
+      "('match', 'total_buy_orders')": 0,
+      "('match', 'total_sell_orders')": 0,
+      "('match', 'bid_count')": 0,
+      "('match', 'ask_count')": 0,
+      "('match', 'underlying')": null,
+      "('match', 'open_interest')": null,
+      "('match', 'stock_type')": "STOCK",
+      "('match', 'partition')": 4,
+      "('match', 'is_match_price')": false,
+      "('match', 'ceiling_price')": 62900,
+      "('match', 'floor_price')": 54700,
+      "('match', 'reference_price')": 58800,
+      "('match', 'last_ato')": false,
+      "('bid_ask', 'bid_1_price')": 59900,
+      "('bid_ask', 'bid_1_volume')": 33900,
+      "('bid_ask', 'bid_2_price')": 59800,
+      "('bid_ask', 'bid_2_volume')": 111300,
+      "('bid_ask', 'bid_3_price')": 59700,
+      "('bid_ask', 'bid_3_volume')": 209300,
+      "('bid_ask', 'ask_1_price')": 60000,
+      "('bid_ask', 'ask_1_volume')": 269400,
+      "('bid_ask', 'ask_2_price')": 60100,
+      "('bid_ask', 'ask_2_volume')": 279400,
+      "('bid_ask', 'ask_3_price')": 60200,
+      "('bid_ask', 'ask_3_volume')": 167400
+    },
+    {
+      "('listing', 'symbol')": "TCB",
+      "('listing', 'ceiling')": 32300,
+      "('listing', 'floor')": 28100,
+      "('listing', 'ref_price')": 30200,
+      "('listing', 'stock_type')": "STOCK",
+      "('listing', 'exchange')": "HSX",
+      "('listing', 'trading_status')": "TRADING_ACTIVATED",
+      "('listing', 'trading_status_code')": "20",
+      "('listing', 'trading_status_group')": "2",
+      "('listing', 'security_status')": "N",
+      "('listing', 'last_trading_date')": null,
+      "('listing', 'issue_date')": null,
+      "('listing', 'listed_share')": 7086240414,
+      "('listing', 'coupon_rate')": 0,
+      "('listing', 'yield')": 0,
+      "('listing', 'sending_time')": "20260317 01:43:55.078",
+      "('listing', 'type')": "STOCK",
+      "('listing', 'organ_name')": "Ngân hàng Thương mại Cổ phần Kỹ thương Việt Nam",
+      "('listing', 'mapping_symbol')": null,
+      "('listing', 'product_grp_id')": "STO",
+      "('listing', 'partition')": 5,
+      "('listing', 'index_type')": null,
+      "('listing', 'trading_date')": "2026-03-17",
+      "('listing', 'lst_trading_status')": null,
+      "('listing', 'is_delisted')": 0,
+      "('bid_ask', 'transaction_time')": "042956232",
+      "('bid_ask', 'bid_count')": 0,
+      "('bid_ask', 'ask_count')": 0,
+      "('match', 'accumulated_value')": 195978.44,
+      "('match', 'accumulated_volume')": 6384500,
+      "('match', 'accumulated_value_g1')": 195978.44,
+      "('match', 'accumulated_volume_g1')": 6384500,
+      "('match', 'match_price_ato')": 30250,
+      "('match', 'match_volume_ato')": 592300,
+      "('match', 'match_price_atc')": 0,
+      "('match', 'match_volume_atc')": 0,
+      "('match', 'trading_session_id')": "40",
+      "('match', 'is_last_ato')": false,
+      "('match', 'avg_match_price')": 30695.97305975409,
+      "('match', 'current_room')": 0,
+      "('match', 'foreign_buy_volume')": 10100,
+      "('match', 'foreign_sell_volume')": 16,
+      "('match', 'foreign_buy_value')": 305525000,
+      "('match', 'foreign_sell_value')": 483200,
+      "('match', 'highest')": 30900,
+      "('match', 'lowest')": 30250,
+      "('match', 'match_price')": 30700,
+      "('match', 'open_price')": 30250,
+      "('match', 'first_time_match_price')": "2026-03-17T02:15:00.006Z",
+      "('match', 'match_type')": "b",
+      "('match', 'match_vol')": 500,
+      "('match', 'sending_time')": "20260317 04:29:56.232",
+      "('match', 'total_room')": 1597139381,
+      "('match', 'total_buy_orders')": 0,
+      "('match', 'total_sell_orders')": 0,
+      "('match', 'bid_count')": 0,
+      "('match', 'ask_count')": 0,
+      "('match', 'underlying')": null,
+      "('match', 'open_interest')": null,
+      "('match', 'stock_type')": "STOCK",
+      "('match', 'partition')": 5,
+      "('match', 'is_match_price')": false,
+      "('match', 'ceiling_price')": 32300,
+      "('match', 'floor_price')": 28100,
+      "('match', 'reference_price')": 30200,
+      "('match', 'last_ato')": false,
+      "('bid_ask', 'bid_1_price')": 30650,
+      "('bid_ask', 'bid_1_volume')": 19400,
+      "('bid_ask', 'bid_2_price')": 30600,
+      "('bid_ask', 'bid_2_volume')": 45300,
+      "('bid_ask', 'bid_3_price')": 30550,
+      "('bid_ask', 'bid_3_volume')": 68900,
+      "('bid_ask', 'ask_1_price')": 30700,
+      "('bid_ask', 'ask_1_volume')": 4900,
+      "('bid_ask', 'ask_2_price')": 30750,
+      "('bid_ask', 'ask_2_volume')": 25000,
+      "('bid_ask', 'ask_3_price')": 30800,
+      "('bid_ask', 'ask_3_volume')": 297500
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
 }

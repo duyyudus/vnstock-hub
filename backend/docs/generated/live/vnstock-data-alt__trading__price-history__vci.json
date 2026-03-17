@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:20:15.786894+00:00",
+  "captured_at": "2026-03-17T05:29:06.030741+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Trading",
   "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
@@ -52,9 +52,9 @@
     "percent_price_change_adjusted",
     "highest_price_adjusted",
     "lowest_price_adjusted",
+    "price_change_value",
     "total_buy_unmatched_volume",
     "total_sell_unmatched_volume",
-    "price_change_value",
     "average_buy_trade_volume",
     "average_sell_trade_volume",
     "total_net_trade_volume"
@@ -92,9 +92,9 @@
     "percent_price_change_adjusted": "float64",
     "highest_price_adjusted": "float64",
     "lowest_price_adjusted": "float64",
+    "price_change_value": "str",
     "total_buy_unmatched_volume": "float64",
     "total_sell_unmatched_volume": "float64",
-    "price_change_value": "str",
     "average_buy_trade_volume": "float64",
     "average_sell_trade_volume": "float64",
     "total_net_trade_volume": "float64"
@@ -133,9 +133,9 @@
       "percent_price_change_adjusted": 0.0171123,
       "highest_price_adjusted": 63287.2,
       "lowest_price_adjusted": 62091.85,
+      "price_change_value": "+1.063 (+1.7%)",
       "total_buy_unmatched_volume": 3974488.0,
       "total_sell_unmatched_volume": 2153159.0,
-      "price_change_value": "+1.063 (+1.7%)",
       "average_buy_trade_volume": 1972.3379480841,
       "average_sell_trade_volume": 1702.1780481062,
       "total_net_trade_volume": 1821329.0
@@ -173,9 +173,9 @@
       "percent_price_change_adjusted": 0.00537634,
       "highest_price_adjusted": 62556.71,
       "lowest_price_adjusted": 61892.62,
+      "price_change_value": "+332 (+0.5%)",
       "total_buy_unmatched_volume": 1528705.0,
       "total_sell_unmatched_volume": 2386887.0,
-      "price_change_value": "+332 (+0.5%)",
       "average_buy_trade_volume": 1187.5791081246,
       "average_sell_trade_volume": 1559.2365308804,
       "total_net_trade_volume": -858182.0
@@ -213,9 +213,9 @@
       "percent_price_change_adjusted": 0.0,
       "highest_price_adjusted": 62291.07,
       "lowest_price_adjusted": 61759.8,
+      "price_change_value": "0 (0.0%)",
       "total_buy_unmatched_volume": 1244771.0,
       "total_sell_unmatched_volume": 1861419.0,
-      "price_change_value": "0 (0.0%)",
       "average_buy_trade_volume": 1205.3536345776,
       "average_sell_trade_volume": 1958.677830941,
       "total_net_trade_volume": -616648.0

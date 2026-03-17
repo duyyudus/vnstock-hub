@@ -53,7 +53,7 @@ symbol, date, net_value
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:04.898231+00:00`
+- Captured at: `2026-03-17T05:26:50.236393+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -65,19 +65,19 @@ symbol, date, net_value
 ```json
 [
   {
-    "symbol": "MCH",
-    "date": "2026-03-16",
-    "net_value": 114295100000.0
-  },
-  {
-    "symbol": "PVS",
-    "date": "2026-03-16",
-    "net_value": 81343240000.0
-  },
-  {
     "symbol": "VCK",
-    "date": "2026-03-16",
-    "net_value": 55230680000.0
+    "date": "2026-03-17",
+    "net_value": 143322490000.0
+  },
+  {
+    "symbol": "MCH",
+    "date": "2026-03-17",
+    "net_value": 126778020000.0
+  },
+  {
+    "symbol": "MSN",
+    "date": "2026-03-17",
+    "net_value": 54155540000.0
   }
 ]
 ```

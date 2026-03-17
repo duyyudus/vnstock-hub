@@ -7,7 +7,7 @@ This docs set is generated from the vendored source code and local compatibility
 - `vnstock_alt`: 13 exported surfaces
 - `vnstock_data_alt`: 16 exported surfaces
 - `schema keys`: 135
-- `live snapshots`: 285
+- `live snapshots`: 249
 
 ## Browse
 

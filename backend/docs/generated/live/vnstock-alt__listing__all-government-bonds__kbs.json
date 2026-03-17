@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:48.806328+00:00",
+  "captured_at": "2026-03-17T05:27:26.966116+00:00",
   "package": "vnstock_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_alt.api.listing.Listing",
@@ -19,5 +19,5 @@
   "dtypes": {},
   "preview_rows": [],
   "result_type": null,
-  "error": "RetryError(<Future at 0x114952600 state=finished raised RetryError>)"
+  "error": "RetryError(<Future at 0x111f05f70 state=finished raised RetryError>)"
 }

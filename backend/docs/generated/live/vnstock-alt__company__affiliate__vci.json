@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:16:17.870430+00:00",
+  "captured_at": "2026-03-17T05:27:37.425767+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
@@ -30,19 +30,19 @@
   },
   "preview_rows": [
     {
-      "id": "28530750",
+      "id": "28550532",
       "sub_organ_code": "VCBB",
       "organ_name": "Công Ty Liên Doanh Trách Nhiệm Hữu Hạn Vietcombank-bonday-benthanh",
       "ownership_percent": 0.52
     },
     {
-      "id": "28530752",
+      "id": "28550534",
       "sub_organ_code": "VCBBONDAY",
       "organ_name": "Công ty Liên Doanh Hữu Hạn Vietcombank-bonday",
       "ownership_percent": 0.16
     },
     {
-      "id": "28530751",
+      "id": "28550533",
       "sub_organ_code": "VCBF",
       "organ_name": "Công ty TNHH Quản lý quỹ đầu tư chứng khoán Vietcombank",
       "ownership_percent": 0.51

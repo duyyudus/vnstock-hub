@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-03-17T05:26:46.126963+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Fund",
+  "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+  "method": "asset_holding",
+  "source": "fmarket",
+  "schema_key": null,
+  "probe_origin": "manifest",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "fundId": 11
+  },
+  "success": true,
+  "row_count": 2,
+  "columns": [
+    "asset_percent",
+    "asset_type"
+  ],
+  "dtypes": {
+    "asset_percent": "float64",
+    "asset_type": "str"
+  },
+  "preview_rows": [
+    {
+      "asset_percent": 96.67,
+      "asset_type": "Cổ phiếu"
+    },
+    {
+      "asset_percent": 3.33,
+      "asset_type": "Tiền và tương đương tiền"
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

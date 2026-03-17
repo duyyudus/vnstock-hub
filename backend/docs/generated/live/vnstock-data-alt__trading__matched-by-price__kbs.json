@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:20:09.264926+00:00",
+  "captured_at": "2026-03-17T05:29:04.044045+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Trading",
   "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
@@ -15,7 +15,7 @@
     "show_log": false
   },
   "success": true,
-  "row_count": 13,
+  "row_count": 8,
   "columns": [
     "price",
     "buyVol",
@@ -32,25 +32,25 @@
   },
   "preview_rows": [
     {
-      "price": 58600,
+      "price": 59400,
       "buyVol": 0,
-      "sellVol": 80600,
+      "sellVol": 2400,
       "unknownVol": 0,
-      "totalVol": 80600
+      "totalVol": 2400
     },
     {
-      "price": 58700,
-      "buyVol": 89900,
-      "sellVol": 333900,
-      "unknownVol": 0,
-      "totalVol": 423800
+      "price": 59500,
+      "buyVol": 55400,
+      "sellVol": 2000,
+      "unknownVol": 64300,
+      "totalVol": 121700
     },
     {
-      "price": 58800,
-      "buyVol": 210900,
-      "sellVol": 521800,
-      "unknownVol": 169500,
-      "totalVol": 902200
+      "price": 59600,
+      "buyVol": 20700,
+      "sellVol": 150300,
+      "unknownVol": 0,
+      "totalVol": 171000
     }
   ],
   "result_type": "DataFrame",

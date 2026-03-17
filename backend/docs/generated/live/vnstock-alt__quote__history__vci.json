@@ -1,12 +1,12 @@
 {
-  "captured_at": "2026-03-16T11:15:22.911775+00:00",
+  "captured_at": "2026-03-17T05:26:38.704574+00:00",
   "package": "vnstock_alt",
   "class_name": "Quote",
   "class_path": "app.lib.vnstock_alt.api.quote.Quote",
   "method": "history",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI",
     "symbol": "VCB"

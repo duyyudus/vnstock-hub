@@ -47,7 +47,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:20.570726+00:00`
+- Captured at: `2026-03-17T05:28:43.479584+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -91,7 +91,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:20.948392+00:00`
+- Captured at: `2026-03-17T05:28:43.671926+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -156,7 +156,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:21.089226+00:00`
+- Captured at: `2026-03-17T05:28:43.817247+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -200,7 +200,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:21.215954+00:00`
+- Captured at: `2026-03-17T05:28:43.919871+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -265,7 +265,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:21.360755+00:00`
+- Captured at: `2026-03-17T05:28:44.180642+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -368,7 +368,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:21.579879+00:00`
+- Captured at: `2026-03-17T05:28:44.564717+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -412,7 +412,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:21.684815+00:00`
+- Captured at: `2026-03-17T05:28:44.687445+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -516,12 +516,12 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:25.813672+00:00`
+- Captured at: `2026-03-17T05:28:48.816772+00:00`
 - Success: `True`
 - Row count: `None`
 
 ```json
-"0    41B5G3000\n1    41B5G6000\n2    41B5G9000\n3    41B5GC000\n4    41BAG3000\n5    41BAG6000\n6    41BAG9000\nName: symbol, dtype: str"
+"0    41B5G6000\n1    41B5G9000\n2    41B5GC000\n3    41BAG3000\n4    41BAG6000\n5    41BAG9000\nName: symbol, dtype: str"
 ```
 
 ##### Source `vnd`
@@ -581,7 +581,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:25.814999+00:00`
+- Captured at: `2026-03-17T05:28:48.818943+00:00`
 - Success: `True`
 - Row count: `21`
 
@@ -728,7 +728,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:26.237144+00:00`
+- Captured at: `2026-03-17T05:28:49.562807+00:00`
 - Success: `True`
 - Row count: `1545`
 
@@ -740,16 +740,16 @@ symbol, organ_name
 ```json
 [
   {
-    "symbol": "TCB",
-    "organ_name": "Ngân hàng TMCP Kỹ thương Việt Nam"
+    "symbol": "DPP",
+    "organ_name": "CTCP Dược Đồng Nai"
   },
   {
-    "symbol": "VGI",
-    "organ_name": "Tổng Công ty cổ phần Đầu tư Quốc tế Viettel"
+    "symbol": "SDA",
+    "organ_name": "CTCP Simco Sông Đà"
   },
   {
-    "symbol": "VKP",
-    "organ_name": "CTCP Nhựa Tân Hóa"
+    "symbol": "CLH",
+    "organ_name": "CTCP Xi măng La Hiên VVMI"
   }
 ]
 ```
@@ -790,7 +790,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:26.458476+00:00`
+- Captured at: `2026-03-17T05:28:49.940531+00:00`
 - Success: `True`
 - Row count: `1738`
 
@@ -833,66 +833,66 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:27.049602+00:00`
+- Captured at: `2026-03-17T05:28:50.529144+00:00`
 - Success: `True`
 - Row count: `1980`
 
 ```text
-symbol, type, exchange, status, company_name, company_name_eng, short_name, listed_date, delisted_date, company_id, fund_type, isin, short_name_eng, tax_code, index_code
+symbol, type, exchange, isin, status, company_name, company_name_eng, short_name, short_name_eng, listed_date, company_id, fund_type, delisted_date, tax_code, index_code
 ```
-- Dtypes: `{'symbol': 'str', 'type': 'str', 'exchange': 'str', 'status': 'str', 'company_name': 'str', 'company_name_eng': 'str', 'short_name': 'str', 'listed_date': 'str', 'delisted_date': 'str', 'company_id': 'str', 'fund_type': 'str', 'isin': 'str', 'short_name_eng': 'str', 'tax_code': 'str', 'index_code': 'str'}`
+- Dtypes: `{'symbol': 'str', 'type': 'str', 'exchange': 'str', 'isin': 'str', 'status': 'str', 'company_name': 'str', 'company_name_eng': 'str', 'short_name': 'str', 'short_name_eng': 'str', 'listed_date': 'str', 'company_id': 'str', 'fund_type': 'str', 'delisted_date': 'str', 'tax_code': 'str', 'index_code': 'str'}`
 
 ```json
 [
   {
-    "symbol": "ENF",
-    "type": "IFC",
-    "exchange": "UPCOM",
-    "status": "delisted",
-    "company_name": "Quỹ Đầu tư Năng động Eastspring Investments Việt Nam",
-    "company_name_eng": "Eastspring Investments Vietnam Navigator Fund",
-    "short_name": "Quỹ đầu tư ENF",
-    "listed_date": "2001-01-01",
-    "delisted_date": "2001-01-01",
-    "company_id": "3903",
-    "fund_type": "BALANCED_MUTUAL_FUND",
-    "isin": NaN,
-    "short_name_eng": NaN,
-    "tax_code": NaN,
-    "index_code": NaN
-  },
-  {
     "symbol": "DCDS",
     "type": "IFC",
     "exchange": "UPCOM",
+    "isin": "VN000000DCV0",
     "status": "listed",
     "company_name": "Cổ phiếu CTCP Quản lý quỹ Đầu tư Dragon Capital Việt Nam",
     "company_name_eng": "Dragon Capital Vietfund Management Joint stock company",
     "short_name": "DCV",
+    "short_name_eng": "DCV",
     "listed_date": "2026-01-19",
-    "delisted_date": NaN,
     "company_id": "88",
     "fund_type": "STOCK_FUND",
-    "isin": "VN000000DCV0",
-    "short_name_eng": "DCV",
+    "delisted_date": NaN,
     "tax_code": NaN,
     "index_code": NaN
   },
   {
-    "symbol": "FUCVREIT",
+    "symbol": "ENF",
+    "type": "IFC",
+    "exchange": "UPCOM",
+    "isin": NaN,
+    "status": "delisted",
+    "company_name": "Quỹ Đầu tư Năng động Eastspring Investments Việt Nam",
+    "company_name_eng": "Eastspring Investments Vietnam Navigator Fund",
+    "short_name": "Quỹ đầu tư ENF",
+    "short_name_eng": NaN,
+    "listed_date": "2001-01-01",
+    "company_id": "3903",
+    "fund_type": "BALANCED_MUTUAL_FUND",
+    "delisted_date": "2001-01-01",
+    "tax_code": NaN,
+    "index_code": NaN
+  },
+  {
+    "symbol": "FUCTVGF5",
     "type": "IFC",
     "exchange": "HOSE",
+    "isin": "VN0FUCTVGF54",
     "status": "listed",
-    "company_name": "Quỹ đầu tư bất động sản Techcom Việt Nam",
-    "company_name_eng": "Techcom Vietnam REIT Fund",
-    "short_name": "Quỹ BĐS Techcom VN",
-    "listed_date": "2017-02-27",
-    "delisted_date": NaN,
-    "company_id": "5169",
+    "company_name": "Quỹ đầu tư tăng trưởng Thiên Việt 5",
+    "company_name_eng": "Thien Viet Growth Fund 5",
+    "short_name": "Quỹ Thiên Việt 5",
+    "short_name_eng": "TVGF5",
+    "listed_date": "2023-12-29",
+    "company_id": "15034",
     "fund_type": NaN,
-    "isin": "VN0FUCVREIT6",
-    "short_name_eng": NaN,
-    "tax_code": "0102995749-001",
+    "delisted_date": NaN,
+    "tax_code": NaN,
     "index_code": NaN
   }
 ]
@@ -901,96 +901,6 @@ symbol, type, exchange, status, company_name, company_name_eng, short_name, list
 #### Notes / caveats
 
 Retrieve all symbols (filtered to STOCK).
-
-### history
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `msn`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vnd`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
 
 ### indices_by_group
 
@@ -1027,7 +937,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:39.076583+00:00`
+- Captured at: `2026-03-17T05:28:50.531146+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -1184,7 +1094,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:43.409441+00:00`
+- Captured at: `2026-03-17T05:28:54.704881+00:00`
 - Success: `True`
 - Row count: `155`
 
@@ -1274,7 +1184,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:43.823421+00:00`
+- Captured at: `2026-03-17T05:28:55.030535+00:00`
 - Success: `True`
 - Row count: `1967`
 
@@ -1292,9 +1202,9 @@ symbol, organ_name, en_organ_name, exchange, type, id, re, ceiling, floor
     "exchange": "HOSE",
     "type": "stock",
     "id": 1,
-    "re": 30000.0,
-    "ceiling": 32100.0,
-    "floor": 27900.0
+    "re": 30200.0,
+    "ceiling": 32300.0,
+    "floor": 28100.0
   },
   {
     "symbol": "VGI",
@@ -1303,9 +1213,9 @@ symbol, organ_name, en_organ_name, exchange, type, id, re, ceiling, floor
     "exchange": "UPCOM",
     "type": "stock",
     "id": 1,
-    "re": 83000.0,
-    "ceiling": 95400.0,
-    "floor": 70600.0
+    "re": 84300.0,
+    "ceiling": 96900.0,
+    "floor": 71700.0
   },
   {
     "symbol": "VKP",
@@ -1357,7 +1267,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:44.127666+00:00`
+- Captured at: `2026-03-17T05:28:55.618311+00:00`
 - Success: `True`
 - Row count: `3308`
 
@@ -1456,7 +1366,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:44.279288+00:00`
+- Captured at: `2026-03-17T05:28:55.757092+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -1500,7 +1410,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:44.375375+00:00`
+- Captured at: `2026-03-17T05:28:55.901608+00:00`
 - Success: `True`
 - Row count: `None`
 
@@ -1566,7 +1476,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:52.409337+00:00`
+- Captured at: `2026-03-17T05:29:01.406896+00:00`
 - Success: `True`
 - Row count: `625`
 
@@ -1581,28 +1491,28 @@ symbol, industry_code, industry_name
     "symbol": {
       "name": "SX Phụ trợ",
       "code": 26,
-      "change": -4.99161
+      "change": -3.749553
     },
-    "industry_code": 19,
-    "industry_name": "Thực phẩm - Đồ uống"
+    "industry_code": 5,
+    "industry_name": "Chứng khoán"
   },
   {
     "symbol": {
-      "name": "SX Nhựa - Hóa chất",
-      "code": 18,
-      "change": -3.115701
+      "name": "Khai khoáng",
+      "code": 10,
+      "change": -0.434627
     },
-    "industry_code": 19,
-    "industry_name": "Thực phẩm - Đồ uống"
+    "industry_code": 5,
+    "industry_name": "Chứng khoán"
   },
   {
     "symbol": {
-      "name": "Tiện ích",
-      "code": 22,
-      "change": -2.717101
+      "name": "Dịch vụ lưu trú, ăn uống, giải trí",
+      "code": 25,
+      "change": -0.246161
     },
-    "industry_code": 19,
-    "industry_name": "Thực phẩm - Đồ uống"
+    "industry_code": 5,
+    "industry_name": "Chứng khoán"
   }
 ]
 ```
@@ -1643,7 +1553,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:52.587308+00:00`
+- Captured at: `2026-03-17T05:29:01.747137+00:00`
 - Success: `True`
 - Row count: `6200`
 

@@ -65,7 +65,7 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:13.564064+00:00`
+- Captured at: `2026-03-17T05:26:58.629402+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -83,14 +83,14 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
     "beta": 0.77,
     "eps": 4542,
     "bvps": 27231.3,
-    "market_cap": 491313695527200,
-    "pe": "12.99",
-    "pb": "2.17",
+    "market_cap": 501340505640000,
+    "pe": "12.95",
+    "pb": "2.16",
     "roe": 16.61,
-    "change_1m": "-8.70",
-    "change_1y": "-10.33",
-    "dividend_yield": 0.007653061224489796,
-    "foreign_ownership_pct": 20.539
+    "change_1m": "-6.83",
+    "change_1y": "-10.27",
+    "dividend_yield": 0.0075,
+    "foreign_ownership_pct": 20.537
   }
 ]
 ```
@@ -132,7 +132,7 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:13.729364+00:00`
+- Captured at: `2026-03-17T05:26:59.279688+00:00`
 - Success: `True`
 - Row count: `1`
 
@@ -150,14 +150,14 @@ high_52w, low_52w, dividend, beta, eps, bvps, market_cap, pe, pb, roe, change_1m
     "beta": 0.77,
     "eps": 4542,
     "bvps": 27231.3,
-    "market_cap": 491313695527200,
-    "pe": "12.99",
-    "pb": "2.17",
+    "market_cap": 501340505640000,
+    "pe": "12.95",
+    "pb": "2.16",
     "roe": 16.61,
-    "change_1m": "-8.70",
-    "change_1y": "-10.33",
-    "dividend_yield": 0.007653061224489796,
-    "foreign_ownership_pct": 20.539
+    "change_1m": "-6.83",
+    "change_1y": "-10.27",
+    "dividend_yield": 0.0075,
+    "foreign_ownership_pct": 20.537
   }
 ]
 ```

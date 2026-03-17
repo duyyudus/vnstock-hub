@@ -48,9 +48,9 @@ symbol, name, total_shares, rate, date
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:03.408906+00:00`
+- Captured at: `2026-03-17T05:26:48.360101+00:00`
 - Success: `True`
-- Row count: `48`
+- Row count: `47`
 
 ```text
 name, total_shares, rate, date
@@ -110,9 +110,9 @@ symbol, name, total_shares, rate, date
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:03.596788+00:00`
+- Captured at: `2026-03-17T05:26:48.458787+00:00`
 - Success: `True`
-- Row count: `48`
+- Row count: `47`
 
 ```text
 name, total_shares, rate, date

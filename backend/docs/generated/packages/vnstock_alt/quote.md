@@ -71,7 +71,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:22.680551+00:00`
+- Captured at: `2026-03-17T05:27:09.409565+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -147,7 +147,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:22.911775+00:00`
+- Captured at: `2026-03-17T05:26:38.704574+00:00`
 - Success: `True`
 - Row count: `6`
 
@@ -253,7 +253,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:23.053558+00:00`
+- Captured at: `2026-03-17T05:27:09.641254+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -265,25 +265,25 @@ time, price, volume, match_type, id
 ```json
 [
   {
-    "time": "2026-03-16T14:29:38",
-    "price": 58.9,
-    "volume": 700,
-    "match_type": "sell",
-    "id": "2026-03-16_142938_589000_700"
-  },
-  {
-    "time": "2026-03-16T14:29:46",
-    "price": 59.0,
-    "volume": 300,
+    "time": "2026-03-17T11:29:58",
+    "price": 60.0,
+    "volume": 200,
     "match_type": "buy",
-    "id": "2026-03-16_142946_590000_300"
+    "id": "2026-03-17_112958_600000_200"
   },
   {
-    "time": "2026-03-16T14:29:48",
-    "price": 58.9,
-    "volume": 5000,
-    "match_type": "sell",
-    "id": "2026-03-16_142948_589000_5000"
+    "time": "2026-03-17T11:29:51",
+    "price": 60.0,
+    "volume": 100,
+    "match_type": "buy",
+    "id": "2026-03-17_112951_600000_100"
+  },
+  {
+    "time": "2026-03-17T11:29:49",
+    "price": 60.0,
+    "volume": 2000,
+    "match_type": "buy",
+    "id": "2026-03-17_112949_600000_2000"
   }
 ]
 ```
@@ -324,7 +324,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:23.159697+00:00`
+- Captured at: `2026-03-17T05:27:09.803580+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -336,25 +336,25 @@ time, price, volume, match_type, id
 ```json
 [
   {
-    "time": "2026-03-16T14:29:36+07:00",
-    "price": 59.0,
-    "volume": 100,
+    "time": "2026-03-17T11:29:42+07:00",
+    "price": 60.0,
+    "volume": 1000,
     "match_type": "Buy",
-    "id": "450295880"
+    "id": "450617896"
   },
   {
-    "time": "2026-03-16T14:29:38+07:00",
-    "price": 58.9,
-    "volume": 700,
-    "match_type": "Sell",
-    "id": "450296084"
+    "time": "2026-03-17T11:29:48+07:00",
+    "price": 60.0,
+    "volume": 200,
+    "match_type": "Buy",
+    "id": "450618091"
   },
   {
-    "time": "2026-03-16T14:29:46+07:00",
-    "price": 59.0,
-    "volume": 300,
+    "time": "2026-03-17T11:29:49+07:00",
+    "price": 60.0,
+    "volume": 2000,
     "match_type": "Buy",
-    "id": "450296750"
+    "id": "450618131"
   }
 ]
 ```
@@ -368,104 +368,3 @@ Tải dữ liệu giao dịch trong ngày cho mã chứng khoán.
     >>> quote = Quote(symbol="VCI", source="vci")
     >>> df = quote.intraday()
     >>> df = quote.intraday(symbol="FPT", page_size=200)
-
-### price_depth
-
-- Kind: `method`
-- Signature: `(symbol: Optional[str] = None, **kwargs: Any) -> pandas.DataFrame`
-- Return type: `<class 'pandas.DataFrame'>`
-- Purpose: Load price depth (order book) data for the symbol.
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation | Description |
-| --- | --- | --- | --- | --- | --- |
-| `symbol` | `POSITIONAL_OR_KEYWORD` | `False` | `None` | `Optional[str]` | Stock symbol. Mã chứng khoán. |
-
-#### Source details
-
-##### Source `fmp`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `price_depth` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `price_depth` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `msn`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `price_depth` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `price_depth` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-#### Notes / caveats
-
-Load price depth (order book) data for the symbol.
-Tải dữ liệu độ sâu giá (sổ lệnh) cho mã chứng khoán.
-
-**Examples**
-    >>> quote = Quote(symbol="VCI", source="vci")
-    >>> df = quote.price_depth()
-    >>> df = quote.price_depth(symbol="FPT")

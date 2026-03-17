@@ -1,19 +1,17 @@
 {
-  "captured_at": "2026-03-16T11:16:27.403202+00:00",
+  "captured_at": "2026-03-17T05:26:43.700876+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
   "method": "overview",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI",
     "symbol": "VCB"
   },
-  "method_kwargs": {
-    "show_log": false
-  },
+  "method_kwargs": {},
   "success": true,
   "row_count": 1,
   "columns": [

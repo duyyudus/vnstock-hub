@@ -61,7 +61,7 @@ time, open, high, low, close, volume, value, ticker
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:20.601507+00:00`
+- Captured at: `2026-03-17T05:27:07.760286+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -131,7 +131,7 @@ time, open, high, low, close, volume, value, ticker
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:20.818658+00:00`
+- Captured at: `2026-03-17T05:27:07.905828+00:00`
 - Success: `True`
 - Row count: `5`
 

@@ -12,7 +12,7 @@ Coverage levels reflect how confidently the docs can describe output shape from 
 - `declared`: 248
 - `partially-derived`: 140
 - `live-observed`: 0
-- `not-available`: 102
+- `not-available`: 55
 
 ## Notes
 

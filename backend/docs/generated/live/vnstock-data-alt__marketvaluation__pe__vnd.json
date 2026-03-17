@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:06.761435+00:00",
+  "captured_at": "2026-03-17T05:26:53.641549+00:00",
   "package": "vnstock_data_alt",
   "class_name": "MarketValuation",
   "class_path": "app.lib.vnstock_data_alt.ui.domains.analytics.valuation.MarketValuation",
@@ -14,7 +14,7 @@
     "duration": "1Y"
   },
   "success": true,
-  "row_count": 247,
+  "row_count": 248,
   "columns": [
     "pe"
   ],

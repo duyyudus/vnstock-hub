@@ -666,6 +666,12 @@ def _collect_package_exports(
     elif package_key == "vnstock_data_alt":
         contract_map = compat.VNSTOCK_DATA_ROOT_METHODS
 
+    def should_skip_method(method_entry: dict[str, Any]) -> bool:
+        raw_outputs = method_entry.get("raw_outputs", [])
+        if not raw_outputs or method_entry.get("live_samples"):
+            return False
+        return all(item.get("coverage") == "not-available" for item in raw_outputs)
+
     exports: list[dict[str, Any]] = []
     for name in getattr(module, "__all__", []):
         obj = maybe_getattr(module, name)
@@ -728,6 +734,8 @@ def _collect_package_exports(
                     "normalized_output": None,
                     "live_samples": method_live_samples,
                 }
+                if should_skip_method(method_entry):
+                    continue
                 class_entry["methods"].append(method_entry)
             exports.append(class_entry)
             continue

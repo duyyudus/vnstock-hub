@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:16:07.458202+00:00",
+  "captured_at": "2026-03-17T05:27:31.313561+00:00",
   "package": "vnstock_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_alt.api.listing.Listing",
@@ -19,5 +19,5 @@
   "dtypes": {},
   "preview_rows": [],
   "result_type": null,
-  "error": "RetryError(<Future at 0x114d52ba0 state=finished raised NotImplementedError>)"
+  "error": "RetryError(<Future at 0x1170ab110 state=finished raised NotImplementedError>)"
 }

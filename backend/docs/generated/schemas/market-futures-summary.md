@@ -66,29 +66,29 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:20.054177+00:00`
+- Captured at: `2026-03-17T05:27:07.226887+00:00`
 - Success: `True`
 - Row count: `1`
 
 ```text
 symbol, exchange, reference_price, ceiling_price, floor_price, open_interest, basis, first_trading_date, last_trading_date, underlying_symbol, foreign_buy_volume, foreign_sell_volume
 ```
-- Dtypes: `{'symbol': 'str', 'exchange': 'str', 'reference_price': 'int64', 'ceiling_price': 'float64', 'floor_price': 'float64', 'open_interest': 'str', 'basis': 'str', 'first_trading_date': 'str', 'last_trading_date': 'str', 'underlying_symbol': 'str', 'foreign_buy_volume': 'int64', 'foreign_sell_volume': 'int64'}`
+- Dtypes: `{'symbol': 'str', 'exchange': 'str', 'reference_price': 'float64', 'ceiling_price': 'float64', 'floor_price': 'float64', 'open_interest': 'str', 'basis': 'str', 'first_trading_date': 'str', 'last_trading_date': 'str', 'underlying_symbol': 'str', 'foreign_buy_volume': 'int64', 'foreign_sell_volume': 'int64'}`
 
 ```json
 [
   {
     "symbol": "41I1G3000",
     "exchange": "HNX",
-    "reference_price": 1840,
-    "ceiling_price": 1968.8,
-    "floor_price": 1711.2,
-    "open_interest": "40334",
-    "basis": "-1.69",
+    "reference_price": 1851.3,
+    "ceiling_price": 1980.8,
+    "floor_price": 1721.8,
+    "open_interest": "36252",
+    "basis": "5.53",
     "first_trading_date": "18/07/2025",
     "last_trading_date": "19/03/2026",
     "underlying_symbol": "VN30",
-    "foreign_buy_volume": 11202,
+    "foreign_buy_volume": 6347,
     "foreign_sell_volume": 0
   }
 ]

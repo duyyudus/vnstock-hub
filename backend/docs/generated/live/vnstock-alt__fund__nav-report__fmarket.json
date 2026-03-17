@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-03-17T05:26:45.524608+00:00",
+  "package": "vnstock_alt",
+  "class_name": "Fund",
+  "class_path": "app.lib.vnstock_alt.explorer.fmarket.fund.Fund",
+  "method": "nav_report",
+  "source": "fmarket",
+  "schema_key": null,
+  "probe_origin": "manifest",
+  "init_kwargs": {},
+  "method_kwargs": {
+    "fundId": 11
+  },
+  "success": true,
+  "row_count": 2087,
+  "columns": [
+    "date",
+    "nav_per_unit"
+  ],
+  "dtypes": {
+    "date": "str",
+    "nav_per_unit": "float64"
+  },
+  "preview_rows": [
+    {
+      "date": "2014-09-26",
+      "nav_per_unit": 10000.0
+    },
+    {
+      "date": "2014-09-30",
+      "nav_per_unit": 10403.38
+    },
+    {
+      "date": "2014-10-01",
+      "nav_per_unit": 10498.19
+    }
+  ],
+  "result_type": "DataFrame",
+  "error": null
+}

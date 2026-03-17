@@ -18,13 +18,13 @@ Order book levels (Best Bid/Ask L2/L3).
 
 ## Parameters
 
-| Name | Kind | Required | Default | Annotation | Accepted values | Description |
-| --- | --- | --- | --- | --- | --- | --- |
-| `symbols_list` | `POSITIONAL_OR_KEYWORD` | `True` | `None` | `List[str]` | `ACB`, `VNM` | List of symbols (e.g., ['ACB', 'VNM']). |
-| `board` | `POSITIONAL_OR_KEYWORD` | `False` | `stock` | `str` | `stock`, `odd_lot`, `put_through`, `derivatives` | Board type ('stock', 'odd_lot', 'put_through', 'derivatives'). |
-| `exchange` | `POSITIONAL_OR_KEYWORD` | `False` | `HOSE` | `str` | `HOSE`, `HNX`, `UPCOM` | Exchange ('HOSE', 'HNX', 'UPCOM'). |
-| `show_log` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` |  | Display debug logs. |
-| `get_all` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` |  | If True, return all raw columns. Otherwise, standard columns. |
+| Name | Kind | Required | Default | Annotation | Observed example | Accepted values | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `symbols_list` | `POSITIONAL_OR_KEYWORD` | `True` | `None` | `List[str]` | `['VCB', 'TCB']` | `ACB`, `VNM` | List of symbols (e.g., ['ACB', 'VNM']). |
+| `board` | `POSITIONAL_OR_KEYWORD` | `False` | `stock` | `str` | `omitted; default 'stock'` | `stock`, `odd_lot`, `put_through`, `derivatives` | Board type ('stock', 'odd_lot', 'put_through', 'derivatives'). |
+| `exchange` | `POSITIONAL_OR_KEYWORD` | `False` | `HOSE` | `str` | `HOSE` | `HOSE`, `HNX`, `UPCOM` | Exchange ('HOSE', 'HNX', 'UPCOM'). |
+| `show_log` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` | `False` |  | Display debug logs. |
+| `get_all` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` | `True` |  | If True, return all raw columns. Otherwise, standard columns. |
 
 ## Source details
 
@@ -94,9 +94,47 @@ bid_price_1, bid_vol_1, bid_price_2, bid_vol_2, bid_price_3, bid_vol_3, bid_pric
 
 #### Live-observed sample
 
-_No live sample is attached to this exact endpoint yet._
+- Captured at: `2026-03-17T05:27:06.389222+00:00`
+- Success: `True`
+- Row count: `2`
 
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
+```text
+bid_price_1, bid_vol_1, bid_price_2, bid_vol_2, bid_price_3, bid_vol_3, ask_price_1, ask_vol_1, ask_price_2, ask_vol_2, ask_price_3, ask_vol_3
+```
+- Dtypes: `{'bid_price_1': 'str', 'bid_vol_1': 'int64', 'bid_price_2': 'int64', 'bid_vol_2': 'int64', 'bid_price_3': 'int64', 'bid_vol_3': 'int64', 'ask_price_1': 'str', 'ask_vol_1': 'int64', 'ask_price_2': 'int64', 'ask_vol_2': 'int64', 'ask_price_3': 'int64', 'ask_vol_3': 'int64'}`
+
+```json
+[
+  {
+    "bid_price_1": "59900.0",
+    "bid_vol_1": 33900,
+    "bid_price_2": 59800,
+    "bid_vol_2": 111300,
+    "bid_price_3": 59700,
+    "bid_vol_3": 209300,
+    "ask_price_1": "60000.0",
+    "ask_vol_1": 269400,
+    "ask_price_2": 60100,
+    "ask_vol_2": 279400,
+    "ask_price_3": 60200,
+    "ask_vol_3": 167400
+  },
+  {
+    "bid_price_1": "30650.0",
+    "bid_vol_1": 19400,
+    "bid_price_2": 30600,
+    "bid_vol_2": 45300,
+    "bid_price_3": 30550,
+    "bid_vol_3": 68900,
+    "ask_price_1": "30700.0",
+    "ask_vol_1": 4900,
+    "ask_price_2": 30750,
+    "ask_vol_2": 25000,
+    "ask_price_3": 30800,
+    "ask_vol_3": 297500
+  }
+]
+```
 
 ### Source `msn`
 
@@ -161,6 +199,44 @@ bid_price_1, bid_vol_1, bid_price_2, bid_vol_2, bid_price_3, bid_vol_3, bid_pric
 
 #### Live-observed sample
 
-_No live sample is attached to this exact endpoint yet._
+- Captured at: `2026-03-17T05:27:06.618554+00:00`
+- Success: `True`
+- Row count: `2`
 
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
+```text
+bid_price_1, bid_vol_1, bid_price_2, bid_vol_2, bid_price_3, bid_vol_3, ask_price_1, ask_vol_1, ask_price_2, ask_vol_2, ask_price_3, ask_vol_3
+```
+- Dtypes: `{'bid_price_1': 'str', 'bid_vol_1': 'int64', 'bid_price_2': 'int64', 'bid_vol_2': 'int64', 'bid_price_3': 'int64', 'bid_vol_3': 'int64', 'ask_price_1': 'str', 'ask_vol_1': 'int64', 'ask_price_2': 'int64', 'ask_vol_2': 'int64', 'ask_price_3': 'int64', 'ask_vol_3': 'int64'}`
+
+```json
+[
+  {
+    "bid_price_1": "59900.0",
+    "bid_vol_1": 33900,
+    "bid_price_2": 59800,
+    "bid_vol_2": 111300,
+    "bid_price_3": 59700,
+    "bid_vol_3": 209300,
+    "ask_price_1": "60000.0",
+    "ask_vol_1": 269400,
+    "ask_price_2": 60100,
+    "ask_vol_2": 279400,
+    "ask_price_3": 60200,
+    "ask_vol_3": 167400
+  },
+  {
+    "bid_price_1": "30650.0",
+    "bid_vol_1": 19400,
+    "bid_price_2": 30600,
+    "bid_vol_2": 45300,
+    "bid_price_3": 30550,
+    "bid_vol_3": 68900,
+    "ask_price_1": "30700.0",
+    "ask_vol_1": 4900,
+    "ask_price_2": 30750,
+    "ask_vol_2": 25000,
+    "ask_price_3": 30800,
+    "ask_vol_3": 297500
+  }
+]
+```

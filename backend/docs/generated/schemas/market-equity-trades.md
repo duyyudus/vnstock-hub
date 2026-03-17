@@ -59,7 +59,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:13.894160+00:00`
+- Captured at: `2026-03-17T05:26:59.434827+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -71,25 +71,25 @@ time, price, volume, match_type, id
 ```json
 [
   {
-    "time": "2026-03-16T14:29:38",
-    "price": 58.9,
-    "volume": 700,
-    "match_type": "Sell",
-    "id": "2026-03-16_142938_589000_700"
-  },
-  {
-    "time": "2026-03-16T14:29:46",
-    "price": 59.0,
-    "volume": 300,
+    "time": "2026-03-17T11:29:58",
+    "price": 60.0,
+    "volume": 200,
     "match_type": "Buy",
-    "id": "2026-03-16_142946_590000_300"
+    "id": "2026-03-17_112958_600000_200"
   },
   {
-    "time": "2026-03-16T14:29:48",
-    "price": 58.9,
-    "volume": 5000,
-    "match_type": "Sell",
-    "id": "2026-03-16_142948_589000_5000"
+    "time": "2026-03-17T11:29:51",
+    "price": 60.0,
+    "volume": 100,
+    "match_type": "Buy",
+    "id": "2026-03-17_112951_600000_100"
+  },
+  {
+    "time": "2026-03-17T11:29:49",
+    "price": 60.0,
+    "volume": 2000,
+    "match_type": "Buy",
+    "id": "2026-03-17_112949_600000_2000"
   }
 ]
 ```
@@ -127,7 +127,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:14.124120+00:00`
+- Captured at: `2026-03-17T05:26:59.586847+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -139,25 +139,25 @@ time, price, volume, match_type, id
 ```json
 [
   {
-    "time": "2026-03-16T14:29:38",
-    "price": 58.9,
-    "volume": 700,
-    "match_type": "Sell",
-    "id": "2026-03-16_142938_589000_700"
-  },
-  {
-    "time": "2026-03-16T14:29:46",
-    "price": 59.0,
-    "volume": 300,
+    "time": "2026-03-17T11:29:58",
+    "price": 60.0,
+    "volume": 200,
     "match_type": "Buy",
-    "id": "2026-03-16_142946_590000_300"
+    "id": "2026-03-17_112958_600000_200"
   },
   {
-    "time": "2026-03-16T14:29:48",
-    "price": 58.9,
-    "volume": 5000,
-    "match_type": "Sell",
-    "id": "2026-03-16_142948_589000_5000"
+    "time": "2026-03-17T11:29:51",
+    "price": 60.0,
+    "volume": 100,
+    "match_type": "Buy",
+    "id": "2026-03-17_112951_600000_100"
+  },
+  {
+    "time": "2026-03-17T11:29:49",
+    "price": 60.0,
+    "volume": 2000,
+    "match_type": "Buy",
+    "id": "2026-03-17_112949_600000_2000"
   }
 ]
 ```

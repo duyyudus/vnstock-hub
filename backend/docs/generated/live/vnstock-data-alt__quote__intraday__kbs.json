@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:17:53.214799+00:00",
+  "captured_at": "2026-03-17T05:27:42.582468+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Quote",
   "class_path": "app.lib.vnstock_data_alt.api.quote.Quote",
@@ -46,40 +46,40 @@
   },
   "preview_rows": [
     {
-      "time": "2026-03-16T14:29:38",
-      "price": 58.9,
-      "volume": 700,
-      "match_type": "sell",
-      "id": "2026-03-16_142938_589000_700",
-      "trading_date": "16/03/2026",
-      "symbol": "VCB",
-      "price_change": -100.0,
-      "accumulated_volume": 3811100,
-      "accumulated_value": 224685000000.0
-    },
-    {
-      "time": "2026-03-16T14:29:46",
-      "price": 59.0,
-      "volume": 300,
+      "time": "2026-03-17T11:29:58",
+      "price": 60.0,
+      "volume": 200,
       "match_type": "buy",
-      "id": "2026-03-16_142946_590000_300",
-      "trading_date": "16/03/2026",
+      "id": "2026-03-17_112958_600000_200",
+      "trading_date": "17/03/2026",
       "symbol": "VCB",
-      "price_change": 0.0,
-      "accumulated_volume": 3811400,
-      "accumulated_value": 224702700000.0
+      "price_change": 1200.0,
+      "accumulated_volume": 2900300,
+      "accumulated_value": 173411560000.0
     },
     {
-      "time": "2026-03-16T14:29:48",
-      "price": 58.9,
-      "volume": 5000,
-      "match_type": "sell",
-      "id": "2026-03-16_142948_589000_5000",
-      "trading_date": "16/03/2026",
+      "time": "2026-03-17T11:29:51",
+      "price": 60.0,
+      "volume": 100,
+      "match_type": "buy",
+      "id": "2026-03-17_112951_600000_100",
+      "trading_date": "17/03/2026",
       "symbol": "VCB",
-      "price_change": -100.0,
-      "accumulated_volume": 3816400,
-      "accumulated_value": 224997200000.0
+      "price_change": 1200.0,
+      "accumulated_volume": 2900100,
+      "accumulated_value": 173399560000.0
+    },
+    {
+      "time": "2026-03-17T11:29:49",
+      "price": 60.0,
+      "volume": 2000,
+      "match_type": "buy",
+      "id": "2026-03-17_112949_600000_2000",
+      "trading_date": "17/03/2026",
+      "symbol": "VCB",
+      "price_change": 1200.0,
+      "accumulated_volume": 2900000,
+      "accumulated_value": 173393560000.0
     }
   ],
   "result_type": "DataFrame",

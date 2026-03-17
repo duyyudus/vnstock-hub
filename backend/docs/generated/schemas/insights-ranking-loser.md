@@ -61,7 +61,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:05.495804+00:00`
+- Captured at: `2026-03-17T05:26:51.960443+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -73,31 +73,31 @@ symbol, exchange, last_price, last_updated, price_change_1d, price_change_pct_1d
 ```json
 [
   {
-    "symbol": "PVD",
+    "symbol": "BSR",
     "exchange": "HOSE",
-    "last_price": 37.2,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": -2.799999999999997,
-    "price_change_pct_1d": -6.999999999999995,
-    "total_value": 359934675000.0
+    "last_price": 31.05,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": -1.6999999999999993,
+    "price_change_pct_1d": -5.190839694656491,
+    "total_value": 315492080000.0
   },
   {
-    "symbol": "DCM",
+    "symbol": "BFC",
     "exchange": "HOSE",
-    "last_price": 44.55,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": -3.3500000000000014,
-    "price_change_pct_1d": -6.993736951983298,
-    "total_value": 368183510000.0
+    "last_price": 60.0,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": -2.5,
+    "price_change_pct_1d": -4.0000000000000036,
+    "total_value": 10581230000.0
   },
   {
-    "symbol": "VVS",
+    "symbol": "ACC",
     "exchange": "HOSE",
-    "last_price": 149.3,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": -11.199999999999989,
-    "price_change_pct_1d": -6.978193146417433,
-    "total_value": 22070820000.0
+    "last_price": 12.0,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": -0.5,
+    "price_change_pct_1d": -4.0000000000000036,
+    "total_value": 333760000.0
   }
 ]
 ```

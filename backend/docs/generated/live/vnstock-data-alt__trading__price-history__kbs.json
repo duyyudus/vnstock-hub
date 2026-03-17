@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:20:15.584091+00:00",
+  "captured_at": "2026-03-17T05:29:05.724913+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Trading",
   "class_path": "app.lib.vnstock_data_alt.api.trading.Trading",
@@ -46,39 +46,39 @@
   "preview_rows": [
     {
       "timestamp": "NaT",
-      "trading_date": "16/03/2026",
+      "trading_date": "17/03/2026",
       "symbol": "VCB",
-      "time": "14:45:00",
-      "side": "",
-      "price": 58800,
-      "volume": -200,
-      "match_volume": 35200,
-      "accumulated_volume": 3985900,
-      "accumulated_value": 234963800000
+      "time": "11:29:58",
+      "side": "B",
+      "price": 60000,
+      "volume": 1200,
+      "match_volume": 200,
+      "accumulated_volume": 2900300,
+      "accumulated_value": 173411560000
     },
     {
       "timestamp": "NaT",
-      "trading_date": "16/03/2026",
+      "trading_date": "17/03/2026",
       "symbol": "VCB",
-      "time": "14:45:00",
-      "side": "",
-      "price": 58800,
-      "volume": -200,
-      "match_volume": 134300,
-      "accumulated_volume": 3950700,
-      "accumulated_value": 232894040000
+      "time": "11:29:51",
+      "side": "B",
+      "price": 60000,
+      "volume": 1200,
+      "match_volume": 100,
+      "accumulated_volume": 2900100,
+      "accumulated_value": 173399560000
     },
     {
       "timestamp": "NaT",
-      "trading_date": "16/03/2026",
+      "trading_date": "17/03/2026",
       "symbol": "VCB",
-      "time": "14:29:48",
-      "side": "S",
-      "price": 58900,
-      "volume": -100,
-      "match_volume": 5000,
-      "accumulated_volume": 3816400,
-      "accumulated_value": 224997200000
+      "time": "11:29:49",
+      "side": "B",
+      "price": 60000,
+      "volume": 1200,
+      "match_volume": 2000,
+      "accumulated_volume": 2900000,
+      "accumulated_value": 173393560000
     }
   ],
   "result_type": "DataFrame",

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:23.159697+00:00",
+  "captured_at": "2026-03-17T05:27:09.803580+00:00",
   "package": "vnstock_alt",
   "class_name": "Quote",
   "class_path": "app.lib.vnstock_alt.api.quote.Quote",
@@ -33,25 +33,25 @@
   },
   "preview_rows": [
     {
-      "time": "2026-03-16T14:29:36+07:00",
-      "price": 59.0,
-      "volume": 100,
+      "time": "2026-03-17T11:29:42+07:00",
+      "price": 60.0,
+      "volume": 1000,
       "match_type": "Buy",
-      "id": "450295880"
+      "id": "450617896"
     },
     {
-      "time": "2026-03-16T14:29:38+07:00",
-      "price": 58.9,
-      "volume": 700,
-      "match_type": "Sell",
-      "id": "450296084"
+      "time": "2026-03-17T11:29:48+07:00",
+      "price": 60.0,
+      "volume": 200,
+      "match_type": "Buy",
+      "id": "450618091"
     },
     {
-      "time": "2026-03-16T14:29:46+07:00",
-      "price": 59.0,
-      "volume": 300,
+      "time": "2026-03-17T11:29:49+07:00",
+      "price": 60.0,
+      "volume": 2000,
       "match_type": "Buy",
-      "id": "450296750"
+      "id": "450618131"
     }
   ],
   "result_type": "DataFrame",

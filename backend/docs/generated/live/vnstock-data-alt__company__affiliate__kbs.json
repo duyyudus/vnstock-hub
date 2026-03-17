@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:17:59.365391+00:00",
+  "captured_at": "2026-03-17T05:27:47.822483+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_data_alt.api.company.Company",
@@ -20,5 +20,5 @@
   "dtypes": {},
   "preview_rows": [],
   "result_type": null,
-  "error": "RetryError(<Future at 0x10f7db650 state=finished raised AttributeError>)"
+  "error": "RetryError(<Future at 0x111eff5c0 state=finished raised AttributeError>)"
 }

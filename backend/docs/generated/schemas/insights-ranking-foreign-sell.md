@@ -53,7 +53,7 @@ symbol, date, net_value
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:05.086505+00:00`
+- Captured at: `2026-03-17T05:26:50.378927+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -65,19 +65,19 @@ symbol, date, net_value
 ```json
 [
   {
-    "symbol": "BSR",
-    "date": "2026-03-16",
-    "net_value": -181331770000.0
+    "symbol": "BID",
+    "date": "2026-03-17",
+    "net_value": -75455010000.0
   },
   {
     "symbol": "VIC",
-    "date": "2026-03-16",
-    "net_value": -159806460000.0
+    "date": "2026-03-17",
+    "net_value": -55447478300.0
   },
   {
-    "symbol": "PVD",
-    "date": "2026-03-16",
-    "net_value": -147277600000.0
+    "symbol": "DGC",
+    "date": "2026-03-17",
+    "net_value": -31025790000.0
   }
 ]
 ```

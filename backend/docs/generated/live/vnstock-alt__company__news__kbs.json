@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:16:26.498598+00:00",
+  "captured_at": "2026-03-17T05:27:37.831127+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
@@ -34,11 +34,11 @@
   },
   "preview_rows": [
     {
-      "head": "Cổ phiếu ngân hàng năm 2026 được nhận định sẽ mang gam màu hoàn toàn mới: Bền vững và chọn lọc. Theo đó, động lực bứt phá của các nhà băng giờ đây không chỉ nằm ở chất lượng tài sản hay bộ đệm vốn mà còn đến từ những yếu tố đột biến như các thương vụ M&A, tái cơ cấu, và khả năng nắm bắt những dư địa lợi nhuận mới.",
-      "article_id": 1409519,
-      "title": "Cổ phiếu “vua\" 2026: Đón chu kỳ bền vững và các \"ẩn số\" tỷ đô",
-      "publish_time": "2026-03-09T11:02:00",
-      "url": "/2026/03/co-phieu-vua-2026-don-chu-ky-ben-vung-va-cac-an-so-ty-do-757-1409519.htm"
+      "head": "Các công ty chứng khoán (CTCK) khuyến nghị mua NLG nhờ doanh số bán hàng dự kiến tăng mạnh và lợi thế quỹ đất lớn; mua VCB nhờ kỳ vọng tăng trưởng tín dụng và chất lượng tài sản duy trì ở mức tốt; mua GMD nhờ triển vọng tăng trưởng lợi nhuận từ hệ thống cảng và câu chuyện định giá hấp dẫn.",
+      "article_id": 1409791,
+      "title": "NLG, VCB và GMD có gì hấp dẫn?",
+      "publish_time": "2026-03-09T12:58:41.84",
+      "url": "/2026/03/nlg-vcb-va-gmd-co-gi-hap-dan-145-1409791.htm"
     }
   ],
   "result_type": "DataFrame",

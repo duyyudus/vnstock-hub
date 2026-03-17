@@ -50,9 +50,9 @@ pb
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:06.663238+00:00`
+- Captured at: `2026-03-17T05:26:53.460181+00:00`
 - Success: `True`
-- Row count: `247`
+- Row count: `248`
 
 ```text
 pb

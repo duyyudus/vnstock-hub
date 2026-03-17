@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:15:16.277151+00:00",
+  "captured_at": "2026-03-17T05:27:03.485455+00:00",
   "package": "vnstock_data_alt",
   "class_name": "ETFMarket",
   "class_path": "app.lib.vnstock_data_alt.ui.domains.market.etf.ETFMarket",
@@ -56,12 +56,12 @@
       "beta": 0,
       "eps": 0,
       "bvps": 0,
-      "market_cap": 7864896000000,
+      "market_cap": 8013200000000,
       "pe": 21.77,
       "pb": 1.12,
       "roe": 5.2,
-      "change_1m": "-8.67",
-      "change_1y": "35.64",
+      "change_1m": "-6.94",
+      "change_1y": "37.52",
       "dividend_yield": 0,
       "foreign_ownership_pct": 56.2645
     }

@@ -1,18 +1,17 @@
 {
-  "captured_at": "2026-03-16T11:16:09.457634+00:00",
+  "captured_at": "2026-03-17T05:26:37.367582+00:00",
   "package": "vnstock_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_alt.api.listing.Listing",
   "method": "symbols_by_group",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI"
   },
   "method_kwargs": {
-    "group": "VN30",
-    "show_log": false
+    "group": "VN30"
   },
   "success": true,
   "row_count": null,

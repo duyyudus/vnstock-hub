@@ -62,7 +62,7 @@ Enum/value normalization:
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:04.753952+00:00`
+- Captured at: `2026-03-17T05:26:50.071508+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -74,34 +74,34 @@ symbol, exchange, last_price, last_updated, price_change_1d, price_change_pct_1d
 ```json
 [
   {
-    "symbol": "TVB",
+    "symbol": "SMC",
     "exchange": "HOSE",
-    "last_price": 7.34,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": 0.0,
-    "price_change_pct_1d": 0.0,
-    "total_value": 35586000.0,
-    "deal_volume_spike_20d_pct": 667.7400282087873
+    "last_price": 11.3,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": 0.3000000000000007,
+    "price_change_pct_1d": 2.7272727272727337,
+    "total_value": 1059515000.0,
+    "deal_volume_spike_20d_pct": 83.95776924207124
   },
   {
-    "symbol": "SAM",
+    "symbol": "SSB",
     "exchange": "HOSE",
-    "last_price": 6.72,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": 0.019999999999999574,
-    "price_change_pct_1d": 0.29850746268655914,
-    "total_value": 1323511000.0,
-    "deal_volume_spike_20d_pct": 54.78522143024737
+    "last_price": 16.65,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": 0.09999999999999787,
+    "price_change_pct_1d": 0.6042296072507503,
+    "total_value": 10733495000.0,
+    "deal_volume_spike_20d_pct": 25.956526023420157
   },
   {
-    "symbol": "SHI",
+    "symbol": "ACC",
     "exchange": "HOSE",
-    "last_price": 14.85,
-    "last_updated": "2026-03-16 15:59",
-    "price_change_1d": 0.8499999999999996,
-    "price_change_pct_1d": 6.071428571428572,
-    "total_value": 8993785000.0,
-    "deal_volume_spike_20d_pct": 47.23759718374761
+    "last_price": 12.0,
+    "last_updated": "2026-03-17 12:26",
+    "price_change_1d": -0.5,
+    "price_change_pct_1d": -4.0000000000000036,
+    "total_value": 333760000.0,
+    "deal_volume_spike_20d_pct": 24.217472906702188
   }
 ]
 ```

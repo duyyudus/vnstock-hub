@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-16T11:19:52.409337+00:00",
+  "captured_at": "2026-03-17T05:29:01.406896+00:00",
   "package": "vnstock_data_alt",
   "class_name": "Listing",
   "class_path": "app.lib.vnstock_data_alt.api.listing.Listing",
@@ -31,28 +31,28 @@
       "symbol": {
         "name": "SX Phụ trợ",
         "code": 26,
-        "change": -4.99161
+        "change": -3.749553
       },
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     },
     {
       "symbol": {
-        "name": "SX Nhựa - Hóa chất",
-        "code": 18,
-        "change": -3.115701
+        "name": "Khai khoáng",
+        "code": 10,
+        "change": -0.434627
       },
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     },
     {
       "symbol": {
-        "name": "Tiện ích",
-        "code": 22,
-        "change": -2.717101
+        "name": "Dịch vụ lưu trú, ăn uống, giải trí",
+        "code": 25,
+        "change": -0.246161
       },
-      "industry_code": 19,
-      "industry_name": "Thực phẩm - Đồ uống"
+      "industry_code": 5,
+      "industry_name": "Chứng khoán"
     }
   ],
   "result_type": "DataFrame",

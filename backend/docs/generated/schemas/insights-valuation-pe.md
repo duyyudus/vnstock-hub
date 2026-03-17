@@ -50,9 +50,9 @@ pe
 
 #### Live-observed sample
 
-- Captured at: `2026-03-16T11:15:06.761435+00:00`
+- Captured at: `2026-03-17T05:26:53.641549+00:00`
 - Success: `True`
-- Row count: `247`
+- Row count: `248`
 
 ```text
 pe

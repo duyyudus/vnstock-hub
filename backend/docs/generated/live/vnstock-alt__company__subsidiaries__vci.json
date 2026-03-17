@@ -1,19 +1,17 @@
 {
-  "captured_at": "2026-03-16T11:16:27.999104+00:00",
+  "captured_at": "2026-03-17T05:26:44.320714+00:00",
   "package": "vnstock_alt",
   "class_name": "Company",
   "class_path": "app.lib.vnstock_alt.api.company.Company",
   "method": "subsidiaries",
   "source": "vci",
   "schema_key": null,
-  "probe_origin": "auto-package",
+  "probe_origin": "manifest",
   "init_kwargs": {
     "source": "VCI",
     "symbol": "VCB"
   },
-  "method_kwargs": {
-    "show_log": false
-  },
+  "method_kwargs": {},
   "success": true,
   "row_count": 12,
   "columns": [
@@ -32,21 +30,21 @@
   },
   "preview_rows": [
     {
-      "id": "28530742",
+      "id": "28550524",
       "sub_organ_code": "2646966",
       "ownership_percent": 0.875,
       "organ_name": "Công ty Chuyển tiền Vietcombank",
       "type": "công ty con"
     },
     {
-      "id": "28530743",
+      "id": "28550525",
       "sub_organ_code": "TB",
       "ownership_percent": 1.0,
       "organ_name": "Ngân hàng Thương mại TNHH MTV Ngoại thương Công nghệ Số",
       "type": "công ty con"
     },
     {
-      "id": "28530744",
+      "id": "28550526",
       "sub_organ_code": "VCB198",
       "ownership_percent": 0.7,
       "organ_name": "Công ty TNHH Cao Ốc Vietcombank 198",

@@ -49,7 +49,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:53.591517+00:00`
+- Captured at: `2026-03-17T05:29:02.890618+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -131,7 +131,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:19:55.035853+00:00`
+- Captured at: `2026-03-17T05:29:03.173043+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -230,77 +230,6 @@ trading_date, fr_buy_value_matched, fr_buy_volume_matched, fr_sell_value_matched
 
 Retrieve foreign trade data for the given symbol.
 
-### history
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `cafef`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `history` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
 ### insider_deal
 
 - Kind: `method`
@@ -337,7 +266,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:07.775328+00:00`
+- Captured at: `2026-03-17T05:29:03.503717+00:00`
 - Success: `True`
 - Row count: `2`
 
@@ -433,7 +362,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:09.045043+00:00`
+- Captured at: `2026-03-17T05:29:03.819875+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -569,9 +498,9 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:09.264926+00:00`
+- Captured at: `2026-03-17T05:29:04.044045+00:00`
 - Success: `True`
-- Row count: `13`
+- Row count: `8`
 
 ```text
 price, buyVol, sellVol, unknownVol, totalVol
@@ -581,25 +510,25 @@ price, buyVol, sellVol, unknownVol, totalVol
 ```json
 [
   {
-    "price": 58600,
+    "price": 59400,
     "buyVol": 0,
-    "sellVol": 80600,
+    "sellVol": 2400,
     "unknownVol": 0,
-    "totalVol": 80600
+    "totalVol": 2400
   },
   {
-    "price": 58700,
-    "buyVol": 89900,
-    "sellVol": 333900,
-    "unknownVol": 0,
-    "totalVol": 423800
+    "price": 59500,
+    "buyVol": 55400,
+    "sellVol": 2000,
+    "unknownVol": 64300,
+    "totalVol": 121700
   },
   {
-    "price": 58800,
-    "buyVol": 210900,
-    "sellVol": 521800,
-    "unknownVol": 169500,
-    "totalVol": 902200
+    "price": 59600,
+    "buyVol": 20700,
+    "sellVol": 150300,
+    "unknownVol": 0,
+    "totalVol": 171000
   }
 ]
 ```
@@ -684,7 +613,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:09.401073+00:00`
+- Captured at: `2026-03-17T05:29:04.188508+00:00`
 - Success: `True`
 - Row count: `0`
 
@@ -707,7 +636,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:09.608563+00:00`
+- Captured at: `2026-03-17T05:29:04.453093+00:00`
 - Success: `True`
 - Row count: `0`
 
@@ -751,7 +680,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:10.234933+00:00`
+- Captured at: `2026-03-17T05:29:04.799679+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -846,7 +775,7 @@ Retrieve order statistics for the given symbol.
 
 | Name | Kind | Required | Default | Annotation | Observed example | Accepted values | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `symbols_list` | `POSITIONAL_OR_KEYWORD` | `True` | `None` | `List[str]` | `VCB` | `ACB`, `VNM` | List of symbols (e.g., ['ACB', 'VNM']). |
+| `symbols_list` | `POSITIONAL_OR_KEYWORD` | `True` | `None` | `List[str]` | `['VCB', 'TCB']` | `ACB`, `VNM` | List of symbols (e.g., ['ACB', 'VNM']). |
 | `board` | `POSITIONAL_OR_KEYWORD` | `False` | `stock` | `str` | `omitted; default 'stock'` | `stock`, `odd_lot`, `put_through`, `derivatives` | Board type ('stock', 'odd_lot', 'put_through', 'derivatives'). |
 | `exchange` | `POSITIONAL_OR_KEYWORD` | `False` | `HOSE` | `str` | `HOSE` | `HOSE`, `HNX`, `UPCOM` | Exchange ('HOSE', 'HNX', 'UPCOM'). |
 | `show_log` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` | `False` |  | Display debug logs. |
@@ -892,9 +821,97 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-_No live sample is attached to this exact endpoint yet._
+- Captured at: `2026-03-17T05:29:05.020188+00:00`
+- Success: `True`
+- Row count: `2`
 
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
+```text
+volume_accumulated, high_price, total_value, low_price, listed_shares, percent_change, bid_vol_1, bid_vol_2, bid_vol_3, bid_price_1, average_price, bid_price_2, bid_price_3, reference_price, exchange, foreign_buy_volume, foreign_buy_count, ask_price_1, ask_price_2, ask_price_3, floor_price, foreign_ownership_ratio, foreign_room, put_through_qty, foreign_sell_volume, symbol, put_through_value, total_listed_qty, ST, open_price, price_change, ceiling_price, close_price, time, ask_vol_1, ask_vol_2, ask_vol_3
+```
+- Dtypes: `{'volume_accumulated': 'int64', 'high_price': 'int64', 'total_value': 'int64', 'low_price': 'int64', 'listed_shares': 'str', 'percent_change': 'float64', 'bid_vol_1': 'int64', 'bid_vol_2': 'int64', 'bid_vol_3': 'int64', 'bid_price_1': 'str', 'average_price': 'int64', 'bid_price_2': 'int64', 'bid_price_3': 'int64', 'reference_price': 'int64', 'exchange': 'str', 'foreign_buy_volume': 'int64', 'foreign_buy_count': 'str', 'ask_price_1': 'str', 'ask_price_2': 'int64', 'ask_price_3': 'int64', 'floor_price': 'int64', 'foreign_ownership_ratio': 'int64', 'foreign_room': 'int64', 'put_through_qty': 'int64', 'foreign_sell_volume': 'int64', 'symbol': 'str', 'put_through_value': 'int64', 'total_listed_qty': 'str', 'ST': 'str', 'open_price': 'int64', 'price_change': 'int64', 'ceiling_price': 'int64', 'close_price': 'int64', 'time': 'int64', 'ask_vol_1': 'int64', 'ask_vol_2': 'int64', 'ask_vol_3': 'int64'}`
+
+```json
+[
+  {
+    "volume_accumulated": 2900300,
+    "high_price": 60100,
+    "total_value": 173411560000,
+    "low_price": 59400,
+    "listed_shares": "8355675094",
+    "percent_change": 2.0408163265306123,
+    "bid_vol_1": 33900,
+    "bid_vol_2": 111300,
+    "bid_vol_3": 209300,
+    "bid_price_1": "59900.0",
+    "average_price": 59791,
+    "bid_price_2": 59800,
+    "bid_price_3": 59700,
+    "reference_price": 58800,
+    "exchange": "HOSE",
+    "foreign_buy_volume": 671400,
+    "foreign_buy_count": "10",
+    "ask_price_1": "60000.0",
+    "ask_price_2": 60100,
+    "ask_price_3": 60200,
+    "floor_price": 54700,
+    "foreign_ownership_ratio": 2506702528,
+    "foreign_room": 790700917,
+    "put_through_qty": 0,
+    "foreign_sell_volume": 253800,
+    "symbol": "VCB",
+    "put_through_value": 0,
+    "total_listed_qty": "8355675094",
+    "ST": "2",
+    "open_price": 59500,
+    "price_change": 1200,
+    "ceiling_price": 62900,
+    "close_price": 60000,
+    "time": 1773721823119,
+    "ask_vol_1": 269400,
+    "ask_vol_2": 279400,
+    "ask_vol_3": 167400
+  },
+  {
+    "volume_accumulated": 6384500,
+    "high_price": 30900,
+    "total_value": 195978440000,
+    "low_price": 30250,
+    "listed_shares": "7086240414",
+    "percent_change": 1.6556291390728477,
+    "bid_vol_1": 19400,
+    "bid_vol_2": 45300,
+    "bid_vol_3": 68900,
+    "bid_price_1": "30650.0",
+    "average_price": 30696,
+    "bid_price_2": 30600,
+    "bid_price_3": 30550,
+    "reference_price": 30200,
+    "exchange": "HOSE",
+    "foreign_buy_volume": 10100,
+    "foreign_buy_count": "10",
+    "ask_price_1": "30700.0",
+    "ask_price_2": 30750,
+    "ask_price_3": 30800,
+    "floor_price": 28100,
+    "foreign_ownership_ratio": 1597139381,
+    "foreign_room": 0,
+    "put_through_qty": 2300016,
+    "foreign_sell_volume": 0,
+    "symbol": "TCB",
+    "put_through_value": 74290483200,
+    "total_listed_qty": "7086240414",
+    "ST": "2",
+    "open_price": 30250,
+    "price_change": 500,
+    "ceiling_price": 32300,
+    "close_price": 30700,
+    "time": 1773721796422,
+    "ask_vol_1": 4900,
+    "ask_vol_2": 25000,
+    "ask_vol_3": 297500
+  }
+]
+```
 
 ##### Source `vci`
 
@@ -915,73 +932,176 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:14.438460+00:00`
+- Captured at: `2026-03-17T05:29:05.113742+00:00`
 - Success: `True`
-- Row count: `3`
+- Row count: `2`
 
 ```text
-['listing', nan], ['bid_ask', 'type'], ['bid_ask', 'bid_count'], ['bid_ask', 'ask_count'], ['match', 'type'], ['match', 'match_price'], ['match', 'match_vol'], ['match', 'highest'], ['match', 'lowest'], ['match', 'foreign_buy_volume'], ['match', 'foreign_sell_volume'], ['match', 'foreign_buy_value'], ['match', 'foreign_sell_value'], ['match', 'reference_price'], ['match', 'ceiling_price'], ['match', 'floor_price'], ['match', 'accumulated_volume']
+['listing', 'symbol'], ['listing', 'ceiling'], ['listing', 'floor'], ['listing', 'ref_price'], ['listing', 'stock_type'], ['listing', 'exchange'], ['listing', 'trading_status'], ['listing', 'trading_status_code'], ['listing', 'trading_status_group'], ['listing', 'security_status'], ['listing', 'last_trading_date'], ['listing', 'issue_date'], ['listing', 'listed_share'], ['listing', 'coupon_rate'], ['listing', 'yield'], ['listing', 'sending_time'], ['listing', 'type'], ['listing', 'organ_name'], ['listing', 'mapping_symbol'], ['listing', 'product_grp_id'], ['listing', 'partition'], ['listing', 'index_type'], ['listing', 'trading_date'], ['listing', 'lst_trading_status'], ['listing', 'is_delisted'], ['bid_ask', 'transaction_time'], ['bid_ask', 'bid_count'], ['bid_ask', 'ask_count'], ['match', 'accumulated_value'], ['match', 'accumulated_volume'], ['match', 'accumulated_value_g1'], ['match', 'accumulated_volume_g1'], ['match', 'match_price_ato'], ['match', 'match_volume_ato'], ['match', 'match_price_atc'], ['match', 'match_volume_atc'], ['match', 'trading_session_id'], ['match', 'is_last_ato'], ['match', 'avg_match_price'], ['match', 'current_room'], ['match', 'foreign_buy_volume'], ['match', 'foreign_sell_volume'], ['match', 'foreign_buy_value'], ['match', 'foreign_sell_value'], ['match', 'highest'], ['match', 'lowest'], ['match', 'match_price'], ['match', 'open_price'], ['match', 'first_time_match_price'], ['match', 'match_type'], ['match', 'match_vol'], ['match', 'sending_time'], ['match', 'total_room'], ['match', 'total_buy_orders'], ['match', 'total_sell_orders'], ['match', 'bid_count'], ['match', 'ask_count'], ['match', 'underlying'], ['match', 'open_interest'], ['match', 'stock_type'], ['match', 'partition'], ['match', 'is_match_price'], ['match', 'ceiling_price'], ['match', 'floor_price'], ['match', 'reference_price'], ['match', 'last_ato'], ['bid_ask', 'bid_1_price'], ['bid_ask', 'bid_1_volume'], ['bid_ask', 'bid_2_price'], ['bid_ask', 'bid_2_volume'], ['bid_ask', 'bid_3_price'], ['bid_ask', 'bid_3_volume'], ['bid_ask', 'ask_1_price'], ['bid_ask', 'ask_1_volume'], ['bid_ask', 'ask_2_price'], ['bid_ask', 'ask_2_volume'], ['bid_ask', 'ask_3_price'], ['bid_ask', 'ask_3_volume']
 ```
-- Dtypes: `{"('listing', nan)": 'object', "('bid_ask', 'type')": 'object', "('bid_ask', 'bid_count')": 'int64', "('bid_ask', 'ask_count')": 'int64', "('match', 'type')": 'object', "('match', 'match_price')": 'int64', "('match', 'match_vol')": 'int64', "('match', 'highest')": 'int64', "('match', 'lowest')": 'int64', "('match', 'foreign_buy_volume')": 'int64', "('match', 'foreign_sell_volume')": 'int64', "('match', 'foreign_buy_value')": 'int64', "('match', 'foreign_sell_value')": 'int64', "('match', 'reference_price')": 'int64', "('match', 'ceiling_price')": 'int64', "('match', 'floor_price')": 'int64', "('match', 'accumulated_volume')": 'int64'}`
+- Dtypes: `{"('listing', 'symbol')": 'str', "('listing', 'ceiling')": 'int64', "('listing', 'floor')": 'int64', "('listing', 'ref_price')": 'int64', "('listing', 'stock_type')": 'str', "('listing', 'exchange')": 'str', "('listing', 'trading_status')": 'str', "('listing', 'trading_status_code')": 'str', "('listing', 'trading_status_group')": 'str', "('listing', 'security_status')": 'str', "('listing', 'last_trading_date')": 'object', "('listing', 'issue_date')": 'object', "('listing', 'listed_share')": 'int64', "('listing', 'coupon_rate')": 'int64', "('listing', 'yield')": 'int64', "('listing', 'sending_time')": 'str', "('listing', 'type')": 'str', "('listing', 'organ_name')": 'str', "('listing', 'mapping_symbol')": 'object', "('listing', 'product_grp_id')": 'str', "('listing', 'partition')": 'int64', "('listing', 'index_type')": 'object', "('listing', 'trading_date')": 'str', "('listing', 'lst_trading_status')": 'object', "('listing', 'is_delisted')": 'int64', "('bid_ask', 'transaction_time')": 'str', "('bid_ask', 'bid_count')": 'int64', "('bid_ask', 'ask_count')": 'int64', "('match', 'accumulated_value')": 'float64', "('match', 'accumulated_volume')": 'int64', "('match', 'accumulated_value_g1')": 'float64', "('match', 'accumulated_volume_g1')": 'int64', "('match', 'match_price_ato')": 'int64', "('match', 'match_volume_ato')": 'int64', "('match', 'match_price_atc')": 'int64', "('match', 'match_volume_atc')": 'int64', "('match', 'trading_session_id')": 'str', "('match', 'is_last_ato')": 'bool', "('match', 'avg_match_price')": 'float64', "('match', 'current_room')": 'int64', "('match', 'foreign_buy_volume')": 'int64', "('match', 'foreign_sell_volume')": 'int64', "('match', 'foreign_buy_value')": 'int64', "('match', 'foreign_sell_value')": 'int64', "('match', 'highest')": 'int64', "('match', 'lowest')": 'int64', "('match', 'match_price')": 'int64', "('match', 'open_price')": 'int64', "('match', 'first_time_match_price')": 'str', "('match', 'match_type')": 'str', "('match', 'match_vol')": 'int64', "('match', 'sending_time')": 'str', "('match', 'total_room')": 'int64', "('match', 'total_buy_orders')": 'int64', "('match', 'total_sell_orders')": 'int64', "('match', 'bid_count')": 'int64', "('match', 'ask_count')": 'int64', "('match', 'underlying')": 'object', "('match', 'open_interest')": 'object', "('match', 'stock_type')": 'str', "('match', 'partition')": 'int64', "('match', 'is_match_price')": 'bool', "('match', 'ceiling_price')": 'int64', "('match', 'floor_price')": 'int64', "('match', 'reference_price')": 'int64', "('match', 'last_ato')": 'bool', "('bid_ask', 'bid_1_price')": 'int64', "('bid_ask', 'bid_1_volume')": 'int64', "('bid_ask', 'bid_2_price')": 'int64', "('bid_ask', 'bid_2_volume')": 'int64', "('bid_ask', 'bid_3_price')": 'int64', "('bid_ask', 'bid_3_volume')": 'int64', "('bid_ask', 'ask_1_price')": 'int64', "('bid_ask', 'ask_1_volume')": 'int64', "('bid_ask', 'ask_2_price')": 'int64', "('bid_ask', 'ask_2_volume')": 'int64', "('bid_ask', 'ask_3_price')": 'int64', "('bid_ask', 'ask_3_volume')": 'int64'}`
 
 ```json
 [
   {
-    "('listing', nan)": null,
-    "('bid_ask', 'type')": null,
+    "('listing', 'symbol')": "VCB",
+    "('listing', 'ceiling')": 62900,
+    "('listing', 'floor')": 54700,
+    "('listing', 'ref_price')": 58800,
+    "('listing', 'stock_type')": "STOCK",
+    "('listing', 'exchange')": "HOSE",
+    "('listing', 'trading_status')": "TRADING_ACTIVATED",
+    "('listing', 'trading_status_code')": "20",
+    "('listing', 'trading_status_group')": "2",
+    "('listing', 'security_status')": "N",
+    "('listing', 'last_trading_date')": null,
+    "('listing', 'issue_date')": null,
+    "('listing', 'listed_share')": 8355675094,
+    "('listing', 'coupon_rate')": 0,
+    "('listing', 'yield')": 0,
+    "('listing', 'sending_time')": "20260317 01:43:58.508",
+    "('listing', 'type')": "STOCK",
+    "('listing', 'organ_name')": "Ngân hàng Thương mại Cổ phần Ngoại thương Việt Nam",
+    "('listing', 'mapping_symbol')": null,
+    "('listing', 'product_grp_id')": "STO",
+    "('listing', 'partition')": 4,
+    "('listing', 'index_type')": null,
+    "('listing', 'trading_date')": "2026-03-17",
+    "('listing', 'lst_trading_status')": null,
+    "('listing', 'is_delisted')": 0,
+    "('bid_ask', 'transaction_time')": "042958739",
     "('bid_ask', 'bid_count')": 0,
     "('bid_ask', 'ask_count')": 0,
-    "('match', 'type')": null,
-    "('match', 'match_price')": 0,
-    "('match', 'match_vol')": 0,
-    "('match', 'highest')": 0,
-    "('match', 'lowest')": 0,
-    "('match', 'foreign_buy_volume')": 0,
-    "('match', 'foreign_sell_volume')": 0,
-    "('match', 'foreign_buy_value')": 0,
-    "('match', 'foreign_sell_value')": 0,
-    "('match', 'reference_price')": 0,
-    "('match', 'ceiling_price')": 0,
-    "('match', 'floor_price')": 0,
-    "('match', 'accumulated_volume')": 0
+    "('match', 'accumulated_value')": 173411.56,
+    "('match', 'accumulated_volume')": 2900300,
+    "('match', 'accumulated_value_g1')": 173411.56,
+    "('match', 'accumulated_volume_g1')": 2900300,
+    "('match', 'match_price_ato')": 59500,
+    "('match', 'match_volume_ato')": 64300,
+    "('match', 'match_price_atc')": 0,
+    "('match', 'match_volume_atc')": 0,
+    "('match', 'trading_session_id')": "40",
+    "('match', 'is_last_ato')": false,
+    "('match', 'avg_match_price')": 59790.90438920112,
+    "('match', 'current_room')": 790700917,
+    "('match', 'foreign_buy_volume')": 671400,
+    "('match', 'foreign_sell_volume')": 253800,
+    "('match', 'foreign_buy_value')": 40147440000,
+    "('match', 'foreign_sell_value')": 15172170000,
+    "('match', 'highest')": 60100,
+    "('match', 'lowest')": 59400,
+    "('match', 'match_price')": 60000,
+    "('match', 'open_price')": 59500,
+    "('match', 'first_time_match_price')": "2026-03-17T02:15:00.006Z",
+    "('match', 'match_type')": "b",
+    "('match', 'match_vol')": 200,
+    "('match', 'sending_time')": "20260317 04:29:58.739",
+    "('match', 'total_room')": 2506702528,
+    "('match', 'total_buy_orders')": 0,
+    "('match', 'total_sell_orders')": 0,
+    "('match', 'bid_count')": 0,
+    "('match', 'ask_count')": 0,
+    "('match', 'underlying')": null,
+    "('match', 'open_interest')": null,
+    "('match', 'stock_type')": "STOCK",
+    "('match', 'partition')": 4,
+    "('match', 'is_match_price')": false,
+    "('match', 'ceiling_price')": 62900,
+    "('match', 'floor_price')": 54700,
+    "('match', 'reference_price')": 58800,
+    "('match', 'last_ato')": false,
+    "('bid_ask', 'bid_1_price')": 59900,
+    "('bid_ask', 'bid_1_volume')": 33900,
+    "('bid_ask', 'bid_2_price')": 59800,
+    "('bid_ask', 'bid_2_volume')": 111300,
+    "('bid_ask', 'bid_3_price')": 59700,
+    "('bid_ask', 'bid_3_volume')": 209300,
+    "('bid_ask', 'ask_1_price')": 60000,
+    "('bid_ask', 'ask_1_volume')": 269400,
+    "('bid_ask', 'ask_2_price')": 60100,
+    "('bid_ask', 'ask_2_volume')": 279400,
+    "('bid_ask', 'ask_3_price')": 60200,
+    "('bid_ask', 'ask_3_volume')": 167400
   },
   {
-    "('listing', nan)": null,
-    "('bid_ask', 'type')": null,
+    "('listing', 'symbol')": "TCB",
+    "('listing', 'ceiling')": 32300,
+    "('listing', 'floor')": 28100,
+    "('listing', 'ref_price')": 30200,
+    "('listing', 'stock_type')": "STOCK",
+    "('listing', 'exchange')": "HOSE",
+    "('listing', 'trading_status')": "TRADING_ACTIVATED",
+    "('listing', 'trading_status_code')": "20",
+    "('listing', 'trading_status_group')": "2",
+    "('listing', 'security_status')": "N",
+    "('listing', 'last_trading_date')": null,
+    "('listing', 'issue_date')": null,
+    "('listing', 'listed_share')": 7086240414,
+    "('listing', 'coupon_rate')": 0,
+    "('listing', 'yield')": 0,
+    "('listing', 'sending_time')": "20260317 01:43:55.078",
+    "('listing', 'type')": "STOCK",
+    "('listing', 'organ_name')": "Ngân hàng Thương mại Cổ phần Kỹ thương Việt Nam",
+    "('listing', 'mapping_symbol')": null,
+    "('listing', 'product_grp_id')": "STO",
+    "('listing', 'partition')": 5,
+    "('listing', 'index_type')": null,
+    "('listing', 'trading_date')": "2026-03-17",
+    "('listing', 'lst_trading_status')": null,
+    "('listing', 'is_delisted')": 0,
+    "('bid_ask', 'transaction_time')": "042956232",
     "('bid_ask', 'bid_count')": 0,
     "('bid_ask', 'ask_count')": 0,
-    "('match', 'type')": null,
-    "('match', 'match_price')": 0,
-    "('match', 'match_vol')": 0,
-    "('match', 'highest')": 0,
-    "('match', 'lowest')": 0,
-    "('match', 'foreign_buy_volume')": 0,
-    "('match', 'foreign_sell_volume')": 0,
-    "('match', 'foreign_buy_value')": 0,
-    "('match', 'foreign_sell_value')": 0,
-    "('match', 'reference_price')": 0,
-    "('match', 'ceiling_price')": 0,
-    "('match', 'floor_price')": 0,
-    "('match', 'accumulated_volume')": 0
-  },
-  {
-    "('listing', nan)": null,
-    "('bid_ask', 'type')": null,
-    "('bid_ask', 'bid_count')": 0,
-    "('bid_ask', 'ask_count')": 0,
-    "('match', 'type')": null,
-    "('match', 'match_price')": 0,
-    "('match', 'match_vol')": 0,
-    "('match', 'highest')": 0,
-    "('match', 'lowest')": 0,
-    "('match', 'foreign_buy_volume')": 0,
-    "('match', 'foreign_sell_volume')": 0,
-    "('match', 'foreign_buy_value')": 0,
-    "('match', 'foreign_sell_value')": 0,
-    "('match', 'reference_price')": 0,
-    "('match', 'ceiling_price')": 0,
-    "('match', 'floor_price')": 0,
-    "('match', 'accumulated_volume')": 0
+    "('match', 'accumulated_value')": 195978.44,
+    "('match', 'accumulated_volume')": 6384500,
+    "('match', 'accumulated_value_g1')": 195978.44,
+    "('match', 'accumulated_volume_g1')": 6384500,
+    "('match', 'match_price_ato')": 30250,
+    "('match', 'match_volume_ato')": 592300,
+    "('match', 'match_price_atc')": 0,
+    "('match', 'match_volume_atc')": 0,
+    "('match', 'trading_session_id')": "40",
+    "('match', 'is_last_ato')": false,
+    "('match', 'avg_match_price')": 30695.97305975409,
+    "('match', 'current_room')": 0,
+    "('match', 'foreign_buy_volume')": 10100,
+    "('match', 'foreign_sell_volume')": 16,
+    "('match', 'foreign_buy_value')": 305525000,
+    "('match', 'foreign_sell_value')": 483200,
+    "('match', 'highest')": 30900,
+    "('match', 'lowest')": 30250,
+    "('match', 'match_price')": 30700,
+    "('match', 'open_price')": 30250,
+    "('match', 'first_time_match_price')": "2026-03-17T02:15:00.006Z",
+    "('match', 'match_type')": "b",
+    "('match', 'match_vol')": 500,
+    "('match', 'sending_time')": "20260317 04:29:56.232",
+    "('match', 'total_room')": 1597139381,
+    "('match', 'total_buy_orders')": 0,
+    "('match', 'total_sell_orders')": 0,
+    "('match', 'bid_count')": 0,
+    "('match', 'ask_count')": 0,
+    "('match', 'underlying')": null,
+    "('match', 'open_interest')": null,
+    "('match', 'stock_type')": "STOCK",
+    "('match', 'partition')": 5,
+    "('match', 'is_match_price')": false,
+    "('match', 'ceiling_price')": 32300,
+    "('match', 'floor_price')": 28100,
+    "('match', 'reference_price')": 30200,
+    "('match', 'last_ato')": false,
+    "('bid_ask', 'bid_1_price')": 30650,
+    "('bid_ask', 'bid_1_volume')": 19400,
+    "('bid_ask', 'bid_2_price')": 30600,
+    "('bid_ask', 'bid_2_volume')": 45300,
+    "('bid_ask', 'bid_3_price')": 30550,
+    "('bid_ask', 'bid_3_volume')": 68900,
+    "('bid_ask', 'ask_1_price')": 30700,
+    "('bid_ask', 'ask_1_volume')": 4900,
+    "('bid_ask', 'ask_2_price')": 30750,
+    "('bid_ask', 'ask_2_volume')": 25000,
+    "('bid_ask', 'ask_3_price')": 30800,
+    "('bid_ask', 'ask_3_volume')": 297500
   }
 ]
 ```
@@ -1026,7 +1146,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:15.135530+00:00`
+- Captured at: `2026-03-17T05:29:05.409525+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -1095,7 +1215,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:15.584091+00:00`
+- Captured at: `2026-03-17T05:29:05.724913+00:00`
 - Success: `True`
 - Row count: `1000`
 
@@ -1108,39 +1228,39 @@ timestamp, trading_date, symbol, time, side, price, volume, match_volume, accumu
 [
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:45:00",
-    "side": "",
-    "price": 58800,
-    "volume": -200,
-    "match_volume": 35200,
-    "accumulated_volume": 3985900,
-    "accumulated_value": 234963800000
+    "time": "11:29:58",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 200,
+    "accumulated_volume": 2900300,
+    "accumulated_value": 173411560000
   },
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:45:00",
-    "side": "",
-    "price": 58800,
-    "volume": -200,
-    "match_volume": 134300,
-    "accumulated_volume": 3950700,
-    "accumulated_value": 232894040000
+    "time": "11:29:51",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 100,
+    "accumulated_volume": 2900100,
+    "accumulated_value": 173399560000
   },
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:29:48",
-    "side": "S",
-    "price": 58900,
-    "volume": -100,
-    "match_volume": 5000,
-    "accumulated_volume": 3816400,
-    "accumulated_value": 224997200000
+    "time": "11:29:49",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 2000,
+    "accumulated_volume": 2900000,
+    "accumulated_value": 173393560000
   }
 ]
 ```
@@ -1164,14 +1284,14 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:15.786894+00:00`
+- Captured at: `2026-03-17T05:29:06.030741+00:00`
 - Success: `True`
 - Row count: `5`
 
 ```text
-trading_date, end_trading_date, market_cap, total_shares, ceiling_price, floor_price, reference_price, open, close, match_price, price_change, percent_price_change, high, low, average_price, matched_volume, matched_value, deal_volume, deal_value, total_volume, total_value, total_buy_trade, total_buy_trade_volume, total_sell_trade, total_sell_trade_volume, reference_price_adjusted, open_price_adjusted, close_price_adjusted, price_change_adjusted, percent_price_change_adjusted, highest_price_adjusted, lowest_price_adjusted, total_buy_unmatched_volume, total_sell_unmatched_volume, price_change_value, average_buy_trade_volume, average_sell_trade_volume, total_net_trade_volume
+trading_date, end_trading_date, market_cap, total_shares, ceiling_price, floor_price, reference_price, open, close, match_price, price_change, percent_price_change, high, low, average_price, matched_volume, matched_value, deal_volume, deal_value, total_volume, total_value, total_buy_trade, total_buy_trade_volume, total_sell_trade, total_sell_trade_volume, reference_price_adjusted, open_price_adjusted, close_price_adjusted, price_change_adjusted, percent_price_change_adjusted, highest_price_adjusted, lowest_price_adjusted, price_change_value, total_buy_unmatched_volume, total_sell_unmatched_volume, average_buy_trade_volume, average_sell_trade_volume, total_net_trade_volume
 ```
-- Dtypes: `{'trading_date': 'datetime64[us]', 'end_trading_date': 'str', 'market_cap': 'float64', 'total_shares': 'float64', 'ceiling_price': 'float64', 'floor_price': 'float64', 'reference_price': 'float64', 'open': 'float64', 'close': 'float64', 'match_price': 'float64', 'price_change': 'float64', 'percent_price_change': 'float64', 'high': 'float64', 'low': 'float64', 'average_price': 'float64', 'matched_volume': 'float64', 'matched_value': 'float64', 'deal_volume': 'float64', 'deal_value': 'float64', 'total_volume': 'float64', 'total_value': 'float64', 'total_buy_trade': 'float64', 'total_buy_trade_volume': 'float64', 'total_sell_trade': 'float64', 'total_sell_trade_volume': 'float64', 'reference_price_adjusted': 'float64', 'open_price_adjusted': 'float64', 'close_price_adjusted': 'float64', 'price_change_adjusted': 'float64', 'percent_price_change_adjusted': 'float64', 'highest_price_adjusted': 'float64', 'lowest_price_adjusted': 'float64', 'total_buy_unmatched_volume': 'float64', 'total_sell_unmatched_volume': 'float64', 'price_change_value': 'str', 'average_buy_trade_volume': 'float64', 'average_sell_trade_volume': 'float64', 'total_net_trade_volume': 'float64'}`
+- Dtypes: `{'trading_date': 'datetime64[us]', 'end_trading_date': 'str', 'market_cap': 'float64', 'total_shares': 'float64', 'ceiling_price': 'float64', 'floor_price': 'float64', 'reference_price': 'float64', 'open': 'float64', 'close': 'float64', 'match_price': 'float64', 'price_change': 'float64', 'percent_price_change': 'float64', 'high': 'float64', 'low': 'float64', 'average_price': 'float64', 'matched_volume': 'float64', 'matched_value': 'float64', 'deal_volume': 'float64', 'deal_value': 'float64', 'total_volume': 'float64', 'total_value': 'float64', 'total_buy_trade': 'float64', 'total_buy_trade_volume': 'float64', 'total_sell_trade': 'float64', 'total_sell_trade_volume': 'float64', 'reference_price_adjusted': 'float64', 'open_price_adjusted': 'float64', 'close_price_adjusted': 'float64', 'price_change_adjusted': 'float64', 'percent_price_change_adjusted': 'float64', 'highest_price_adjusted': 'float64', 'lowest_price_adjusted': 'float64', 'price_change_value': 'str', 'total_buy_unmatched_volume': 'float64', 'total_sell_unmatched_volume': 'float64', 'average_buy_trade_volume': 'float64', 'average_sell_trade_volume': 'float64', 'total_net_trade_volume': 'float64'}`
 
 ```json
 [
@@ -1208,9 +1328,9 @@ trading_date, end_trading_date, market_cap, total_shares, ceiling_price, floor_p
     "percent_price_change_adjusted": 0.0171123,
     "highest_price_adjusted": 63287.2,
     "lowest_price_adjusted": 62091.85,
+    "price_change_value": "+1.063 (+1.7%)",
     "total_buy_unmatched_volume": 3974488.0,
     "total_sell_unmatched_volume": 2153159.0,
-    "price_change_value": "+1.063 (+1.7%)",
     "average_buy_trade_volume": 1972.3379480841,
     "average_sell_trade_volume": 1702.1780481062,
     "total_net_trade_volume": 1821329.0
@@ -1248,9 +1368,9 @@ trading_date, end_trading_date, market_cap, total_shares, ceiling_price, floor_p
     "percent_price_change_adjusted": 0.00537634,
     "highest_price_adjusted": 62556.71,
     "lowest_price_adjusted": 61892.62,
+    "price_change_value": "+332 (+0.5%)",
     "total_buy_unmatched_volume": 1528705.0,
     "total_sell_unmatched_volume": 2386887.0,
-    "price_change_value": "+332 (+0.5%)",
     "average_buy_trade_volume": 1187.5791081246,
     "average_sell_trade_volume": 1559.2365308804,
     "total_net_trade_volume": -858182.0
@@ -1288,9 +1408,9 @@ trading_date, end_trading_date, market_cap, total_shares, ceiling_price, floor_p
     "percent_price_change_adjusted": 0.0,
     "highest_price_adjusted": 62291.07,
     "lowest_price_adjusted": 61759.8,
+    "price_change_value": "0 (0.0%)",
     "total_buy_unmatched_volume": 1244771.0,
     "total_sell_unmatched_volume": 1861419.0,
-    "price_change_value": "0 (0.0%)",
     "average_buy_trade_volume": 1205.3536345776,
     "average_sell_trade_volume": 1958.677830941,
     "total_net_trade_volume": -616648.0
@@ -1338,7 +1458,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:16.114298+00:00`
+- Captured at: `2026-03-17T05:29:06.272573+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -1408,7 +1528,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:16.324281+00:00`
+- Captured at: `2026-03-17T05:29:06.555802+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -1575,7 +1695,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:17.483843+00:00`
+- Captured at: `2026-03-17T05:29:06.717157+00:00`
 - Success: `True`
 - Row count: `0`
 
@@ -1603,9 +1723,9 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:17.872929+00:00`
+- Captured at: `2026-03-17T05:29:06.896540+00:00`
 - Success: `True`
-- Row count: `388`
+- Row count: `160`
 
 ```text
 symbol, time
@@ -1615,16 +1735,16 @@ symbol, time
 ```json
 [
   {
-    "symbol": "VNE",
-    "time": "2026-03-16T07:53:29.154000+00:00"
+    "symbol": "SMC",
+    "time": "2026-03-17T04:29:47.233000+00:00"
   },
   {
-    "symbol": "KDC",
-    "time": "2026-03-16T07:52:30.141000+00:00"
+    "symbol": "LSS",
+    "time": "2026-03-17T04:26:19.299000+00:00"
   },
   {
-    "symbol": "VCK",
-    "time": "2026-03-16T07:50:10.795000+00:00"
+    "symbol": "TCB",
+    "time": "2026-03-17T04:24:10.199000+00:00"
   }
 ]
 ```
@@ -1632,82 +1752,6 @@ symbol, time
 #### Notes / caveats
 
 Retrieve put-through (thỏa thuận) trading data.
-
-### side_stats
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-- Purpose: Retrieve bid/ask side statistics for the given symbol.
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `cafef`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `side_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `side_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `side_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-#### Notes / caveats
-
-Retrieve bid/ask side statistics for the given symbol.
 
 ### trade_history
 
@@ -1766,7 +1810,7 @@ _No normalized schema declared for this API surface._
 
 ###### Live-observed sample
 
-- Captured at: `2026-03-16T11:20:30.042690+00:00`
+- Captured at: `2026-03-17T05:29:07.116748+00:00`
 - Success: `True`
 - Row count: `5`
 
@@ -1779,39 +1823,39 @@ timestamp, trading_date, symbol, time, side, price, volume, match_volume, accumu
 [
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:45:00",
-    "side": "",
-    "price": 58800,
-    "volume": -200,
-    "match_volume": 35200,
-    "accumulated_volume": 3985900,
-    "accumulated_value": 234963800000
+    "time": "11:29:58",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 200,
+    "accumulated_volume": 2900300,
+    "accumulated_value": 173411560000
   },
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:45:00",
-    "side": "",
-    "price": 58800,
-    "volume": -200,
-    "match_volume": 134300,
-    "accumulated_volume": 3950700,
-    "accumulated_value": 232894040000
+    "time": "11:29:51",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 100,
+    "accumulated_volume": 2900100,
+    "accumulated_value": 173399560000
   },
   {
     "timestamp": "NaT",
-    "trading_date": "16/03/2026",
+    "trading_date": "17/03/2026",
     "symbol": "VCB",
-    "time": "14:29:48",
-    "side": "S",
-    "price": 58900,
-    "volume": -100,
-    "match_volume": 5000,
-    "accumulated_volume": 3816400,
-    "accumulated_value": 224997200000
+    "time": "11:29:49",
+    "side": "B",
+    "price": 60000,
+    "volume": 1200,
+    "match_volume": 2000,
+    "accumulated_volume": 2900000,
+    "accumulated_value": 173393560000
   }
 ]
 ```
@@ -1838,79 +1882,3 @@ Live samples come from both explicit probes in `backend/docs/live_probe_manifest
 #### Notes / caveats
 
 Retrieve trade history for the given symbol.
-
-### trading_stats
-
-- Kind: `method`
-- Signature: `(*A, **B)`
-- Purpose: Retrieve trading statistics for the given symbol.
-
-#### Parameters
-
-| Name | Kind | Required | Default | Annotation |
-| --- | --- | --- | --- | --- |
-| `A` | `VAR_POSITIONAL` | `True` | `None` | `` |
-| `B` | `VAR_KEYWORD` | `True` | `None` | `` |
-
-#### Source details
-
-##### Source `cafef`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `trading_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `kbs`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `trading_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-##### Source `vci`
-
-###### Raw output contract
-
-- Coverage: `not-available`
-
-_No raw columns derived for this source._
-- Note: Provider does not expose `trading_stats` for this source.
-
-###### Normalized output schema
-
-_No normalized schema declared for this API surface._
-
-###### Live-observed sample
-
-_No live sample is attached to this exact endpoint yet._
-
-Live samples come from both explicit probes in `backend/docs/live_probe_manifest.json` and auto-generated per-source probes. If a source still has no sample here, that source either failed during capture or is not currently probeable with the default inputs.
-
-#### Notes / caveats
-
-Retrieve trading statistics for the given symbol.
