@@ -93,6 +93,8 @@ Browse the local site:
 uv run mkdocs serve -f mkdocs.yml
 ```
 
+The MkDocs dev server is configured to run at `http://127.0.0.1:8001/` so it does not conflict with the backend API on port `8000`.
+
 Build static HTML:
 
 ```bash

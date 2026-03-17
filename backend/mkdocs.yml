@@ -2,6 +2,7 @@ site_name: Vendored vnstock Docs
 site_description: Local, source-derived API docs for vnstock_alt and vnstock_data_alt
 docs_dir: docs
 site_dir: site
+dev_addr: 127.0.0.1:8001
 theme:
   name: material
   features:
