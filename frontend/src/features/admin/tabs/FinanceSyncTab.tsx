@@ -1,10 +1,10 @@
 import React from 'react';
-import { type IndexInfo, type PriceJobStatus } from '../../../api/stockApi';
+import { type IndexInfo, type HistoryJobStatus } from '../../../api/stockApi';
 import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
 interface FinanceSyncTabProps {
-    runtimeFinance: PriceJobStatus | undefined;
+    runtimeFinance: HistoryJobStatus | undefined;
     financeProgressPercent: number;
     indexOptions: IndexInfo[];
     financeIndexSymbol: string;

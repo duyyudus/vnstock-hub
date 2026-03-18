@@ -4,14 +4,14 @@ import { useAuthUser } from '../auth/useAuthUser';
 import {
     type IndexInfo,
     stockApi,
-    type PriceAuditActionResponse,
-    type PriceSyncActionResponse,
+    type HistoryAuditActionResponse,
+    type HistorySyncActionResponse,
     type SyncStatusResponse,
 } from '../../api/stockApi';
 import { getErrorMessage, parseSymbolsInput } from './adminUtils';
 import { CompanySyncTab } from './tabs/CompanySyncTab';
 import { FinanceSyncTab } from './tabs/FinanceSyncTab';
-import { PriceSyncTab } from './tabs/PriceSyncTab';
+import { HistorySyncTab } from './tabs/HistorySyncTab';
 import { SettingsTab } from './tabs/SettingsTab';
 
 const REFRESH_INTERVAL_MS = 5000;
@@ -38,7 +38,7 @@ export const AdminPage: React.FC = () => {
     const [auditStartDate, setAuditStartDate] = useState('');
     const [auditEndDate, setAuditEndDate] = useState('');
     const [auditAutoRepair, setAuditAutoRepair] = useState(false);
-    const [auditResult, setAuditResult] = useState<PriceAuditActionResponse | null>(null);
+    const [auditResult, setAuditResult] = useState<HistoryAuditActionResponse | null>(null);
 
     const [repairSymbols, setRepairSymbols] = useState('');
     const [repairStartDate, setRepairStartDate] = useState('');
@@ -113,7 +113,7 @@ export const AdminPage: React.FC = () => {
         };
     }, [canAccess, loadIndexOptions, loadStatuses]);
 
-    const runAction = async <T extends PriceSyncActionResponse>(
+    const runAction = async <T extends HistorySyncActionResponse>(
         fn: () => Promise<T>,
         setLoading: React.Dispatch<React.SetStateAction<boolean>>,
         onSuccess?: (result: T) => void,
@@ -145,7 +145,7 @@ export const AdminPage: React.FC = () => {
     const handleRunSync = async () => {
         const symbols = parseSymbolsInput(syncSymbols);
         await runAction(
-            () => stockApi.runPriceSync(
+            () => stockApi.runHistorySync(
                 forceRestart,
                 symbols.length > 0 ? symbols : undefined,
                 syncIndexSymbol || undefined,
@@ -165,7 +165,7 @@ export const AdminPage: React.FC = () => {
         const symbols = parseSymbolsInput(auditSymbols);
 
         await runAction(
-            () => stockApi.runPriceAudit(
+            () => stockApi.runHistoryAudit(
                 auditStartDate,
                 auditEndDate,
                 symbols.length > 0 ? symbols : undefined,
@@ -173,7 +173,7 @@ export const AdminPage: React.FC = () => {
                 auditAutoRepair,
             ),
             setAuditRunning,
-            (result) => setAuditResult(result as PriceAuditActionResponse),
+            (result) => setAuditResult(result as HistoryAuditActionResponse),
         );
     };
 
@@ -191,7 +191,7 @@ export const AdminPage: React.FC = () => {
         }
 
         await runAction(
-            () => stockApi.runPriceRepairSync(symbols, repairStartDate, repairEndDate),
+            () => stockApi.runHistoryRepairSync(symbols, repairStartDate, repairEndDate),
             setRepairRunning,
         );
     };
@@ -226,9 +226,9 @@ export const AdminPage: React.FC = () => {
         );
     };
 
-    const runtimeSync = syncStatus?.price_sync.sync;
-    const runtimeAudit = syncStatus?.price_sync.audit;
-    const runtimeRepair = syncStatus?.price_sync.repair;
+    const runtimeSync = syncStatus?.history_sync.sync;
+    const runtimeAudit = syncStatus?.history_sync.audit;
+    const runtimeRepair = syncStatus?.history_sync.repair;
     const runtimeFinance = syncStatus?.finance_sync;
     const runtimeCompany = syncStatus?.company_sync;
 
@@ -280,6 +280,16 @@ export const AdminPage: React.FC = () => {
         const value = runtimeSync?.progress ?? 0;
         return Math.max(0, Math.min(100, Math.round(value * 100)));
     }, [runtimeSync?.progress]);
+
+    const auditProgressPercent = useMemo(() => {
+        const value = runtimeAudit?.progress ?? 0;
+        return Math.max(0, Math.min(100, Math.round(value * 100)));
+    }, [runtimeAudit?.progress]);
+
+    const repairProgressPercent = useMemo(() => {
+        const value = runtimeRepair?.progress ?? 0;
+        return Math.max(0, Math.min(100, Math.round(value * 100)));
+    }, [runtimeRepair?.progress]);
 
     const financeProgressPercent = useMemo(() => {
         const value = runtimeFinance?.progress ?? 0;
@@ -357,7 +367,7 @@ export const AdminPage: React.FC = () => {
                         className={`tab ${activeTab === 'price' ? 'tab-active' : ''}`}
                         onClick={() => setActiveTab('price')}
                     >
-                        Price Sync
+                        History Sync
                     </button>
                     <button
                         role="tab"
@@ -378,11 +388,13 @@ export const AdminPage: React.FC = () => {
                 {activeTab === 'settings' ? <SettingsTab /> : null}
 
                 {activeTab === 'price' ? (
-                    <PriceSyncTab
+                    <HistorySyncTab
                         runtimeSync={runtimeSync}
                         runtimeAudit={runtimeAudit}
                         runtimeRepair={runtimeRepair}
                         syncProgressPercent={syncProgressPercent}
+                        auditProgressPercent={auditProgressPercent}
+                        repairProgressPercent={repairProgressPercent}
                         indexOptions={indexOptions}
                         syncIndexSymbol={syncIndexSymbol}
                         onSyncIndexSymbolChange={(value) => setSyncIndexSymbol(value)}

@@ -7,12 +7,12 @@ import time
 import pytest
 from sqlalchemy import select
 
-import app.services.vnstock_service.price_sync as price_sync_module
-from app.db.models import StockPriceSyncState
+import app.services.vnstock_service.history_sync as history_sync_module
+from app.db.models import StockHistorySyncState
 from app.services.sync_status import sync_status
 from app.services.vnstock_service.history import HistoryService
-from app.services.vnstock_service.price_sync import (
-    PriceSyncService,
+from app.services.vnstock_service.history_sync import (
+    HistorySyncService,
     RequestHistorySyncResult,
     SymbolSyncMeta,
 )
@@ -20,7 +20,7 @@ from app.services.vnstock_service.price_sync import (
 
 @pytest.mark.asyncio
 async def test_sync_chunk_rate_limit_then_success(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_rate_limit_fixed_wait_seconds = 0.1
 
     attempts = []
@@ -47,16 +47,16 @@ async def test_sync_chunk_rate_limit_then_success(monkeypatch):
     monkeypatch.setattr(service, "_acquire_sync_request_slot", _no_pace)
     monkeypatch.setattr(service, "_execute_sync_chunk_upsert", _fake_execute)
     monkeypatch.setattr(
-        price_sync_module.shared_rate_limit_pause_controller,
+        history_sync_module.shared_rate_limit_pause_controller,
         "wait_if_paused",
         _no_pause,
     )
     monkeypatch.setattr(
-        price_sync_module.shared_rate_limit_pause_controller,
+        history_sync_module.shared_rate_limit_pause_controller,
         "register_rate_limit_and_get_wait",
         _fixed_wait,
     )
-    monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(history_sync_module.asyncio, "sleep", _fake_sleep)
 
     retries = await service._run_sync_chunk_with_retry(
         symbol="AAA",
@@ -72,7 +72,7 @@ async def test_sync_chunk_rate_limit_then_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_chunk_rate_limit_exceeds_max_wait_cap(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_rate_limit_fixed_wait_seconds = 0.1
     service._sync_rate_limit_max_wait_seconds = 0.25
 
@@ -98,16 +98,16 @@ async def test_sync_chunk_rate_limit_exceeds_max_wait_cap(monkeypatch):
     monkeypatch.setattr(service, "_acquire_sync_request_slot", _no_pace)
     monkeypatch.setattr(service, "_execute_sync_chunk_upsert", _fake_execute)
     monkeypatch.setattr(
-        price_sync_module.shared_rate_limit_pause_controller,
+        history_sync_module.shared_rate_limit_pause_controller,
         "wait_if_paused",
         _no_pause,
     )
     monkeypatch.setattr(
-        price_sync_module.shared_rate_limit_pause_controller,
+        history_sync_module.shared_rate_limit_pause_controller,
         "register_rate_limit_and_get_wait",
         _fixed_wait,
     )
-    monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(history_sync_module.asyncio, "sleep", _fake_sleep)
 
     with pytest.raises(RuntimeError, match=r"Rate limit persisted for AAA .*cap=0.2s"):
         await service._run_sync_chunk_with_retry(
@@ -122,7 +122,7 @@ async def test_sync_chunk_rate_limit_exceeds_max_wait_cap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_chunk_non_rate_limit_error_does_not_retry(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     attempts = []
     sleeps = []
 
@@ -138,7 +138,7 @@ async def test_sync_chunk_non_rate_limit_error_does_not_retry(monkeypatch):
 
     monkeypatch.setattr(service, "_acquire_sync_request_slot", _no_pace)
     monkeypatch.setattr(service, "_execute_sync_chunk_upsert", _fake_execute)
-    monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(history_sync_module.asyncio, "sleep", _fake_sleep)
 
     with pytest.raises(RuntimeError, match="database exploded"):
         await service._run_sync_chunk_with_retry(
@@ -153,7 +153,7 @@ async def test_sync_chunk_non_rate_limit_error_does_not_retry(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_pacer_respects_min_interval(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_target_rpm = 120  # 0.5s min interval
 
     fake_clock = {"now": 0.0}
@@ -166,8 +166,8 @@ async def test_sync_pacer_respects_min_interval(monkeypatch):
         sleep_calls.append(seconds)
         fake_clock["now"] += seconds
 
-    monkeypatch.setattr(price_sync_module.time, "monotonic", _fake_monotonic)
-    monkeypatch.setattr(price_sync_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(history_sync_module.time, "monotonic", _fake_monotonic)
+    monkeypatch.setattr(history_sync_module.asyncio, "sleep", _fake_sleep)
 
     await service._reset_sync_pacer()
     await service._acquire_sync_request_slot()
@@ -183,7 +183,7 @@ async def test_sync_pacer_respects_min_interval(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_parallel_workers_update_counters(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 3
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -223,7 +223,7 @@ async def test_sync_parallel_workers_update_counters(monkeypatch):
 
     await service._run_sync(symbols=None)
 
-    runtime = sync_status.price_sync
+    runtime = sync_status.history_sync
     assert runtime.is_running is False
     assert runtime.total_symbols == 4
     assert runtime.processed_symbols == 4
@@ -236,7 +236,7 @@ async def test_sync_parallel_workers_update_counters(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 1
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -269,7 +269,7 @@ async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
 
     await service._run_sync(symbols=None)
 
-    runtime = sync_status.price_sync
+    runtime = sync_status.history_sync
     assert runtime.failed_symbols == 1
     assert runtime.failed_tickers == ["BBB"]
 
@@ -277,14 +277,14 @@ async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
 
     await service._run_sync(symbols=None)
 
-    runtime = sync_status.price_sync
+    runtime = sync_status.history_sync
     assert runtime.failed_symbols == 0
     assert runtime.failed_tickers == []
 
 
 @pytest.mark.asyncio
 async def test_audit_parallel_workers_update_counters(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 3
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -325,7 +325,7 @@ async def test_audit_parallel_workers_update_counters(monkeypatch):
         index_symbol="VN30",
     )
 
-    runtime = sync_status.price_audit
+    runtime = sync_status.history_audit
     assert runtime.is_running is False
     assert runtime.total_symbols == 4
     assert runtime.processed_symbols == 4
@@ -346,7 +346,7 @@ async def test_audit_parallel_workers_update_counters(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_audit_tracks_failed_tickers(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 1
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -377,7 +377,7 @@ async def test_audit_tracks_failed_tickers(monkeypatch):
         index_symbol="VN30",
     )
 
-    runtime = sync_status.price_audit
+    runtime = sync_status.history_audit
     assert runtime.failed_symbols == 1
     assert runtime.failed_tickers == ["BBB"]
     assert result["failed_symbols"] == 1
@@ -385,7 +385,7 @@ async def test_audit_tracks_failed_tickers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_repair_parallel_workers_update_counters(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 3
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -408,7 +408,7 @@ async def test_repair_parallel_workers_update_counters(monkeypatch):
     async def _fake_mark_symbol_error(symbol: str, error_message: str):
         raise AssertionError(f"Did not expect failure for {symbol}: {error_message}")
 
-    monkeypatch.setattr(service._history, "_upsert_stock_price_history", _fake_upsert)
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _fake_upsert)
     monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
     monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
 
@@ -418,7 +418,7 @@ async def test_repair_parallel_workers_update_counters(monkeypatch):
         end_date=date(2025, 1, 3),
     )
 
-    runtime = sync_status.price_repair
+    runtime = sync_status.history_repair
     assert runtime.is_running is False
     assert runtime.total_symbols == 4
     assert runtime.processed_symbols == 4
@@ -437,7 +437,7 @@ async def test_repair_parallel_workers_update_counters(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_repair_tracks_failed_tickers(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 1
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -451,7 +451,7 @@ async def test_repair_tracks_failed_tickers(monkeypatch):
     async def _fake_mark_symbol_error(_symbol: str, _error_message: str):
         return None
 
-    monkeypatch.setattr(service._history, "_upsert_stock_price_history", _fake_upsert)
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _fake_upsert)
     monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
     monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
 
@@ -461,7 +461,7 @@ async def test_repair_tracks_failed_tickers(monkeypatch):
         end_date=date(2025, 1, 3),
     )
 
-    runtime = sync_status.price_repair
+    runtime = sync_status.history_repair
     assert runtime.failed_symbols == 1
     assert runtime.failed_tickers == ["BBB"]
     assert result["failed_symbols"] == 1
@@ -469,7 +469,7 @@ async def test_repair_tracks_failed_tickers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_global_worker_cap_shared_across_sync_audit_repair(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 2
     service._operation_worker_semaphore = asyncio.Semaphore(service._sync_max_workers)
 
@@ -538,7 +538,7 @@ async def test_global_worker_cap_shared_across_sync_audit_repair(monkeypatch):
     monkeypatch.setattr(service, "_fetch_remote_history_dates", _fake_fetch_remote_history_dates)
     monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
     monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
-    monkeypatch.setattr(service._history, "_upsert_stock_price_history", _fake_upsert)
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _fake_upsert)
 
     await asyncio.gather(
         service._run_sync(symbols=None),
@@ -562,7 +562,7 @@ async def test_global_worker_cap_shared_across_sync_audit_repair(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_symbol_uses_db_max_date_with_two_day_overlap(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_chunk_days = 4000
 
     bounds_calls = {"count": 0}
@@ -601,7 +601,7 @@ async def test_sync_symbol_uses_db_max_date_with_two_day_overlap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sync_symbol_without_history_starts_from_listing_date(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_chunk_days = 10000
 
     chunk_starts = []
@@ -640,19 +640,19 @@ async def test_sync_symbol_without_history_starts_from_listing_date(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_mark_symbol_sync_result_sets_completed_status(monkeypatch, db_session):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
 
     async def _fake_bounds(_symbol: str):
         return date(2020, 1, 2), date(2026, 2, 12)
 
     monkeypatch.setattr(service, "_get_symbol_bounds", _fake_bounds)
 
-    db_session.add(StockPriceSyncState(symbol="AAA", sync_status="running"))
+    db_session.add(StockHistorySyncState(symbol="AAA", sync_status="running"))
     await db_session.commit()
 
     await service._mark_symbol_sync_result("AAA")
 
-    stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == "AAA")
+    stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == "AAA")
     row = (await db_session.execute(stmt)).scalar_one()
 
     assert row.sync_status == "completed"
@@ -664,7 +664,7 @@ async def test_mark_symbol_sync_result_sets_completed_status(monkeypatch, db_ses
 
 @pytest.mark.asyncio
 async def test_resolve_symbols_filter_merges_manual_and_index(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
 
     async def _fake_fetch_symbols_for_index(_index_symbol: str):
         return ["FPT", "SSI", "HPG"]
@@ -680,7 +680,7 @@ async def test_resolve_symbols_filter_merges_manual_and_index(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_symbols_filter_returns_none_without_filters():
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     symbols = await service._resolve_symbols_filter(
         symbols=None,
         index_symbol=None,
@@ -690,7 +690,7 @@ async def test_resolve_symbols_filter_returns_none_without_filters():
 
 @pytest.mark.asyncio
 async def test_request_sync_runs_incremental_overlap_and_repairs_requested_range(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     service._sync_chunk_days = 30
     chunk_calls = []
     repaired_calls = []
@@ -726,7 +726,7 @@ async def test_request_sync_runs_incremental_overlap_and_repairs_requested_range
     async def _fake_latest_iso(_symbol):
         return "2026-02-11"
 
-    monkeypatch.setattr(price_sync_module, "date", FixedDate)
+    monkeypatch.setattr(history_sync_module, "date", FixedDate)
     monkeypatch.setattr(service, "_get_or_create_symbol_state", _fake_get_or_create_symbol_state)
     monkeypatch.setattr(service, "_get_symbol_bounds", _fake_get_symbol_bounds)
     monkeypatch.setattr(service, "_set_symbol_sync_running", _fake_set_symbol_sync_running)
@@ -753,8 +753,44 @@ async def test_request_sync_runs_incremental_overlap_and_repairs_requested_range
 
 
 @pytest.mark.asyncio
+async def test_repair_missing_dates_batches_sparse_gaps_into_fetch_windows(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    service._sync_chunk_days = 365
+    chunk_calls = []
+    marked = []
+
+    async def _fake_run_sync_chunk_with_retry(_symbol, start_date: date, end_date: date):
+        chunk_calls.append((start_date, end_date))
+        return 0
+
+    async def _fake_mark_symbol_sync_result(symbol: str):
+        marked.append(symbol)
+        return None
+
+    monkeypatch.setattr(service, "_run_sync_chunk_with_retry", _fake_run_sync_chunk_with_retry)
+    monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
+
+    repaired = await service._repair_missing_dates(
+        "AAA",
+        [
+            date(2025, 1, 2),
+            date(2025, 3, 15),
+            date(2025, 12, 31),
+            date(2026, 1, 2),
+        ],
+    )
+
+    assert repaired == 4
+    assert chunk_calls == [
+        (date(2025, 1, 2), date(2025, 12, 31)),
+        (date(2026, 1, 2), date(2026, 1, 2)),
+    ]
+    assert marked == ["AAA"]
+
+
+@pytest.mark.asyncio
 async def test_request_sync_deduplicates_concurrent_requests_for_same_symbol(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     executions = {"count": 0}
 
     async def _fake_request_task(symbol, start_date, end_date):
@@ -789,7 +825,7 @@ async def test_request_sync_deduplicates_concurrent_requests_for_same_symbol(mon
 
 @pytest.mark.asyncio
 async def test_request_sync_timeout_returns_fallback_and_task_continues(monkeypatch):
-    service = PriceSyncService(history=HistoryService())
+    service = HistorySyncService(history=HistoryService())
     started = asyncio.Event()
     finished = asyncio.Event()
 

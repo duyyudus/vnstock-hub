@@ -1,13 +1,15 @@
 import React from 'react';
-import { type IndexInfo, type PriceAuditActionResponse, type PriceJobStatus } from '../../../api/stockApi';
+import { type IndexInfo, type HistoryAuditActionResponse, type HistoryJobStatus } from '../../../api/stockApi';
 import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
-interface PriceSyncTabProps {
-    runtimeSync: PriceJobStatus | undefined;
-    runtimeAudit: PriceJobStatus | undefined;
-    runtimeRepair: PriceJobStatus | undefined;
+interface HistorySyncTabProps {
+    runtimeSync: HistoryJobStatus | undefined;
+    runtimeAudit: HistoryJobStatus | undefined;
+    runtimeRepair: HistoryJobStatus | undefined;
     syncProgressPercent: number;
+    auditProgressPercent: number;
+    repairProgressPercent: number;
     indexOptions: IndexInfo[];
     syncIndexSymbol: string;
     onSyncIndexSymbolChange: (value: string) => void;
@@ -39,14 +41,16 @@ interface PriceSyncTabProps {
     repairActive: boolean;
     anyJobActive: boolean;
     actionDisabled: boolean;
-    auditResult: PriceAuditActionResponse | null;
+    auditResult: HistoryAuditActionResponse | null;
 }
 
-export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
+export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     runtimeSync,
     runtimeAudit,
     runtimeRepair,
     syncProgressPercent,
+    auditProgressPercent,
+    repairProgressPercent,
     indexOptions,
     syncIndexSymbol,
     onSyncIndexSymbolChange,
@@ -85,7 +89,7 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
             <section className="grid gap-4 md:grid-cols-3">
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body">
-                        <h2 className="card-title text-base">Price Sync Status</h2>
+                        <h2 className="card-title text-base">History Sync Status</h2>
                         <p>Running: <strong>{runtimeSync?.is_running ? 'Yes' : 'No'}</strong></p>
                         <p>Progress: <strong>{syncProgressPercent}%</strong></p>
                         <progress className="progress progress-primary w-full" value={syncProgressPercent} max={100}></progress>
@@ -104,6 +108,8 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                     <div className="card-body">
                         <h2 className="card-title text-base">Gap Audit Status</h2>
                         <p>Running: <strong>{runtimeAudit?.is_running ? 'Yes' : 'No'}</strong></p>
+                        <p>Progress: <strong>{auditProgressPercent}%</strong></p>
+                        <progress className="progress progress-primary w-full" value={auditProgressPercent} max={100}></progress>
                         <p>Processed: {runtimeAudit?.processed_symbols ?? 0} / {runtimeAudit?.total_symbols ?? 0}</p>
                         <p>Success: {runtimeAudit?.success_symbols ?? 0}</p>
                         <p>Failed: {runtimeAudit?.failed_symbols ?? 0}</p>
@@ -118,6 +124,8 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                     <div className="card-body">
                         <h2 className="card-title text-base">Repair Status</h2>
                         <p>Running: <strong>{runtimeRepair?.is_running ? 'Yes' : 'No'}</strong></p>
+                        <p>Progress: <strong>{repairProgressPercent}%</strong></p>
+                        <progress className="progress progress-primary w-full" value={repairProgressPercent} max={100}></progress>
                         <p>Processed: {runtimeRepair?.processed_symbols ?? 0} / {runtimeRepair?.total_symbols ?? 0}</p>
                         <p>Success: {runtimeRepair?.success_symbols ?? 0}</p>
                         <p>Failed: {runtimeRepair?.failed_symbols ?? 0}</p>
@@ -132,7 +140,7 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
             <section className="grid gap-4 lg:grid-cols-3">
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body space-y-3">
-                        <h2 className="card-title">Run Price Sync</h2>
+                        <h2 className="card-title">Run History Sync</h2>
                         <label className="form-control">
                             <span className="label-text">Index scope (optional)</span>
                             <select
@@ -177,14 +185,14 @@ export const PriceSyncTab: React.FC<PriceSyncTabProps> = ({
                                 ? 'Syncing...'
                                 : anyJobActive
                                     ? 'Waiting for current job...'
-                                    : 'Run Price Sync'}
+                                    : 'Run History Sync'}
                         </button>
                     </div>
                 </div>
 
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body space-y-3">
-                        <h2 className="card-title">Run Gap Audit</h2>
+                        <h2 className="card-title">Run History Audit</h2>
                         <label className="form-control">
                             <span className="label-text">Index scope (optional)</span>
                             <select

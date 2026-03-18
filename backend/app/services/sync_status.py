@@ -21,8 +21,8 @@ class SyncStatusData:
 
 
 @dataclass
-class PriceJobStatusData:
-    """Runtime status snapshot for a price sync job."""
+class HistoryJobStatusData:
+    """Runtime status snapshot for a symbol-based sync job."""
     is_running: bool = False
     total_symbols: int = 0
     processed_symbols: int = 0
@@ -54,44 +54,44 @@ class GlobalSyncStatus:
         self._fund_performance_started_at: Optional[str] = None
         self._fund_performance_progress: float = 0.0
 
-        # Price unified sync status
-        self._price_sync_is_running = False
-        self._price_sync_total_symbols = 0
-        self._price_sync_processed_symbols = 0
-        self._price_sync_success_symbols = 0
-        self._price_sync_failed_symbols = 0
-        self._price_sync_failed_tickers: list[str] = []
-        self._price_sync_current_symbol: Optional[str] = None
-        self._price_sync_last_run_at: Optional[str] = None
-        self._price_sync_started_at: Optional[str] = None
-        self._price_sync_error: Optional[str] = None
-        self._price_sync_progress: float = 0.0
+        # History unified sync status
+        self._history_sync_is_running = False
+        self._history_sync_total_symbols = 0
+        self._history_sync_processed_symbols = 0
+        self._history_sync_success_symbols = 0
+        self._history_sync_failed_symbols = 0
+        self._history_sync_failed_tickers: list[str] = []
+        self._history_sync_current_symbol: Optional[str] = None
+        self._history_sync_last_run_at: Optional[str] = None
+        self._history_sync_started_at: Optional[str] = None
+        self._history_sync_error: Optional[str] = None
+        self._history_sync_progress: float = 0.0
 
-        # Price audit status
-        self._price_audit_is_running = False
-        self._price_audit_total_symbols = 0
-        self._price_audit_processed_symbols = 0
-        self._price_audit_success_symbols = 0
-        self._price_audit_failed_symbols = 0
-        self._price_audit_failed_tickers: list[str] = []
-        self._price_audit_current_symbol: Optional[str] = None
-        self._price_audit_last_run_at: Optional[str] = None
-        self._price_audit_started_at: Optional[str] = None
-        self._price_audit_error: Optional[str] = None
-        self._price_audit_progress: float = 0.0
+        # History audit status
+        self._history_audit_is_running = False
+        self._history_audit_total_symbols = 0
+        self._history_audit_processed_symbols = 0
+        self._history_audit_success_symbols = 0
+        self._history_audit_failed_symbols = 0
+        self._history_audit_failed_tickers: list[str] = []
+        self._history_audit_current_symbol: Optional[str] = None
+        self._history_audit_last_run_at: Optional[str] = None
+        self._history_audit_started_at: Optional[str] = None
+        self._history_audit_error: Optional[str] = None
+        self._history_audit_progress: float = 0.0
 
-        # Price repair status
-        self._price_repair_is_running = False
-        self._price_repair_total_symbols = 0
-        self._price_repair_processed_symbols = 0
-        self._price_repair_success_symbols = 0
-        self._price_repair_failed_symbols = 0
-        self._price_repair_failed_tickers: list[str] = []
-        self._price_repair_current_symbol: Optional[str] = None
-        self._price_repair_last_run_at: Optional[str] = None
-        self._price_repair_started_at: Optional[str] = None
-        self._price_repair_error: Optional[str] = None
-        self._price_repair_progress: float = 0.0
+        # History repair status
+        self._history_repair_is_running = False
+        self._history_repair_total_symbols = 0
+        self._history_repair_processed_symbols = 0
+        self._history_repair_success_symbols = 0
+        self._history_repair_failed_symbols = 0
+        self._history_repair_failed_tickers: list[str] = []
+        self._history_repair_current_symbol: Optional[str] = None
+        self._history_repair_last_run_at: Optional[str] = None
+        self._history_repair_started_at: Optional[str] = None
+        self._history_repair_error: Optional[str] = None
+        self._history_repair_progress: float = 0.0
 
         # Finance sync status
         self._finance_sync_is_running = False
@@ -140,64 +140,64 @@ class GlobalSyncStatus:
             )
 
     @property
-    def price_sync(self) -> PriceJobStatusData:
-        """Get unified price sync runtime status as immutable snapshot."""
+    def history_sync(self) -> HistoryJobStatusData:
+        """Get unified history sync runtime status as immutable snapshot."""
         with self._lock:
-            return PriceJobStatusData(
-                is_running=self._price_sync_is_running,
-                total_symbols=self._price_sync_total_symbols,
-                processed_symbols=self._price_sync_processed_symbols,
-                success_symbols=self._price_sync_success_symbols,
-                failed_symbols=self._price_sync_failed_symbols,
-                failed_tickers=list(self._price_sync_failed_tickers),
-                current_symbol=self._price_sync_current_symbol,
-                last_run_at=self._price_sync_last_run_at,
-                started_at=self._price_sync_started_at,
-                error=self._price_sync_error,
-                progress=self._price_sync_progress,
+            return HistoryJobStatusData(
+                is_running=self._history_sync_is_running,
+                total_symbols=self._history_sync_total_symbols,
+                processed_symbols=self._history_sync_processed_symbols,
+                success_symbols=self._history_sync_success_symbols,
+                failed_symbols=self._history_sync_failed_symbols,
+                failed_tickers=list(self._history_sync_failed_tickers),
+                current_symbol=self._history_sync_current_symbol,
+                last_run_at=self._history_sync_last_run_at,
+                started_at=self._history_sync_started_at,
+                error=self._history_sync_error,
+                progress=self._history_sync_progress,
             )
 
     @property
-    def price_audit(self) -> PriceJobStatusData:
-        """Get price audit runtime status as immutable snapshot."""
+    def history_audit(self) -> HistoryJobStatusData:
+        """Get history audit runtime status as immutable snapshot."""
         with self._lock:
-            return PriceJobStatusData(
-                is_running=self._price_audit_is_running,
-                total_symbols=self._price_audit_total_symbols,
-                processed_symbols=self._price_audit_processed_symbols,
-                success_symbols=self._price_audit_success_symbols,
-                failed_symbols=self._price_audit_failed_symbols,
-                failed_tickers=list(self._price_audit_failed_tickers),
-                current_symbol=self._price_audit_current_symbol,
-                last_run_at=self._price_audit_last_run_at,
-                started_at=self._price_audit_started_at,
-                error=self._price_audit_error,
-                progress=self._price_audit_progress,
+            return HistoryJobStatusData(
+                is_running=self._history_audit_is_running,
+                total_symbols=self._history_audit_total_symbols,
+                processed_symbols=self._history_audit_processed_symbols,
+                success_symbols=self._history_audit_success_symbols,
+                failed_symbols=self._history_audit_failed_symbols,
+                failed_tickers=list(self._history_audit_failed_tickers),
+                current_symbol=self._history_audit_current_symbol,
+                last_run_at=self._history_audit_last_run_at,
+                started_at=self._history_audit_started_at,
+                error=self._history_audit_error,
+                progress=self._history_audit_progress,
             )
 
     @property
-    def price_repair(self) -> PriceJobStatusData:
-        """Get price repair runtime status as immutable snapshot."""
+    def history_repair(self) -> HistoryJobStatusData:
+        """Get history repair runtime status as immutable snapshot."""
         with self._lock:
-            return PriceJobStatusData(
-                is_running=self._price_repair_is_running,
-                total_symbols=self._price_repair_total_symbols,
-                processed_symbols=self._price_repair_processed_symbols,
-                success_symbols=self._price_repair_success_symbols,
-                failed_symbols=self._price_repair_failed_symbols,
-                failed_tickers=list(self._price_repair_failed_tickers),
-                current_symbol=self._price_repair_current_symbol,
-                last_run_at=self._price_repair_last_run_at,
-                started_at=self._price_repair_started_at,
-                error=self._price_repair_error,
-                progress=self._price_repair_progress,
+            return HistoryJobStatusData(
+                is_running=self._history_repair_is_running,
+                total_symbols=self._history_repair_total_symbols,
+                processed_symbols=self._history_repair_processed_symbols,
+                success_symbols=self._history_repair_success_symbols,
+                failed_symbols=self._history_repair_failed_symbols,
+                failed_tickers=list(self._history_repair_failed_tickers),
+                current_symbol=self._history_repair_current_symbol,
+                last_run_at=self._history_repair_last_run_at,
+                started_at=self._history_repair_started_at,
+                error=self._history_repair_error,
+                progress=self._history_repair_progress,
             )
 
     @property
-    def finance_sync(self) -> PriceJobStatusData:
+    def finance_sync(self) -> HistoryJobStatusData:
         """Get finance sync runtime status as immutable snapshot."""
         with self._lock:
-            return PriceJobStatusData(
+            return HistoryJobStatusData(
                 is_running=self._finance_sync_is_running,
                 total_symbols=self._finance_sync_total_symbols,
                 processed_symbols=self._finance_sync_processed_symbols,
@@ -212,10 +212,10 @@ class GlobalSyncStatus:
             )
 
     @property
-    def company_sync(self) -> PriceJobStatusData:
+    def company_sync(self) -> HistoryJobStatusData:
         """Get company sync runtime status as immutable snapshot."""
         with self._lock:
-            return PriceJobStatusData(
+            return HistoryJobStatusData(
                 is_running=self._company_sync_is_running,
                 total_symbols=self._company_sync_total_symbols,
                 processed_symbols=self._company_sync_processed_symbols,
@@ -310,7 +310,7 @@ class GlobalSyncStatus:
             if not success:
                 self._fund_performance_error = error
 
-    def _start_price_job(self, prefix: str, total_symbols: int) -> None:
+    def _start_symbol_job(self, prefix: str, total_symbols: int) -> None:
         setattr(self, f"_{prefix}_is_running", True)
         setattr(self, f"_{prefix}_total_symbols", max(0, total_symbols))
         setattr(self, f"_{prefix}_processed_symbols", 0)
@@ -322,7 +322,7 @@ class GlobalSyncStatus:
         setattr(self, f"_{prefix}_error", None)
         setattr(self, f"_{prefix}_progress", 0.0)
 
-    def _update_price_job_progress(
+    def _update_symbol_job_progress(
         self,
         prefix: str,
         processed_symbols: int,
@@ -343,7 +343,7 @@ class GlobalSyncStatus:
             progress = getattr(self, f"_{prefix}_processed_symbols") / total_symbols
             setattr(self, f"_{prefix}_progress", min(1.0, max(0.0, progress)))
 
-    def _complete_price_job(self, prefix: str, success: bool, error: Optional[str] = None) -> None:
+    def _complete_symbol_job(self, prefix: str, success: bool, error: Optional[str] = None) -> None:
         setattr(self, f"_{prefix}_is_running", False)
         setattr(self, f"_{prefix}_current_symbol", None)
         setattr(self, f"_{prefix}_last_run_at", datetime.now().isoformat())
@@ -352,12 +352,12 @@ class GlobalSyncStatus:
         setattr(self, f"_{prefix}_progress", 1.0 if success else current_progress)
         setattr(self, f"_{prefix}_error", error)
 
-    def start_price_sync(self, total_symbols: int) -> None:
-        """Mark unified price sync as started."""
+    def start_history_sync(self, total_symbols: int) -> None:
+        """Mark unified history sync as started."""
         with self._lock:
-            self._start_price_job("price_sync", total_symbols)
+            self._start_symbol_job("history_sync", total_symbols)
 
-    def update_price_sync_progress(
+    def update_history_sync_progress(
         self,
         processed_symbols: int,
         success_symbols: int,
@@ -365,10 +365,10 @@ class GlobalSyncStatus:
         current_symbol: Optional[str],
         failed_tickers: Optional[list[str]] = None,
     ) -> None:
-        """Update unified price sync progress."""
+        """Update unified history sync progress."""
         with self._lock:
-            self._update_price_job_progress(
-                "price_sync",
+            self._update_symbol_job_progress(
+                "history_sync",
                 processed_symbols,
                 success_symbols,
                 failed_symbols,
@@ -376,17 +376,17 @@ class GlobalSyncStatus:
                 failed_tickers,
             )
 
-    def complete_price_sync(self, success: bool, error: Optional[str] = None) -> None:
-        """Mark unified price sync as completed."""
+    def complete_history_sync(self, success: bool, error: Optional[str] = None) -> None:
+        """Mark unified history sync as completed."""
         with self._lock:
-            self._complete_price_job("price_sync", success, error)
+            self._complete_symbol_job("history_sync", success, error)
 
-    def start_price_audit(self, total_symbols: int) -> None:
-        """Mark price audit as started."""
+    def start_history_audit(self, total_symbols: int) -> None:
+        """Mark history audit as started."""
         with self._lock:
-            self._start_price_job("price_audit", total_symbols)
+            self._start_symbol_job("history_audit", total_symbols)
 
-    def update_price_audit_progress(
+    def update_history_audit_progress(
         self,
         processed_symbols: int,
         success_symbols: int,
@@ -394,10 +394,10 @@ class GlobalSyncStatus:
         current_symbol: Optional[str],
         failed_tickers: Optional[list[str]] = None,
     ) -> None:
-        """Update price audit progress."""
+        """Update history audit progress."""
         with self._lock:
-            self._update_price_job_progress(
-                "price_audit",
+            self._update_symbol_job_progress(
+                "history_audit",
                 processed_symbols,
                 success_symbols,
                 failed_symbols,
@@ -405,17 +405,17 @@ class GlobalSyncStatus:
                 failed_tickers,
             )
 
-    def complete_price_audit(self, success: bool, error: Optional[str] = None) -> None:
-        """Mark price audit as completed."""
+    def complete_history_audit(self, success: bool, error: Optional[str] = None) -> None:
+        """Mark history audit as completed."""
         with self._lock:
-            self._complete_price_job("price_audit", success, error)
+            self._complete_symbol_job("history_audit", success, error)
 
-    def start_price_repair(self, total_symbols: int) -> None:
-        """Mark price repair sync as started."""
+    def start_history_repair(self, total_symbols: int) -> None:
+        """Mark history repair sync as started."""
         with self._lock:
-            self._start_price_job("price_repair", total_symbols)
+            self._start_symbol_job("history_repair", total_symbols)
 
-    def update_price_repair_progress(
+    def update_history_repair_progress(
         self,
         processed_symbols: int,
         success_symbols: int,
@@ -423,10 +423,10 @@ class GlobalSyncStatus:
         current_symbol: Optional[str],
         failed_tickers: Optional[list[str]] = None,
     ) -> None:
-        """Update repair sync progress."""
+        """Update history repair progress."""
         with self._lock:
-            self._update_price_job_progress(
-                "price_repair",
+            self._update_symbol_job_progress(
+                "history_repair",
                 processed_symbols,
                 success_symbols,
                 failed_symbols,
@@ -434,15 +434,15 @@ class GlobalSyncStatus:
                 failed_tickers,
             )
 
-    def complete_price_repair(self, success: bool, error: Optional[str] = None) -> None:
-        """Mark price repair sync as completed."""
+    def complete_history_repair(self, success: bool, error: Optional[str] = None) -> None:
+        """Mark history repair sync as completed."""
         with self._lock:
-            self._complete_price_job("price_repair", success, error)
+            self._complete_symbol_job("history_repair", success, error)
 
     def start_finance_sync(self, total_symbols: int) -> None:
         """Mark finance sync as started."""
         with self._lock:
-            self._start_price_job("finance_sync", total_symbols)
+            self._start_symbol_job("finance_sync", total_symbols)
 
     def update_finance_sync_progress(
         self,
@@ -454,7 +454,7 @@ class GlobalSyncStatus:
     ) -> None:
         """Update finance sync progress."""
         with self._lock:
-            self._update_price_job_progress(
+            self._update_symbol_job_progress(
                 "finance_sync",
                 processed_symbols,
                 success_symbols,
@@ -466,12 +466,12 @@ class GlobalSyncStatus:
     def complete_finance_sync(self, success: bool, error: Optional[str] = None) -> None:
         """Mark finance sync as completed."""
         with self._lock:
-            self._complete_price_job("finance_sync", success, error)
+            self._complete_symbol_job("finance_sync", success, error)
 
     def start_company_sync(self, total_symbols: int) -> None:
         """Mark company sync as started."""
         with self._lock:
-            self._start_price_job("company_sync", total_symbols)
+            self._start_symbol_job("company_sync", total_symbols)
 
     def update_company_sync_progress(
         self,
@@ -483,7 +483,7 @@ class GlobalSyncStatus:
     ) -> None:
         """Update company sync progress."""
         with self._lock:
-            self._update_price_job_progress(
+            self._update_symbol_job_progress(
                 "company_sync",
                 processed_symbols,
                 success_symbols,
@@ -495,7 +495,7 @@ class GlobalSyncStatus:
     def complete_company_sync(self, success: bool, error: Optional[str] = None) -> None:
         """Mark company sync as completed."""
         with self._lock:
-            self._complete_price_job("company_sync", success, error)
+            self._complete_symbol_job("company_sync", success, error)
 
     def set_rate_limited(self, reset_in_seconds: float = 60.0) -> None:
         """
@@ -530,45 +530,45 @@ class GlobalSyncStatus:
                     "started_at": self._fund_performance_started_at,
                     "progress": self._fund_performance_progress,
                 },
-                "price_sync": {
+                "history_sync": {
                     "sync": {
-                        "is_running": self._price_sync_is_running,
-                        "total_symbols": self._price_sync_total_symbols,
-                        "processed_symbols": self._price_sync_processed_symbols,
-                        "success_symbols": self._price_sync_success_symbols,
-                        "failed_symbols": self._price_sync_failed_symbols,
-                        "failed_tickers": list(self._price_sync_failed_tickers),
-                        "current_symbol": self._price_sync_current_symbol,
-                        "last_run_at": self._price_sync_last_run_at,
-                        "started_at": self._price_sync_started_at,
-                        "error": self._price_sync_error,
-                        "progress": self._price_sync_progress,
+                        "is_running": self._history_sync_is_running,
+                        "total_symbols": self._history_sync_total_symbols,
+                        "processed_symbols": self._history_sync_processed_symbols,
+                        "success_symbols": self._history_sync_success_symbols,
+                        "failed_symbols": self._history_sync_failed_symbols,
+                        "failed_tickers": list(self._history_sync_failed_tickers),
+                        "current_symbol": self._history_sync_current_symbol,
+                        "last_run_at": self._history_sync_last_run_at,
+                        "started_at": self._history_sync_started_at,
+                        "error": self._history_sync_error,
+                        "progress": self._history_sync_progress,
                     },
                     "audit": {
-                        "is_running": self._price_audit_is_running,
-                        "total_symbols": self._price_audit_total_symbols,
-                        "processed_symbols": self._price_audit_processed_symbols,
-                        "success_symbols": self._price_audit_success_symbols,
-                        "failed_symbols": self._price_audit_failed_symbols,
-                        "failed_tickers": list(self._price_audit_failed_tickers),
-                        "current_symbol": self._price_audit_current_symbol,
-                        "last_run_at": self._price_audit_last_run_at,
-                        "started_at": self._price_audit_started_at,
-                        "error": self._price_audit_error,
-                        "progress": self._price_audit_progress,
+                        "is_running": self._history_audit_is_running,
+                        "total_symbols": self._history_audit_total_symbols,
+                        "processed_symbols": self._history_audit_processed_symbols,
+                        "success_symbols": self._history_audit_success_symbols,
+                        "failed_symbols": self._history_audit_failed_symbols,
+                        "failed_tickers": list(self._history_audit_failed_tickers),
+                        "current_symbol": self._history_audit_current_symbol,
+                        "last_run_at": self._history_audit_last_run_at,
+                        "started_at": self._history_audit_started_at,
+                        "error": self._history_audit_error,
+                        "progress": self._history_audit_progress,
                     },
                     "repair": {
-                        "is_running": self._price_repair_is_running,
-                        "total_symbols": self._price_repair_total_symbols,
-                        "processed_symbols": self._price_repair_processed_symbols,
-                        "success_symbols": self._price_repair_success_symbols,
-                        "failed_symbols": self._price_repair_failed_symbols,
-                        "failed_tickers": list(self._price_repair_failed_tickers),
-                        "current_symbol": self._price_repair_current_symbol,
-                        "last_run_at": self._price_repair_last_run_at,
-                        "started_at": self._price_repair_started_at,
-                        "error": self._price_repair_error,
-                        "progress": self._price_repair_progress,
+                        "is_running": self._history_repair_is_running,
+                        "total_symbols": self._history_repair_total_symbols,
+                        "processed_symbols": self._history_repair_processed_symbols,
+                        "success_symbols": self._history_repair_success_symbols,
+                        "failed_symbols": self._history_repair_failed_symbols,
+                        "failed_tickers": list(self._history_repair_failed_tickers),
+                        "current_symbol": self._history_repair_current_symbol,
+                        "last_run_at": self._history_repair_last_run_at,
+                        "started_at": self._history_repair_started_at,
+                        "error": self._history_repair_error,
+                        "progress": self._history_repair_progress,
                     },
                 },
                 "finance_sync": {

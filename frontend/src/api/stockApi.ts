@@ -619,7 +619,7 @@ export interface SyncStatusItem {
     started_at: string | null;
 }
 
-export interface PriceJobStatus {
+export interface HistoryJobStatus {
     is_running: boolean;
     total_symbols: number;
     processed_symbols: number;
@@ -633,22 +633,22 @@ export interface PriceJobStatus {
     progress: number;
 }
 
-export interface PriceSyncStatus {
-    sync: PriceJobStatus;
-    audit: PriceJobStatus;
-    repair: PriceJobStatus;
+export interface HistorySyncStatus {
+    sync: HistoryJobStatus;
+    audit: HistoryJobStatus;
+    repair: HistoryJobStatus;
 }
 
 export interface SyncStatusResponse {
     fund_performance: SyncStatusItem;
-    price_sync: PriceSyncStatus;
-    finance_sync: PriceJobStatus;
-    company_sync: PriceJobStatus;
+    history_sync: HistorySyncStatus;
+    finance_sync: HistoryJobStatus;
+    company_sync: HistoryJobStatus;
     is_rate_limited: boolean;
     rate_limit_reset_at: string | null;
 }
 
-export interface PriceSyncActionResponse {
+export interface HistorySyncActionResponse {
     started: boolean;
     message: string;
     processed_symbols: number;
@@ -659,7 +659,7 @@ export interface PriceSyncActionResponse {
     end_date?: string | null;
 }
 
-export interface PriceAuditSymbolResult {
+export interface HistoryAuditSymbolResult {
     symbol: string;
     local_dates: number;
     upstream_dates: number;
@@ -669,12 +669,12 @@ export interface PriceAuditSymbolResult {
     error?: string | null;
 }
 
-export interface PriceAuditActionResponse extends PriceSyncActionResponse {
+export interface HistoryAuditActionResponse extends HistorySyncActionResponse {
     audited_symbols: number;
     symbols_with_gaps: number;
     total_missing_dates: number;
     total_repaired_dates: number;
-    results: PriceAuditSymbolResult[];
+    results: HistoryAuditSymbolResult[];
 }
 
 // Stock API functions
@@ -954,12 +954,12 @@ export const stockApi = {
         return response.data;
     },
 
-    async runPriceSync(
+    async runHistorySync(
         forceRestart: boolean = false,
         symbols?: string[],
         indexSymbol?: string
-    ): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/run', {
+    ): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
@@ -967,14 +967,14 @@ export const stockApi = {
         return response.data;
     },
 
-    async runPriceAudit(
+    async runHistoryAudit(
         startDate: string,
         endDate: string,
         symbols?: string[],
         indexSymbol?: string,
         autoRepair: boolean = false
-    ): Promise<PriceAuditActionResponse> {
-        const response = await apiClient.post<PriceAuditActionResponse>('/sync/prices/audit/run', {
+    ): Promise<HistoryAuditActionResponse> {
+        const response = await apiClient.post<HistoryAuditActionResponse>('/sync/history/audit/run', {
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
             start_date: startDate,
@@ -984,12 +984,12 @@ export const stockApi = {
         return response.data;
     },
 
-    async runPriceRepairSync(
+    async runHistoryRepairSync(
         symbols: string[],
         startDate: string,
         endDate: string
-    ): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/prices/repair/run', {
+    ): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/repair/run', {
             symbols,
             start_date: startDate,
             end_date: endDate,
@@ -1002,8 +1002,8 @@ export const stockApi = {
         symbols?: string[],
         indexSymbol?: string,
         quickSync: boolean = false
-    ): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/finance/run', {
+    ): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/finance/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
@@ -1017,8 +1017,8 @@ export const stockApi = {
         symbols?: string[],
         indexSymbol?: string,
         quickSync: boolean = false
-    ): Promise<PriceSyncActionResponse> {
-        const response = await apiClient.post<PriceSyncActionResponse>('/sync/company/run', {
+    ): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/company/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,

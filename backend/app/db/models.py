@@ -27,9 +27,9 @@ class StockIndex(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class StockDailyPrice(Base):
-    """Historical daily prices for stocks (OHLCV data)."""
-    __tablename__ = "stock_daily_prices"
+class StockDailyHistory(Base):
+    """Canonical daily stock history with OHLCV and optional flow enrichment."""
+    __tablename__ = "stock_daily_history"
 
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), nullable=False)
@@ -39,20 +39,30 @@ class StockDailyPrice(Base):
     low = Column(Float)
     close = Column(Float, nullable=False)
     volume = Column(BigInteger)
+    foreign_buy_volume = Column(BigInteger, nullable=True)
+    foreign_buy_value = Column(Float, nullable=True)
+    foreign_sell_volume = Column(BigInteger, nullable=True)
+    foreign_sell_value = Column(Float, nullable=True)
+    foreign_net_volume = Column(BigInteger, nullable=True)
+    foreign_net_value = Column(Float, nullable=True)
+    prop_buy_volume = Column(BigInteger, nullable=True)
+    prop_buy_value = Column(Float, nullable=True)
+    prop_sell_volume = Column(BigInteger, nullable=True)
+    prop_sell_value = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('symbol', 'date', name='uq_symbol_date'),
-        Index('ix_stock_daily_prices_symbol_date', 'symbol', 'date'),
+        UniqueConstraint('symbol', 'date', name='uq_stock_daily_history_symbol_date'),
+        Index('ix_stock_daily_history_symbol_date', 'symbol', 'date'),
     )
 
 
-class StockPriceSyncState(Base):
-    """State tracking for deterministic price history full/incremental sync."""
-    __tablename__ = "stock_price_sync_state"
+class StockHistorySyncState(Base):
+    """State tracking for deterministic history full/incremental sync."""
+    __tablename__ = "stock_history_sync_state"
 
     id = Column(Integer, primary_key=True)
-    symbol = Column(String(10), unique=True, index=True, nullable=False)
+    symbol = Column(String(10), nullable=False)
     listing_date = Column(Date, nullable=True)
     sync_status = Column(String(20), nullable=False, default="idle")
     sync_started_at = Column(DateTime, nullable=True)
@@ -66,8 +76,10 @@ class StockPriceSyncState(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        Index('ix_stock_price_sync_state_sync_status', 'sync_status'),
-        Index('ix_stock_price_sync_state_latest_synced_date', 'latest_synced_date'),
+        UniqueConstraint('symbol', name='uq_stock_history_sync_state_symbol'),
+        Index('ix_stock_history_sync_state_symbol', 'symbol', unique=True),
+        Index('ix_stock_history_sync_state_sync_status', 'sync_status'),
+        Index('ix_stock_history_sync_state_latest_synced_date', 'latest_synced_date'),
     )
 
 

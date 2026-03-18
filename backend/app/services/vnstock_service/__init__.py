@@ -15,7 +15,7 @@ from .indices import IndicesService
 from .stocks import StocksService
 from .stock_metadata import StockMetadataService
 from .history import HistoryService
-from .price_sync import PriceSyncService
+from .history_sync import HistorySyncService
 from .finance_sync import FinanceDataSyncService
 from .company_sync import CompanyDataSyncService
 from .finance import FinanceService
@@ -53,12 +53,12 @@ class VnstockService:
         self.finance = FinanceService()
         self.company = CompanyService()
         self.metadata = StockMetadataService(finance_service=self.finance)
-        self.price_sync = PriceSyncService(history=self.history)
+        self.history_sync = HistorySyncService(history=self.history)
         self.history.set_on_demand_history_sync_handler(
-            self.price_sync.sync_symbol_history_for_request
+            self.history_sync.sync_symbol_history_for_request
         )
         self.history.set_weekly_history_sync_trigger_handler(
-            self._run_price_sync_for_symbols
+            self._run_history_sync_for_symbols
         )
         self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
         self.company_data_sync = CompanyDataSyncService(company=self.company)
@@ -66,13 +66,13 @@ class VnstockService:
         self.funds = FundsService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
 
-    async def _run_price_sync_for_symbols(self, symbols: List[str]) -> Dict[str, Any]:
-        return await self.price_sync.run_sync(symbols=symbols)
+    async def _run_history_sync_for_symbols(self, symbols: List[str]) -> Dict[str, Any]:
+        return await self.history_sync.run_sync(symbols=symbols)
 
     async def start_background_tasks(self) -> None:
         """Start long-running background workers."""
         await self.history.start_background_workers()
-        await self.price_sync.start_background_tasks()
+        await self.history_sync.start_background_tasks()
         await self.finance_data_sync.start_background_tasks()
         await self.company_data_sync.start_background_tasks()
 
@@ -80,7 +80,7 @@ class VnstockService:
         """Stop long-running background workers."""
         await self.company_data_sync.stop_background_tasks()
         await self.finance_data_sync.stop_background_tasks()
-        await self.price_sync.stop_background_tasks()
+        await self.history_sync.stop_background_tasks()
         await self.history.stop_background_workers()
 
     # Indices
@@ -166,20 +166,20 @@ class VnstockService:
             end_date=end_date,
         )
 
-    # Price Sync
-    async def run_price_sync(
+    # History Sync
+    async def run_history_sync(
         self,
         force_restart: bool = False,
         symbols: List[str] | None = None,
         index_symbol: str | None = None,
     ) -> Dict[str, Any]:
-        return await self.price_sync.run_sync(
+        return await self.history_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,
         )
 
-    async def run_price_audit_sync(
+    async def run_history_audit_sync(
         self,
         symbols: List[str] | None,
         start_date: str,
@@ -190,7 +190,7 @@ class VnstockService:
         from datetime import datetime
         parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
         parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date()
-        return await self.price_sync.run_audit_sync(
+        return await self.history_sync.run_audit_sync(
             symbols=symbols,
             start_date=parsed_start,
             end_date=parsed_end,
@@ -198,11 +198,11 @@ class VnstockService:
             index_symbol=index_symbol,
         )
 
-    async def run_price_repair_sync(self, symbols: List[str], start_date: str, end_date: str) -> Dict[str, Any]:
+    async def run_history_repair_sync(self, symbols: List[str], start_date: str, end_date: str) -> Dict[str, Any]:
         from datetime import datetime
         parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
         parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date()
-        return await self.price_sync.run_repair_sync(
+        return await self.history_sync.run_repair_sync(
             symbols=symbols,
             start_date=parsed_start,
             end_date=parsed_end

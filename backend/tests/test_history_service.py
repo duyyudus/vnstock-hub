@@ -1,8 +1,11 @@
 import asyncio
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from types import ModuleType
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -12,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.services.vnstock_service.history as history_module
 from app.core.config import settings
-from app.db.models import StockDailyPrice, StockCompany, StockPriceSyncState
+from app.db.models import StockDailyHistory, StockCompany, StockHistorySyncState
 from app.services.sync_status import sync_status
 from app.services.vnstock_service.history import HistoryService
 
@@ -198,7 +201,7 @@ async def test_trigger_price_history_sync_respects_db_cooldown(monkeypatch, db_s
     now = datetime.utcnow()
 
     db_session.add(
-        StockPriceSyncState(
+        StockHistorySyncState(
             symbol="AAA",
             weekly_sync_last_attempt_at=now,
         )
@@ -238,7 +241,7 @@ async def test_weekly_sync_cooldown_state_persists_across_service_reinstantiatio
 
 
 @pytest.mark.asyncio
-async def test_trigger_price_history_sync_delegates_to_price_sync_handler(monkeypatch):
+async def test_trigger_price_history_sync_delegates_to_history_sync_handler(monkeypatch):
     service = HistoryService()
     trigger_calls = []
 
@@ -285,9 +288,9 @@ async def test_get_stocks_weekly_prices_reports_db_syncing_status(monkeypatch, d
     async def _fake_benchmarks(_start_date, _end_date):
         return {}
 
-    db_session.add(StockPriceSyncState(symbol="AAA", sync_status="running"))
+    db_session.add(StockHistorySyncState(symbol="AAA", sync_status="running"))
     await db_session.commit()
-    sync_status.start_price_sync(total_symbols=1)
+    sync_status.start_history_sync(total_symbols=1)
 
     try:
         monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
@@ -304,7 +307,7 @@ async def test_get_stocks_weekly_prices_reports_db_syncing_status(monkeypatch, d
         assert result["is_stale"] is False
         assert result["is_syncing"] is True
     finally:
-        sync_status.complete_price_sync(success=True)
+        sync_status.complete_history_sync(success=True)
 
 
 @pytest.mark.asyncio
@@ -320,16 +323,16 @@ async def test_get_stocks_volume_series_reports_db_syncing_status(monkeypatch, d
 
     db_session.add(StockCompany(symbol="AAA", company_name="AAA Corp"))
     db_session.add(
-        StockDailyPrice(
+        StockDailyHistory(
             symbol="AAA",
             date=date(2026, 2, 11),
             close=20.0,
             volume=1_000_000,
         )
     )
-    db_session.add(StockPriceSyncState(symbol="AAA", sync_status="running"))
+    db_session.add(StockHistorySyncState(symbol="AAA", sync_status="running"))
     await db_session.commit()
-    sync_status.start_price_sync(total_symbols=1)
+    sync_status.start_history_sync(total_symbols=1)
 
     try:
         result = await service.get_stocks_volume_series(
@@ -341,7 +344,7 @@ async def test_get_stocks_volume_series_reports_db_syncing_status(monkeypatch, d
         assert result["is_stale"] is False
         assert result["is_syncing"] is True
     finally:
-        sync_status.complete_price_sync(success=True)
+        sync_status.complete_history_sync(success=True)
 
 
 @pytest.mark.asyncio
@@ -357,17 +360,17 @@ async def test_get_stocks_volume_series_ignores_stale_db_running_when_runtime_id
 
     db_session.add(StockCompany(symbol="AAA", company_name="AAA Corp"))
     db_session.add(
-        StockDailyPrice(
+        StockDailyHistory(
             symbol="AAA",
             date=date(2026, 2, 11),
             close=20.0,
             volume=1_000_000,
         )
     )
-    db_session.add(StockPriceSyncState(symbol="AAA", sync_status="running"))
+    db_session.add(StockHistorySyncState(symbol="AAA", sync_status="running"))
     await db_session.commit()
 
-    sync_status.complete_price_sync(success=True)
+    sync_status.complete_history_sync(success=True)
 
     result = await service.get_stocks_volume_series(
         symbols=["aaa"],
@@ -386,7 +389,7 @@ async def test_stop_background_workers_cancels_weekly_sync_task():
     await service.stop_background_workers()
 
 
-def test_normalize_price_history_payload_deduplicates_by_symbol_date():
+def test_build_daily_history_payload_deduplicates_by_symbol_date():
     service = HistoryService()
     hist = pd.DataFrame(
         [
@@ -434,9 +437,9 @@ def test_normalize_price_history_payload_deduplicates_by_symbol_date():
     )
     created_at = datetime(2026, 2, 8, 11, 17, 21)
 
-    payload, min_date, max_date = service._normalize_price_history_payload(
+    payload, min_date, max_date = service._build_daily_history_payload(
         symbol="inc",
-        hist=hist,
+        ohlcv_hist=hist,
         created_at=created_at,
     )
 
@@ -453,6 +456,299 @@ def test_normalize_price_history_payload_deduplicates_by_symbol_date():
     assert payload[1]["low"] is None
     assert payload[1]["volume"] is None
     assert payload[1]["created_at"] == created_at
+    assert payload[1]["foreign_buy_volume"] is None
+    assert payload[1]["prop_buy_volume"] is None
+
+
+def test_build_daily_history_payload_merges_foreign_and_prop_metrics():
+    service = HistoryService()
+    ohlcv_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "open": 9.1,
+                "high": 9.3,
+                "low": 9.0,
+                "close": 9.0,
+                "volume": 1000,
+            },
+            {
+                "time": "2021-11-01",
+                "open": 9.2,
+                "high": 9.4,
+                "low": 9.1,
+                "close": 9.2,
+                "volume": 1100,
+            },
+        ]
+    )
+    foreign_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "fr_buy_volume": 200,
+                "fr_buy_value": 1000.5,
+                "fr_sell_volume": 150,
+                "fr_sell_value": 700.25,
+                "fr_net_volume": 50,
+                "fr_net_value": 300.25,
+            }
+        ]
+    )
+    prop_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-11-01",
+                "prop_buy_volume": 80,
+                "prop_buy_value": 500.0,
+                "prop_sell_volume": 60,
+                "prop_sell_value": 420.0,
+            }
+        ]
+    )
+
+    payload, min_date, max_date = service._build_daily_history_payload(
+        symbol="inc",
+        ohlcv_hist=ohlcv_hist,
+        foreign_hist=foreign_hist,
+        prop_hist=prop_hist,
+    )
+
+    assert min_date == date(2021, 10, 29)
+    assert max_date == date(2021, 11, 1)
+    assert payload[0]["foreign_buy_volume"] == 200
+    assert payload[0]["foreign_net_value"] == 300.25
+    assert payload[0]["prop_buy_volume"] is None
+    assert payload[1]["prop_buy_volume"] == 80
+    assert payload[1]["prop_sell_value"] == 420.0
+    assert payload[1]["foreign_buy_volume"] is None
+
+
+def test_normalize_foreign_trade_history_frame_to_vci_schema():
+    service = HistoryService()
+    raw_hist = pd.DataFrame(
+        [
+            {
+                "Ngay": "2021-10-29",
+                "KLMua": 200,
+                "GtMua": 1000.5,
+                "KLBan": 150,
+                "GtBan": 700.25,
+                "KLGDRong": 50,
+                "GTDGRong": 300.25,
+            }
+        ]
+    )
+
+    normalized = service._normalize_foreign_trade_history_frame(raw_hist)
+
+    assert normalized is not None
+    assert normalized.loc[0, "time"] == "2021-10-29"
+    assert normalized.loc[0, "fr_buy_volume"] == 200
+    assert normalized.loc[0, "fr_buy_value"] == 1000.5
+    assert normalized.loc[0, "fr_sell_volume"] == 150
+    assert normalized.loc[0, "fr_sell_value"] == 700.25
+    assert normalized.loc[0, "fr_net_volume"] == 50
+    assert normalized.loc[0, "fr_net_value"] == 300.25
+
+
+def test_normalize_foreign_trade_history_frame_from_live_total_columns():
+    service = HistoryService()
+    raw_hist = pd.DataFrame(
+        [
+            {
+                "trading_date": "2021-10-29",
+                "fr_buy_volume_total": 200,
+                "fr_buy_value_total": 1000.5,
+                "fr_sell_volume_total": 150,
+                "fr_sell_value_total": 700.25,
+                "fr_net_volume_matched": 20,
+                "fr_net_volume_deal": 30,
+                "fr_net_value_matched": 100.0,
+                "fr_net_value_deal": 200.25,
+            }
+        ]
+    )
+
+    normalized = service._normalize_foreign_trade_history_frame(raw_hist)
+
+    assert normalized is not None
+    assert normalized.loc[0, "time"] == "2021-10-29"
+    assert normalized.loc[0, "fr_buy_volume"] == 200
+    assert normalized.loc[0, "fr_buy_value"] == 1000.5
+    assert normalized.loc[0, "fr_sell_volume"] == 150
+    assert normalized.loc[0, "fr_sell_value"] == 700.25
+    assert normalized.loc[0, "fr_net_volume"] == 50
+    assert normalized.loc[0, "fr_net_value"] == 300.25
+
+
+def test_normalize_prop_trade_history_frame_to_vci_schema():
+    service = HistoryService()
+    raw_hist = pd.DataFrame(
+        [
+            {
+                "Date": "2021-10-29",
+                "KLcpMua": 80,
+                "GtMua": 500.0,
+                "KlcpBan": 60,
+                "GtBan": 420.0,
+            }
+        ]
+    )
+
+    normalized = service._normalize_prop_trade_history_frame(raw_hist)
+
+    assert normalized is not None
+    assert normalized.loc[0, "time"] == "2021-10-29"
+    assert normalized.loc[0, "prop_buy_volume"] == 80
+    assert normalized.loc[0, "prop_buy_value"] == 500.0
+    assert normalized.loc[0, "prop_sell_volume"] == 60
+    assert normalized.loc[0, "prop_sell_value"] == 420.0
+
+
+def test_normalize_prop_trade_history_frame_from_live_total_columns():
+    service = HistoryService()
+    raw_hist = pd.DataFrame(
+        [
+            {
+                "trading_date": "2021-10-29",
+                "total_buy_trade_volume": 80,
+                "total_buy_trade_value": 500.0,
+                "total_match_trade_sell_volume": 35,
+                "total_deal_trade_sell_volume": 25,
+                "total_match_trade_sell_value": 250.0,
+                "total_deal_trade_sell_value": 170.0,
+            }
+        ]
+    )
+
+    normalized = service._normalize_prop_trade_history_frame(raw_hist)
+
+    assert normalized is not None
+    assert normalized.loc[0, "time"] == "2021-10-29"
+    assert normalized.loc[0, "prop_buy_volume"] == 80
+    assert normalized.loc[0, "prop_buy_value"] == 500.0
+    assert normalized.loc[0, "prop_sell_volume"] == 60
+    assert normalized.loc[0, "prop_sell_value"] == 420.0
+
+
+def test_auxiliary_trade_fetches_use_vnstock_data_trading(monkeypatch):
+    service = HistoryService()
+    calls = []
+
+    class FakeTrading:
+        def __init__(self, source, symbol):
+            calls.append(("init", source, symbol))
+
+        def foreign_trade(self, **kwargs):
+            calls.append(("foreign_trade", kwargs))
+            return pd.DataFrame([{"time": "2021-10-29", "fr_buy_volume": 100}])
+
+        def prop_trade(self, **kwargs):
+            calls.append(("prop_trade", kwargs))
+            return pd.DataFrame([{"time": "2021-10-29", "prop_buy_volume": 50}])
+
+    fake_vnstock_data = ModuleType("vnstock_data")
+    fake_vnstock_data.Trading = FakeTrading
+    monkeypatch.setitem(sys.modules, "vnstock_data", fake_vnstock_data)
+
+    foreign = service._fetch_foreign_trade_history(
+        symbol="VCB",
+        start_date=date(2021, 10, 1),
+        end_date=date(2021, 10, 29),
+    )
+    prop = service._fetch_prop_trade_history(
+        symbol="VCB",
+        start_date=date(2021, 10, 1),
+        end_date=date(2021, 10, 29),
+    )
+
+    assert foreign.loc[0, "fr_buy_volume"] == 100
+    assert prop.loc[0, "prop_buy_volume"] == 50
+    assert calls == [
+        ("init", "VCI", "VCB"),
+        (
+            "foreign_trade",
+            {
+                "start": "2021-10-01",
+                "end": "2021-10-29",
+                "resolution": "1D",
+                "limit": 100,
+            },
+        ),
+        ("init", "VCI", "VCB"),
+        (
+            "prop_trade",
+            {
+                "start": "2021-10-01",
+                "end": "2021-10-29",
+                "resolution": "1D",
+                "limit": 100,
+            },
+        ),
+    ]
+
+
+def test_build_daily_history_payload_uses_provider_aggregate_flow_fields():
+    service = HistoryService()
+    ohlcv_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "open": 9.1,
+                "high": 9.3,
+                "low": 9.0,
+                "close": 9.0,
+                "volume": 1000,
+            }
+        ]
+    )
+    foreign_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "matched_volume": 999_999,
+                "matched_value": 9_999_999.0,
+                "deal_volume": 888_888,
+                "deal_value": 8_888_888.0,
+                "fr_buy_volume": 200,
+                "fr_buy_value": 1000.5,
+                "fr_sell_volume": 150,
+                "fr_sell_value": 700.25,
+                "fr_net_volume": 50,
+                "fr_net_value": 300.25,
+            }
+        ]
+    )
+    prop_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "matched_volume": 777_777,
+                "matched_value": 7_777_777.0,
+                "deal_volume": 666_666,
+                "deal_value": 6_666_666.0,
+                "prop_buy_volume": 80,
+                "prop_buy_value": 500.0,
+                "prop_sell_volume": 60,
+                "prop_sell_value": 420.0,
+            }
+        ]
+    )
+
+    payload, _, _ = service._build_daily_history_payload(
+        symbol="inc",
+        ohlcv_hist=ohlcv_hist,
+        foreign_hist=foreign_hist,
+        prop_hist=prop_hist,
+    )
+
+    assert len(payload) == 1
+    assert payload[0]["foreign_buy_value"] == 1000.5
+    assert payload[0]["foreign_sell_value"] == 700.25
+    assert payload[0]["foreign_net_value"] == 300.25
+    assert payload[0]["prop_buy_value"] == 500.0
+    assert payload[0]["prop_sell_value"] == 420.0
 
 
 def test_get_symbol_sync_lock_reuses_lock_for_same_symbol():
@@ -497,7 +793,7 @@ def test_upsert_stock_price_history_rolls_back_session_on_failure(monkeypatch):
     failing_session = FailingSession()
     monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist)
 
-    count = service._upsert_stock_price_history(
+    count = service._upsert_stock_daily_history(
         symbol="INC",
         start_date=date(2021, 10, 1),
         end_date=date(2021, 11, 30),
@@ -508,7 +804,7 @@ def test_upsert_stock_price_history_rolls_back_session_on_failure(monkeypatch):
     assert failing_session.rollback_calls == 1
 
 
-def test_upsert_stock_price_history_raises_when_raise_on_error_enabled(monkeypatch):
+def test_upsert_stock_daily_history_raises_when_raise_on_error_enabled(monkeypatch):
     service = HistoryService()
     hist = pd.DataFrame(
         [
@@ -540,7 +836,7 @@ def test_upsert_stock_price_history_raises_when_raise_on_error_enabled(monkeypat
     monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist)
 
     with pytest.raises(RuntimeError, match="db exploded"):
-        service._upsert_stock_price_history(
+        service._upsert_stock_daily_history(
             symbol="INC",
             start_date=date(2021, 10, 1),
             end_date=date(2021, 11, 30),
@@ -551,7 +847,7 @@ def test_upsert_stock_price_history_raises_when_raise_on_error_enabled(monkeypat
     assert failing_session.rollback_calls == 1
 
 
-def test_upsert_stock_price_history_serializes_same_symbol_calls(monkeypatch):
+def test_upsert_stock_daily_history_serializes_same_symbol_calls(monkeypatch):
     service = HistoryService()
     hist = pd.DataFrame(
         [
@@ -590,7 +886,7 @@ def test_upsert_stock_price_history_serializes_same_symbol_calls(monkeypatch):
     monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist)
 
     def run_one_call():
-        return service._upsert_stock_price_history(
+        return service._upsert_stock_daily_history(
             symbol="INC",
             start_date=date(2021, 10, 1),
             end_date=date(2021, 11, 30),
@@ -604,6 +900,76 @@ def test_upsert_stock_price_history_serializes_same_symbol_calls(monkeypatch):
         assert second.result() == 1
 
     assert session.max_inflight == 1
+
+
+def test_upsert_stock_daily_history_continues_when_auxiliary_fetch_fails(monkeypatch):
+    service = HistoryService()
+    ohlcv_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "open": 9.1,
+                "high": 9.3,
+                "low": 9.0,
+                "close": 9.0,
+                "volume": 1000,
+            }
+        ]
+    )
+
+    class FakeQuote:
+        def history(self, **_kwargs):
+            return ohlcv_hist
+
+    class FakeStock:
+        quote = FakeQuote()
+
+    class FakeVnstock:
+        def stock(self, **_kwargs):
+            return FakeStock()
+
+    class FakeTrading:
+        def __init__(self, **_kwargs):
+            return None
+
+        def foreign_trade(self, **_kwargs):
+            raise RuntimeError("foreign unavailable")
+
+        def prop_trade(self, **_kwargs):
+            raise RuntimeError("prop unavailable")
+
+    class RecordingSession:
+        def __init__(self):
+            self.executed = 0
+            self.commits = 0
+
+        def execute(self, _stmt):
+            self.executed += 1
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "vnstock",
+        SimpleNamespace(Vnstock=FakeVnstock, Trading=FakeTrading),
+    )
+    monkeypatch.setattr(history_module, "retry_with_backoff", lambda func, max_retries=2: func())
+
+    session = RecordingSession()
+    count = service._upsert_stock_daily_history(
+        symbol="INC",
+        start_date=date(2021, 10, 1),
+        end_date=date(2021, 11, 30),
+        session=session,
+    )
+
+    assert count == 1
+    assert session.executed == 1
+    assert session.commits == 1
 
 
 def test_fetch_and_cache_history_sync_rolls_back_shared_session_on_symbol_error(monkeypatch):
@@ -622,7 +988,7 @@ def test_fetch_and_cache_history_sync_rolls_back_shared_session_on_symbol_error(
     def _raise_upsert(*_args, **_kwargs):
         raise RuntimeError("upsert failed")
 
-    monkeypatch.setattr(service, "_upsert_stock_price_history", _raise_upsert)
+    monkeypatch.setattr(service, "_upsert_stock_daily_history", _raise_upsert)
 
     service._fetch_and_cache_history_sync(shared_session, ["INC", "AAA"])
 
@@ -637,7 +1003,7 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
         poolclass=StaticPool,
     )
     StockCompany.__table__.create(bind=engine, checkfirst=True)
-    StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+    StockDailyHistory.__table__.create(bind=engine, checkfirst=True)
 
     class FixedDateTime(datetime):
         @classmethod
@@ -650,7 +1016,7 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
     with Session(engine) as session:
         session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2025, 11, 13),
                 open=20.0,
@@ -661,7 +1027,7 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
             )
         )  # Outside 90-day calendar window
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2025, 11, 14),
                 open=20.5,
@@ -672,7 +1038,7 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
             )
         )
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2026, 2, 10),
                 open=22.0,
@@ -703,7 +1069,7 @@ def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(
         poolclass=StaticPool,
     )
     StockCompany.__table__.create(bind=engine, checkfirst=True)
-    StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+    StockDailyHistory.__table__.create(bind=engine, checkfirst=True)
 
     class FixedDateTime(datetime):
         @classmethod
@@ -716,7 +1082,7 @@ def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(
     with Session(engine) as session:
         session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2025, 11, 13),
                 open=20.0,
@@ -727,7 +1093,7 @@ def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(
             )
         )  # Outside 90-day calendar window
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2025, 11, 14),
                 open=20.5,
@@ -738,7 +1104,7 @@ def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(
             )
         )
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2026, 2, 10),
                 open=22.0,
@@ -767,13 +1133,13 @@ def test_fetch_price_history_ohlcv_sync_returns_full_history_latest_first(monkey
         poolclass=StaticPool,
     )
     StockCompany.__table__.create(bind=engine, checkfirst=True)
-    StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+    StockDailyHistory.__table__.create(bind=engine, checkfirst=True)
     monkeypatch.setattr(history_module, "get_sync_engine", lambda: engine)
 
     with Session(engine) as session:
         session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2026, 2, 8),
                 open=21.0,
@@ -784,7 +1150,7 @@ def test_fetch_price_history_ohlcv_sync_returns_full_history_latest_first(monkey
             )
         )
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2026, 2, 10),
                 open=22.0,
@@ -795,7 +1161,7 @@ def test_fetch_price_history_ohlcv_sync_returns_full_history_latest_first(monkey
             )
         )
         session.add(
-            StockDailyPrice(
+            StockDailyHistory(
                 symbol="TCB",
                 date=date(2026, 2, 9),
                 open=None,
@@ -1112,7 +1478,7 @@ async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(mon
 
     db_session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
     db_session.add(
-        StockDailyPrice(
+        StockDailyHistory(
             symbol="TCB",
             date=date(2026, 2, 10),
             open=20.0,
@@ -1123,7 +1489,7 @@ async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(mon
         )
     )
     db_session.add(
-        StockDailyPrice(
+        StockDailyHistory(
             symbol="TCB",
             date=date(2026, 2, 11),
             open=20.1,
@@ -1208,14 +1574,14 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
     symbol = "INC"
 
     try:
-        StockDailyPrice.__table__.create(bind=engine, checkfirst=True)
+        StockDailyHistory.__table__.create(bind=engine, checkfirst=True)
         with Session(engine) as session:
-            session.query(StockDailyPrice).filter(StockDailyPrice.symbol == symbol).delete()
+            session.query(StockDailyHistory).filter(StockDailyHistory.symbol == symbol).delete()
             session.commit()
 
             original_created_at = datetime(2020, 1, 1, 0, 0, 0)
             session.add(
-                StockDailyPrice(
+                StockDailyHistory(
                     symbol=symbol,
                     date=date(2021, 10, 29),
                     open=8.0,
@@ -1249,8 +1615,54 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
                 ]
             )
             monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist)
+            monkeypatch.setattr(
+                service,
+                "_fetch_auxiliary_history_frames",
+                lambda **_kwargs: (
+                    pd.DataFrame(
+                        [
+                            {
+                                "time": "2021-10-29",
+                                "fr_buy_volume": 200,
+                                "fr_buy_value": 1000.0,
+                                "fr_sell_volume": 150,
+                                "fr_sell_value": 800.0,
+                                "fr_net_volume": 50,
+                                "fr_net_value": 200.0,
+                            },
+                            {
+                                "time": "2021-11-01",
+                                "fr_buy_volume": 210,
+                                "fr_buy_value": 1100.0,
+                                "fr_sell_volume": 140,
+                                "fr_sell_value": 750.0,
+                                "fr_net_volume": 70,
+                                "fr_net_value": 350.0,
+                            },
+                        ]
+                    ),
+                    pd.DataFrame(
+                        [
+                            {
+                                "time": "2021-10-29",
+                                "prop_buy_volume": 20,
+                                "prop_buy_value": 110.0,
+                                "prop_sell_volume": 10,
+                                "prop_sell_value": 55.0,
+                            },
+                            {
+                                "time": "2021-11-01",
+                                "prop_buy_volume": 25,
+                                "prop_buy_value": 130.0,
+                                "prop_sell_volume": 12,
+                                "prop_sell_value": 60.0,
+                            },
+                        ]
+                    ),
+                ),
+            )
 
-            synced = service._upsert_stock_price_history(
+            synced = service._upsert_stock_daily_history(
                 symbol=symbol,
                 start_date=date(2021, 10, 1),
                 end_date=date(2021, 11, 30),
@@ -1259,18 +1671,64 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
             assert synced == 2
 
             rows = session.execute(
-                select(StockDailyPrice)
-                .where(StockDailyPrice.symbol == symbol)
-                .order_by(StockDailyPrice.date.asc())
+                select(StockDailyHistory)
+                .where(StockDailyHistory.symbol == symbol)
+                .order_by(StockDailyHistory.date.asc())
             ).scalars().all()
 
             assert len(rows) == 2
             assert rows[0].date == date(2021, 10, 29)
             assert rows[0].close == 9.0
             assert rows[0].volume == 1250
+            assert rows[0].foreign_buy_volume == 200
+            assert rows[0].foreign_net_value == 200.0
+            assert rows[0].prop_buy_volume == 20
             assert rows[0].created_at == original_created_at
             assert rows[1].date == date(2021, 11, 1)
             assert rows[1].close == 9.35
             assert rows[1].volume == 1400
+            assert rows[1].foreign_buy_volume == 210
+            assert rows[1].prop_sell_value == 60.0
+
+            hist_without_aux = pd.DataFrame(
+                [
+                    {
+                        "time": "2021-10-29",
+                        "open": 9.2,
+                        "high": 9.4,
+                        "low": 9.1,
+                        "close": 9.1,
+                        "volume": 1300,
+                    }
+                ]
+            )
+            monkeypatch.setattr(history_module, "retry_with_backoff", lambda _func, max_retries=2: hist_without_aux)
+            monkeypatch.setattr(
+                service,
+                "_fetch_auxiliary_history_frames",
+                lambda **_kwargs: (None, None),
+            )
+
+            synced = service._upsert_stock_daily_history(
+                symbol=symbol,
+                start_date=date(2021, 10, 29),
+                end_date=date(2021, 10, 29),
+                session=session,
+            )
+            assert synced == 1
+
+            preserved_row = session.execute(
+                select(StockDailyHistory).where(
+                    StockDailyHistory.symbol == symbol,
+                    StockDailyHistory.date == date(2021, 10, 29),
+                )
+            ).scalar_one()
+
+            assert preserved_row.close == 9.1
+            assert preserved_row.volume == 1300
+            assert preserved_row.foreign_buy_volume == 200
+            assert preserved_row.foreign_net_value == 200.0
+            assert preserved_row.prop_buy_volume == 20
+            assert preserved_row.prop_sell_value == 55.0
     finally:
         engine.dispose()

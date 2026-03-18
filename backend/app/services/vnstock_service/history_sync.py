@@ -13,11 +13,11 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.db.database import async_session
-from app.db.models import StockCompany, StockDailyPrice, StockPriceSyncState
+from app.db.models import StockCompany, StockDailyHistory, StockHistorySyncState
 from app.services.sync_status import sync_status
 
 from .core import (
-    price_sync_logger,
+    history_sync_logger,
     api_circuit_breaker,
     CircuitOpenError,
     _is_rate_limit_error,
@@ -51,8 +51,8 @@ class RequestHistorySyncResult:
         }
 
 
-class PriceSyncService:
-    """Deterministic stock price synchronization and gap-audit orchestration."""
+class HistorySyncService:
+    """Deterministic stock history synchronization and gap-audit orchestration."""
 
     SYNC_OVERLAP_DAYS = 2
     FALLBACK_DISCOVERY_START_DATE = date(1990, 1, 1)
@@ -117,7 +117,7 @@ class PriceSyncService:
         symbols: Optional[List[str]] = None,
         index_symbol: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Start unified price sync as background task."""
+        """Start unified history sync as background task."""
         symbols_filter = await self._resolve_symbols_filter(
             symbols=symbols,
             index_symbol=index_symbol,
@@ -129,7 +129,7 @@ class PriceSyncService:
                 if not force_restart:
                     return {
                         "started": False,
-                        "message": "Price sync is already running",
+                        "message": "History sync is already running",
                         "state": "running",
                     }
 
@@ -143,7 +143,7 @@ class PriceSyncService:
 
         return {
             "started": True,
-            "message": "Price sync started",
+            "message": "History sync started",
             "state": "running",
         }
 
@@ -184,8 +184,8 @@ class PriceSyncService:
             ).to_dict()
         except Exception as e:
             message = str(e)[:500]
-            price_sync_logger.warning(
-                "Request-path price sync failed for %s (%s -> %s): %s",
+            history_sync_logger.warning(
+                "Request-path history sync failed for %s (%s -> %s): %s",
                 symbol_clean,
                 start_date,
                 end_date,
@@ -289,8 +289,8 @@ class PriceSyncService:
         except Exception as e:
             message = str(e)[:500]
             await self._mark_symbol_error(symbol, f"Request sync failed: {message}")
-            price_sync_logger.warning(
-                "Request-path price sync task failed for %s (%s -> %s): %s",
+            history_sync_logger.warning(
+                "Request-path history sync task failed for %s (%s -> %s): %s",
                 symbol,
                 start_date,
                 end_date,
@@ -335,7 +335,7 @@ class PriceSyncService:
                 "results": [],
             }
 
-        sync_status.start_price_audit(total_symbols=total_symbols)
+        sync_status.start_history_audit(total_symbols=total_symbols)
 
         processed_symbols = 0
         success_symbols = 0
@@ -371,7 +371,7 @@ class PriceSyncService:
                 try:
                     async with self._operation_worker_semaphore:
                         async with progress_lock:
-                            sync_status.update_price_audit_progress(
+                            sync_status.update_history_audit_progress(
                                 processed_symbols=processed_symbols,
                                 success_symbols=success_symbols,
                                 failed_symbols=failed_symbols,
@@ -423,7 +423,7 @@ class PriceSyncService:
                                 total_repaired_dates += symbol_repaired_count
 
                         results[result_index] = symbol_result
-                        sync_status.update_price_audit_progress(
+                        sync_status.update_history_audit_progress(
                             processed_symbols=processed_symbols,
                             success_symbols=success_symbols,
                             failed_symbols=failed_symbols,
@@ -456,16 +456,16 @@ class PriceSyncService:
                 normalized_results.append(result)
 
             if failed_symbols > 0:
-                sync_status.complete_price_audit(
+                sync_status.complete_history_audit(
                     success=True,
-                    error=f"Price audit completed with {failed_symbols} failed symbols",
+                    error=f"History audit completed with {failed_symbols} failed symbols",
                 )
             else:
-                sync_status.complete_price_audit(success=True)
+                sync_status.complete_history_audit(success=True)
 
             return {
                 "started": True,
-                "message": "Price audit completed",
+                "message": "History audit completed",
                 "processed_symbols": processed_symbols,
                 "success_symbols": success_symbols,
                 "failed_symbols": failed_symbols,
@@ -478,10 +478,10 @@ class PriceSyncService:
                 "results": normalized_results,
             }
         except Exception as e:
-            sync_status.complete_price_audit(success=False, error=str(e)[:500])
+            sync_status.complete_history_audit(success=False, error=str(e)[:500])
             return {
                 "started": False,
-                "message": f"Price audit failed: {e}",
+                "message": f"History audit failed: {e}",
                 "processed_symbols": processed_symbols,
                 "success_symbols": success_symbols,
                 "failed_symbols": failed_symbols,
@@ -506,7 +506,7 @@ class PriceSyncService:
                 "failed_symbols": 0,
             }
 
-        sync_status.start_price_repair(total_symbols=total_symbols)
+        sync_status.start_history_repair(total_symbols=total_symbols)
 
         success_count = 0
         failure_count = 0
@@ -536,7 +536,7 @@ class PriceSyncService:
                     try:
                         async with self._operation_worker_semaphore:
                             async with progress_lock:
-                                sync_status.update_price_repair_progress(
+                                sync_status.update_history_repair_progress(
                                     processed_symbols=processed_count,
                                     success_symbols=success_count,
                                     failed_symbols=failure_count,
@@ -545,7 +545,7 @@ class PriceSyncService:
 
                             await loop.run_in_executor(
                                 sync_executor,
-                                self._history._upsert_stock_price_history,
+                                self._history._upsert_stock_daily_history,
                                 symbol,
                                 start_date,
                                 end_date,
@@ -563,7 +563,7 @@ class PriceSyncService:
                             else:
                                 success_count += 1
 
-                            sync_status.update_price_repair_progress(
+                            sync_status.update_history_repair_progress(
                                 processed_symbols=processed_count,
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
@@ -579,12 +579,12 @@ class PriceSyncService:
             await asyncio.gather(*workers)
 
             if failure_count > 0:
-                sync_status.complete_price_repair(
+                sync_status.complete_history_repair(
                     success=True,
                     error=f"Repair sync completed with {failure_count} failed symbols",
                 )
             else:
-                sync_status.complete_price_repair(success=True)
+                sync_status.complete_history_repair(success=True)
 
             return {
                 "started": True,
@@ -596,7 +596,7 @@ class PriceSyncService:
                 "end_date": end_date.isoformat(),
             }
         except Exception as e:
-            sync_status.complete_price_repair(success=False, error=str(e)[:500])
+            sync_status.complete_history_repair(success=False, error=str(e)[:500])
             return {
                 "started": False,
                 "message": f"Repair sync failed: {e}",
@@ -610,16 +610,16 @@ class PriceSyncService:
         symbols_meta = await self._build_symbol_universe(symbols)
         total = len(symbols_meta)
 
-        sync_status.start_price_sync(total_symbols=total)
+        sync_status.start_history_sync(total_symbols=total)
         if total == 0:
-            sync_status.complete_price_sync(success=True)
+            sync_status.complete_history_sync(success=True)
             return
 
         await self._ensure_sync_state_rows(symbols_meta)
 
         await self._reset_sync_pacer()
-        price_sync_logger.info(
-            "Price sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s "
+        history_sync_logger.info(
+            "History sync runtime config: max_workers=%s target_rpm=%s chunk_days=%s "
             "fixed_wait=%.1fs max_wait=%.1fs",
             self._sync_max_workers,
             self._sync_target_rpm,
@@ -651,7 +651,7 @@ class PriceSyncService:
                 was_cancelled = False
                 try:
                     async with progress_lock:
-                        sync_status.update_price_sync_progress(
+                        sync_status.update_history_sync_progress(
                             processed_symbols=processed_count,
                             success_symbols=success_count,
                             failed_symbols=failure_count,
@@ -665,8 +665,8 @@ class PriceSyncService:
                 except Exception as e:
                     symbol_failed = True
                     await self._mark_symbol_failed(meta.symbol, str(e))
-                    price_sync_logger.error(
-                        f"Price sync worker {worker_id} failed symbol {meta.symbol}: {e}"
+                    history_sync_logger.error(
+                        f"History sync worker {worker_id} failed symbol {meta.symbol}: {e}"
                     )
                 finally:
                     if not was_cancelled:
@@ -678,7 +678,7 @@ class PriceSyncService:
                             else:
                                 success_count += 1
 
-                            sync_status.update_price_sync_progress(
+                            sync_status.update_history_sync_progress(
                                 processed_symbols=processed_count,
                                 success_symbols=success_count,
                                 failed_symbols=failure_count,
@@ -695,21 +695,21 @@ class PriceSyncService:
         try:
             await asyncio.gather(*workers)
             if failure_count > 0:
-                sync_status.complete_price_sync(
+                sync_status.complete_history_sync(
                     success=True,
-                    error=f"Price sync completed with {failure_count} failed symbols",
+                    error=f"History sync completed with {failure_count} failed symbols",
                 )
             else:
-                sync_status.complete_price_sync(success=True)
+                sync_status.complete_history_sync(success=True)
 
         except asyncio.CancelledError:
             for worker in workers:
                 worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
-            sync_status.complete_price_sync(success=False, error="Price sync cancelled")
+            sync_status.complete_history_sync(success=False, error="History sync cancelled")
             raise
         except Exception as e:
-            sync_status.complete_price_sync(success=False, error=str(e)[:500])
+            sync_status.complete_history_sync(success=False, error=str(e)[:500])
 
     async def _sync_symbol(self, meta: SymbolSyncMeta) -> None:
         started = time.monotonic()
@@ -765,8 +765,8 @@ class PriceSyncService:
         )
 
         elapsed = time.monotonic() - started
-        price_sync_logger.info(
-            f"Price sync symbol {meta.symbol} completed: chunks={chunk_count}, "
+        history_sync_logger.info(
+            f"History sync symbol {meta.symbol} completed: chunks={chunk_count}, "
             f"retries={retry_count}, elapsed={elapsed:.2f}s"
         )
 
@@ -774,7 +774,7 @@ class PriceSyncService:
         if self._sync_executor is None:
             self._sync_executor = ThreadPoolExecutor(
                 max_workers=self._sync_max_workers,
-                thread_name_prefix="price_sync",
+                thread_name_prefix="history_sync",
             )
         return self._sync_executor
 
@@ -802,12 +802,12 @@ class PriceSyncService:
         loop = asyncio.get_event_loop()
         sync_executor = self._ensure_sync_executor()
         upsert_call = partial(
-            self._history._upsert_stock_price_history,
+            self._history._upsert_stock_daily_history,
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
             raise_on_error=True,
-            log=price_sync_logger,
+            log=history_sync_logger,
         )
         return await loop.run_in_executor(sync_executor, upsert_call)
 
@@ -829,16 +829,16 @@ class PriceSyncService:
             try:
                 await self._execute_sync_chunk_upsert(symbol, start_date, end_date)
                 elapsed = time.monotonic() - started
-                price_sync_logger.debug(
-                    f"Price sync chunk synced for {symbol} ({start_date} -> {end_date}) "
+                history_sync_logger.debug(
+                    f"History sync chunk synced for {symbol} ({start_date} -> {end_date}) "
                     f"attempt={attempt} elapsed={elapsed:.2f}s"
                 )
                 return retries_so_far
             except Exception as e:
                 elapsed = time.monotonic() - started
                 if not (_is_rate_limit_error(e) or isinstance(e, CircuitOpenError)):
-                    price_sync_logger.debug(
-                        f"Price sync chunk failed for {symbol} ({start_date} -> {end_date}) "
+                    history_sync_logger.debug(
+                        f"History sync chunk failed for {symbol} ({start_date} -> {end_date}) "
                         f"attempt={attempt} elapsed={elapsed:.2f}s error={e}"
                     )
                     raise
@@ -850,8 +850,8 @@ class PriceSyncService:
 
                 circuit_state = api_circuit_breaker.state.value
                 circuit_delay = api_circuit_breaker.time_until_half_open or 0.0
-                price_sync_logger.warning(
-                    "Price sync rate-limit pause symbol=%s start_date=%s end_date=%s attempt=%s "
+                history_sync_logger.warning(
+                    "History sync rate-limit pause symbol=%s start_date=%s end_date=%s attempt=%s "
                     "elapsed=%.2fs wait_seconds=%.2fs total_wait_seconds=%.2fs "
                     "circuit_state=%s circuit_time_until_half_open=%.2fs",
                     symbol,
@@ -869,8 +869,8 @@ class PriceSyncService:
                     self._sync_rate_limit_max_wait_seconds > 0
                     and total_rate_limit_wait_seconds > self._sync_rate_limit_max_wait_seconds
                 ):
-                    price_sync_logger.error(
-                        "Price sync max rate-limit wait exceeded symbol=%s start_date=%s end_date=%s "
+                    history_sync_logger.error(
+                        "History sync max rate-limit wait exceeded symbol=%s start_date=%s end_date=%s "
                         "total_wait_seconds=%.2fs cap_seconds=%.2fs attempts=%s",
                         symbol,
                         start_date.isoformat(),
@@ -888,8 +888,11 @@ class PriceSyncService:
                 await asyncio.sleep(sleep_seconds)
 
     async def _repair_missing_dates(self, symbol: str, missing_dates: List[date]) -> int:
-        ranges = self._group_dates_into_ranges(missing_dates)
-        for range_start, range_end in ranges:
+        fetch_windows = self._group_dates_into_fetch_windows(
+            missing_dates,
+            max_span_days=self._sync_chunk_days,
+        )
+        for range_start, range_end in fetch_windows:
             await self._run_sync_chunk_with_retry(symbol, range_start, range_end)
 
         await self._mark_symbol_sync_result(symbol)
@@ -991,10 +994,10 @@ class PriceSyncService:
         end_date: date,
     ) -> set[date]:
         async with async_session() as session:
-            stmt = select(StockDailyPrice.date).where(
-                StockDailyPrice.symbol == symbol,
-                StockDailyPrice.date >= start_date,
-                StockDailyPrice.date <= end_date,
+            stmt = select(StockDailyHistory.date).where(
+                StockDailyHistory.symbol == symbol,
+                StockDailyHistory.date >= start_date,
+                StockDailyHistory.date <= end_date,
             )
             result = await session.execute(stmt)
             return set(result.scalars().all())
@@ -1020,6 +1023,33 @@ class PriceSyncService:
 
         ranges.append((start, end))
         return ranges
+
+    @staticmethod
+    def _group_dates_into_fetch_windows(
+        dates_list: List[date],
+        max_span_days: int,
+    ) -> List[tuple[date, date]]:
+        if not dates_list:
+            return []
+
+        safe_span_days = max(1, int(max_span_days))
+        sorted_dates = sorted(dates_list)
+        windows: List[tuple[date, date]] = []
+
+        window_start = sorted_dates[0]
+        window_end = sorted_dates[0]
+
+        for current in sorted_dates[1:]:
+            if (current - window_start).days <= safe_span_days - 1:
+                window_end = current
+                continue
+
+            windows.append((window_start, window_end))
+            window_start = current
+            window_end = current
+
+        windows.append((window_start, window_end))
+        return windows
 
     async def _build_symbol_universe(self, symbols: Optional[List[str]] = None) -> List[SymbolSyncMeta]:
         listing_map = await self._fetch_listing_symbol_map()
@@ -1063,7 +1093,7 @@ class PriceSyncService:
                 result[symbol] = listing_date
 
         except Exception as e:
-            price_sync_logger.warning(f"Error fetching listing symbols for price sync: {e}")
+            history_sync_logger.warning(f"Error fetching listing symbols for history sync: {e}")
 
         return result
 
@@ -1110,7 +1140,7 @@ class PriceSyncService:
                 return None
             return times.min().date()
         except Exception as e:
-            price_sync_logger.warning(f"Error discovering oldest history date for {symbol}: {e}")
+            history_sync_logger.warning(f"Error discovering oldest history date for {symbol}: {e}")
             return None
 
     async def _fetch_db_symbols(self) -> List[str]:
@@ -1119,7 +1149,7 @@ class PriceSyncService:
             company_result = await session.execute(company_stmt)
             company_symbols = [self._normalize_symbol(row[0]) for row in company_result.all() if row[0]]
 
-            state_stmt = select(StockPriceSyncState.symbol)
+            state_stmt = select(StockHistorySyncState.symbol)
             state_result = await session.execute(state_stmt)
             state_symbols = [self._normalize_symbol(row[0]) for row in state_result.all() if row[0]]
 
@@ -1133,7 +1163,7 @@ class PriceSyncService:
         listing_map = {meta.symbol: meta.listing_date for meta in symbols_meta}
 
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol.in_(symbols))
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol.in_(symbols))
             existing_rows = await session.execute(stmt)
             existing = {row.symbol: row for row in existing_rows.scalars().all()}
 
@@ -1143,7 +1173,7 @@ class PriceSyncService:
                 listing_date = listing_map.get(symbol)
                 if row is None:
                     session.add(
-                        StockPriceSyncState(
+                        StockHistorySyncState(
                             symbol=symbol,
                             listing_date=listing_date,
                             sync_status='idle',
@@ -1158,13 +1188,13 @@ class PriceSyncService:
 
             await session.commit()
 
-    async def _get_or_create_symbol_state(self, symbol: str, listing_date: date | None) -> StockPriceSyncState:
+    async def _get_or_create_symbol_state(self, symbol: str, listing_date: date | None) -> StockHistorySyncState:
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
 
             if row is None:
-                row = StockPriceSyncState(
+                row = StockHistorySyncState(
                     symbol=symbol,
                     listing_date=listing_date,
                     sync_status='idle',
@@ -1186,10 +1216,10 @@ class PriceSyncService:
     async def _set_symbol_sync_running(self, symbol: str, listing_date: date) -> None:
         now = datetime.utcnow()
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                row = StockPriceSyncState(symbol=symbol)
+                row = StockHistorySyncState(symbol=symbol)
                 session.add(row)
 
             row.listing_date = row.listing_date or listing_date
@@ -1208,10 +1238,10 @@ class PriceSyncService:
     ) -> None:
         now = datetime.utcnow()
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                row = StockPriceSyncState(symbol=symbol)
+                row = StockHistorySyncState(symbol=symbol)
                 session.add(row)
 
             row.listing_date = row.listing_date or listing_date
@@ -1227,10 +1257,10 @@ class PriceSyncService:
     async def _mark_symbol_failed(self, symbol: str, error_message: str) -> None:
         now = datetime.utcnow()
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                row = StockPriceSyncState(symbol=symbol)
+                row = StockHistorySyncState(symbol=symbol)
                 session.add(row)
 
             row.sync_status = 'failed'
@@ -1242,10 +1272,10 @@ class PriceSyncService:
     async def _mark_symbol_error(self, symbol: str, error_message: str) -> None:
         now = datetime.utcnow()
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                row = StockPriceSyncState(symbol=symbol)
+                row = StockHistorySyncState(symbol=symbol)
                 session.add(row)
 
             row.last_error = error_message[:500]
@@ -1258,10 +1288,10 @@ class PriceSyncService:
         oldest, latest = await self._get_symbol_bounds(symbol)
 
         async with async_session() as session:
-            stmt = select(StockPriceSyncState).where(StockPriceSyncState.symbol == symbol)
+            stmt = select(StockHistorySyncState).where(StockHistorySyncState.symbol == symbol)
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                row = StockPriceSyncState(symbol=symbol)
+                row = StockHistorySyncState(symbol=symbol)
                 session.add(row)
 
             row.sync_status = 'completed'
@@ -1278,9 +1308,9 @@ class PriceSyncService:
     async def _get_symbol_bounds(self, symbol: str) -> tuple[date | None, date | None]:
         async with async_session() as session:
             stmt = select(
-                func.min(StockDailyPrice.date),
-                func.max(StockDailyPrice.date),
-            ).where(StockDailyPrice.symbol == symbol)
+                func.min(StockDailyHistory.date),
+                func.max(StockDailyHistory.date),
+            ).where(StockDailyHistory.symbol == symbol)
             result = await session.execute(stmt)
             row = result.one()
             return row[0], row[1]

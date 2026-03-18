@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     use_vnstock_data_alt: bool = False
     sync_target_rpm: int = 150
     sync_max_workers: int = 6
-    sync_chunk_days: int = 1095
+    sync_chunk_days: int = 365
     sync_rate_limit_fixed_wait_seconds: float = 30.0
     sync_rate_limit_max_wait_seconds: float = 1200.0
 

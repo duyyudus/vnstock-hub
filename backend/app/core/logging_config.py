@@ -17,7 +17,7 @@ MAIN_LOG_FILE = LOG_DIR / "backend.log"
 SQL_LOG_FILE = LOG_DIR / "sqlalchemy.log"
 PORTFOLIO_IMPORT_LOG_FILE = LOG_DIR / "portfolio_import.log"
 LLM_LOG_FILE = LOG_DIR / "llm.log"
-PRICE_SYNC_LOG_FILE = LOG_DIR / "price_sync.log"
+HISTORY_SYNC_LOG_FILE = LOG_DIR / "history_sync.log"
 FINANCE_SYNC_LOG_FILE = LOG_DIR / "finance_sync.log"
 COMPANY_SYNC_LOG_FILE = LOG_DIR / "company_sync.log"
 
@@ -31,14 +31,14 @@ _main_logger = None
 _background_logger = None
 _portfolio_import_logger = None
 _llm_logger = None
-_price_sync_logger = None
+_history_sync_logger = None
 _finance_sync_logger = None
 _company_sync_logger = None
 
 
 def setup_logging():
     """Initialize logging configuration. Should be called once at startup."""
-    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _price_sync_logger, _finance_sync_logger, _company_sync_logger
+    global _main_logger, _background_logger, _portfolio_import_logger, _llm_logger, _history_sync_logger, _finance_sync_logger, _company_sync_logger
 
     # Ensure logs directory exists
     LOG_DIR.mkdir(exist_ok=True)
@@ -50,7 +50,7 @@ def setup_logging():
         SQL_LOG_FILE,
         PORTFOLIO_IMPORT_LOG_FILE,
         LLM_LOG_FILE,
-        PRICE_SYNC_LOG_FILE,
+        HISTORY_SYNC_LOG_FILE,
         FINANCE_SYNC_LOG_FILE,
         COMPANY_SYNC_LOG_FILE,
     ]:
@@ -168,26 +168,26 @@ def setup_logging():
     llm_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
     _llm_logger.addHandler(llm_file_handler)
 
-    # === Price Sync Logger (file only + critical errors to console) ===
-    _price_sync_logger = logging.getLogger("vnstock_hub.price_sync")
-    _price_sync_logger.setLevel(logging.DEBUG)
-    _price_sync_logger.propagate = False
-    _price_sync_logger.handlers.clear()
+    # === History Sync Logger (file only + critical errors to console) ===
+    _history_sync_logger = logging.getLogger("vnstock_hub.history_sync")
+    _history_sync_logger.setLevel(logging.DEBUG)
+    _history_sync_logger.propagate = False
+    _history_sync_logger.handlers.clear()
 
-    price_sync_file_handler = RotatingFileHandler(
-        PRICE_SYNC_LOG_FILE,
+    history_sync_file_handler = RotatingFileHandler(
+        HISTORY_SYNC_LOG_FILE,
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
     )
-    price_sync_file_handler.setLevel(logging.DEBUG)
-    price_sync_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
-    _price_sync_logger.addHandler(price_sync_file_handler)
+    history_sync_file_handler.setLevel(logging.DEBUG)
+    history_sync_file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
+    _history_sync_logger.addHandler(history_sync_file_handler)
 
-    price_sync_console_error_handler = logging.StreamHandler()
-    price_sync_console_error_handler.setLevel(logging.WARNING)
-    price_sync_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
-    _price_sync_logger.addHandler(price_sync_console_error_handler)
+    history_sync_console_error_handler = logging.StreamHandler()
+    history_sync_console_error_handler.setLevel(logging.WARNING)
+    history_sync_console_error_handler.setFormatter(logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT))
+    _history_sync_logger.addHandler(history_sync_console_error_handler)
 
     # === Finance Sync Logger (file only + critical errors to console) ===
     _finance_sync_logger = logging.getLogger("vnstock_hub.finance_sync")
@@ -266,12 +266,12 @@ def get_llm_logger() -> logging.Logger:
     return _llm_logger
 
 
-def get_price_sync_logger() -> logging.Logger:
-    """Get the logger for price synchronization tasks."""
-    global _price_sync_logger
-    if _price_sync_logger is None:
+def get_history_sync_logger() -> logging.Logger:
+    """Get the logger for history synchronization tasks."""
+    global _history_sync_logger
+    if _history_sync_logger is None:
         setup_logging()
-    return _price_sync_logger
+    return _history_sync_logger
 
 
 def get_finance_sync_logger() -> logging.Logger:

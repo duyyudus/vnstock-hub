@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.logging_config import (
     get_main_logger,
     get_background_logger,
-    get_price_sync_logger,
+    get_history_sync_logger,
     get_finance_sync_logger,
     get_company_sync_logger,
 )
@@ -25,7 +25,7 @@ from app.services.sync_status import sync_status
 # Initialize loggers
 logger = get_main_logger()
 bg_logger = get_background_logger()
-price_sync_logger = get_price_sync_logger()
+history_sync_logger = get_history_sync_logger()
 finance_sync_logger = get_finance_sync_logger()
 company_sync_logger = get_company_sync_logger()
 

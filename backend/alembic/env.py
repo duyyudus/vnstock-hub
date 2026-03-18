@@ -8,7 +8,7 @@ from alembic import context
 
 # Import your models' Base for autogenerate support
 from app.db.database import Base
-from app.db.models import StockCompany, StockDailyPrice  # noqa: F401
+from app.db.models import StockCompany, StockDailyHistory  # noqa: F401
 from app.core.config import settings
 
 # this is the Alembic Config object, which provides
@@ -62,4 +62,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

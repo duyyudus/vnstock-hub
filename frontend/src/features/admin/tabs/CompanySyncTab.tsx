@@ -1,10 +1,10 @@
 import React from 'react';
-import { type IndexInfo, type PriceJobStatus } from '../../../api/stockApi';
+import { type IndexInfo, type HistoryJobStatus } from '../../../api/stockApi';
 import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
 interface CompanySyncTabProps {
-    runtimeCompany: PriceJobStatus | undefined;
+    runtimeCompany: HistoryJobStatus | undefined;
     companyProgressPercent: number;
     indexOptions: IndexInfo[];
     companyIndexSymbol: string;

@@ -22,7 +22,7 @@ class SyncStatusItem(BaseModel):
     started_at: Optional[str] = None
 
 
-class PriceJobStatusResponse(BaseModel):
+class HistoryJobStatusResponse(BaseModel):
     is_running: bool
     total_symbols: int
     processed_symbols: int
@@ -36,23 +36,23 @@ class PriceJobStatusResponse(BaseModel):
     progress: float = 0.0
 
 
-class PriceSyncStatusResponse(BaseModel):
-    sync: PriceJobStatusResponse
-    audit: PriceJobStatusResponse
-    repair: PriceJobStatusResponse
+class HistorySyncStatusResponse(BaseModel):
+    sync: HistoryJobStatusResponse
+    audit: HistoryJobStatusResponse
+    repair: HistoryJobStatusResponse
 
 
 class SyncStatusResponse(BaseModel):
     """Response model for sync status endpoint."""
     fund_performance: SyncStatusItem
-    price_sync: PriceSyncStatusResponse
-    finance_sync: PriceJobStatusResponse
-    company_sync: PriceJobStatusResponse
+    history_sync: HistorySyncStatusResponse
+    finance_sync: HistoryJobStatusResponse
+    company_sync: HistoryJobStatusResponse
     is_rate_limited: bool = False
     rate_limit_reset_at: Optional[str] = None
 
 
-class PriceSyncRunRequest(BaseModel):
+class HistorySyncRunRequest(BaseModel):
     force_restart: bool = False
     symbols: Optional[List[str]] = None
     index_symbol: Optional[str] = None
@@ -72,7 +72,7 @@ class CompanySyncRunRequest(BaseModel):
     quick_sync: bool = False
 
 
-class PriceAuditRunRequest(BaseModel):
+class HistoryAuditRunRequest(BaseModel):
     symbols: Optional[List[str]] = None
     index_symbol: Optional[str] = None
     start_date: str
@@ -80,13 +80,13 @@ class PriceAuditRunRequest(BaseModel):
     auto_repair: bool = False
 
 
-class PriceRepairRunRequest(BaseModel):
+class HistoryRepairRunRequest(BaseModel):
     symbols: List[str] = Field(min_length=1)
     start_date: str
     end_date: str
 
 
-class PriceSyncActionResponse(BaseModel):
+class HistorySyncActionResponse(BaseModel):
     started: bool
     message: str
     processed_symbols: int = 0
@@ -97,7 +97,7 @@ class PriceSyncActionResponse(BaseModel):
     end_date: Optional[str] = None
 
 
-class PriceAuditSymbolResultResponse(BaseModel):
+class HistoryAuditSymbolResultResponse(BaseModel):
     symbol: str
     local_dates: int
     upstream_dates: int
@@ -107,12 +107,12 @@ class PriceAuditSymbolResultResponse(BaseModel):
     error: Optional[str] = None
 
 
-class PriceAuditActionResponse(PriceSyncActionResponse):
+class HistoryAuditActionResponse(HistorySyncActionResponse):
     audited_symbols: int = 0
     symbols_with_gaps: int = 0
     total_missing_dates: int = 0
     total_repaired_dates: int = 0
-    results: List[PriceAuditSymbolResultResponse] = Field(default_factory=list)
+    results: List[HistoryAuditSymbolResultResponse] = Field(default_factory=list)
 
 
 @router.get("/status", response_model=SyncStatusResponse)
@@ -120,9 +120,9 @@ async def get_sync_status():
     """
     Get current background sync status for all operations.
     """
-    price_sync_runtime = sync_status.price_sync
-    price_audit_runtime = sync_status.price_audit
-    price_repair_runtime = sync_status.price_repair
+    history_sync_runtime = sync_status.history_sync
+    history_audit_runtime = sync_status.history_audit
+    history_repair_runtime = sync_status.history_repair
     finance_sync_runtime = sync_status.finance_sync
     company_sync_runtime = sync_status.company_sync
 
@@ -133,48 +133,48 @@ async def get_sync_status():
             error=sync_status.fund_performance.error,
             started_at=sync_status.fund_performance.started_at,
         ),
-        price_sync=PriceSyncStatusResponse(
-            sync=PriceJobStatusResponse(
-                is_running=price_sync_runtime.is_running,
-                total_symbols=price_sync_runtime.total_symbols,
-                processed_symbols=price_sync_runtime.processed_symbols,
-                success_symbols=price_sync_runtime.success_symbols,
-                failed_symbols=price_sync_runtime.failed_symbols,
-                failed_tickers=price_sync_runtime.failed_tickers,
-                current_symbol=price_sync_runtime.current_symbol,
-                last_run_at=price_sync_runtime.last_run_at,
-                started_at=price_sync_runtime.started_at,
-                error=price_sync_runtime.error,
-                progress=price_sync_runtime.progress,
+        history_sync=HistorySyncStatusResponse(
+            sync=HistoryJobStatusResponse(
+                is_running=history_sync_runtime.is_running,
+                total_symbols=history_sync_runtime.total_symbols,
+                processed_symbols=history_sync_runtime.processed_symbols,
+                success_symbols=history_sync_runtime.success_symbols,
+                failed_symbols=history_sync_runtime.failed_symbols,
+                failed_tickers=history_sync_runtime.failed_tickers,
+                current_symbol=history_sync_runtime.current_symbol,
+                last_run_at=history_sync_runtime.last_run_at,
+                started_at=history_sync_runtime.started_at,
+                error=history_sync_runtime.error,
+                progress=history_sync_runtime.progress,
             ),
-            audit=PriceJobStatusResponse(
-                is_running=price_audit_runtime.is_running,
-                total_symbols=price_audit_runtime.total_symbols,
-                processed_symbols=price_audit_runtime.processed_symbols,
-                success_symbols=price_audit_runtime.success_symbols,
-                failed_symbols=price_audit_runtime.failed_symbols,
-                failed_tickers=price_audit_runtime.failed_tickers,
-                current_symbol=price_audit_runtime.current_symbol,
-                last_run_at=price_audit_runtime.last_run_at,
-                started_at=price_audit_runtime.started_at,
-                error=price_audit_runtime.error,
-                progress=price_audit_runtime.progress,
+            audit=HistoryJobStatusResponse(
+                is_running=history_audit_runtime.is_running,
+                total_symbols=history_audit_runtime.total_symbols,
+                processed_symbols=history_audit_runtime.processed_symbols,
+                success_symbols=history_audit_runtime.success_symbols,
+                failed_symbols=history_audit_runtime.failed_symbols,
+                failed_tickers=history_audit_runtime.failed_tickers,
+                current_symbol=history_audit_runtime.current_symbol,
+                last_run_at=history_audit_runtime.last_run_at,
+                started_at=history_audit_runtime.started_at,
+                error=history_audit_runtime.error,
+                progress=history_audit_runtime.progress,
             ),
-            repair=PriceJobStatusResponse(
-                is_running=price_repair_runtime.is_running,
-                total_symbols=price_repair_runtime.total_symbols,
-                processed_symbols=price_repair_runtime.processed_symbols,
-                success_symbols=price_repair_runtime.success_symbols,
-                failed_symbols=price_repair_runtime.failed_symbols,
-                failed_tickers=price_repair_runtime.failed_tickers,
-                current_symbol=price_repair_runtime.current_symbol,
-                last_run_at=price_repair_runtime.last_run_at,
-                started_at=price_repair_runtime.started_at,
-                error=price_repair_runtime.error,
-                progress=price_repair_runtime.progress,
+            repair=HistoryJobStatusResponse(
+                is_running=history_repair_runtime.is_running,
+                total_symbols=history_repair_runtime.total_symbols,
+                processed_symbols=history_repair_runtime.processed_symbols,
+                success_symbols=history_repair_runtime.success_symbols,
+                failed_symbols=history_repair_runtime.failed_symbols,
+                failed_tickers=history_repair_runtime.failed_tickers,
+                current_symbol=history_repair_runtime.current_symbol,
+                last_run_at=history_repair_runtime.last_run_at,
+                started_at=history_repair_runtime.started_at,
+                error=history_repair_runtime.error,
+                progress=history_repair_runtime.progress,
             ),
         ),
-        finance_sync=PriceJobStatusResponse(
+        finance_sync=HistoryJobStatusResponse(
             is_running=finance_sync_runtime.is_running,
             total_symbols=finance_sync_runtime.total_symbols,
             processed_symbols=finance_sync_runtime.processed_symbols,
@@ -187,7 +187,7 @@ async def get_sync_status():
             error=finance_sync_runtime.error,
             progress=finance_sync_runtime.progress,
         ),
-        company_sync=PriceJobStatusResponse(
+        company_sync=HistoryJobStatusResponse(
             is_running=company_sync_runtime.is_running,
             total_symbols=company_sync_runtime.total_symbols,
             processed_symbols=company_sync_runtime.processed_symbols,
@@ -205,13 +205,13 @@ async def get_sync_status():
     )
 
 
-@router.post("/prices/run", response_model=PriceSyncActionResponse)
-async def run_price_sync(
-    payload: PriceSyncRunRequest,
+@router.post("/history/run", response_model=HistorySyncActionResponse)
+async def run_history_sync(
+    payload: HistorySyncRunRequest,
     _current_admin=Depends(get_current_admin_user),
 ):
     try:
-        result = await vnstock_service.run_price_sync(
+        result = await vnstock_service.run_history_sync(
             force_restart=payload.force_restart,
             symbols=payload.symbols,
             index_symbol=payload.index_symbol,
@@ -221,12 +221,12 @@ async def run_price_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    return PriceSyncActionResponse(**result)
+    return HistorySyncActionResponse(**result)
 
 
-@router.post("/prices/audit/run", response_model=PriceAuditActionResponse)
-async def run_price_audit_sync(
-    payload: PriceAuditRunRequest,
+@router.post("/history/audit/run", response_model=HistoryAuditActionResponse)
+async def run_history_audit_sync(
+    payload: HistoryAuditRunRequest,
     _current_admin=Depends(get_current_admin_user),
 ):
     try:
@@ -245,7 +245,7 @@ async def run_price_audit_sync(
         )
 
     try:
-        result = await vnstock_service.run_price_audit_sync(
+        result = await vnstock_service.run_history_audit_sync(
             symbols=payload.symbols,
             index_symbol=payload.index_symbol,
             start_date=payload.start_date,
@@ -257,12 +257,12 @@ async def run_price_audit_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    return PriceAuditActionResponse(**result)
+    return HistoryAuditActionResponse(**result)
 
 
-@router.post("/prices/repair/run", response_model=PriceSyncActionResponse)
-async def run_price_repair_sync(
-    payload: PriceRepairRunRequest,
+@router.post("/history/repair/run", response_model=HistorySyncActionResponse)
+async def run_history_repair_sync(
+    payload: HistoryRepairRunRequest,
     _current_admin=Depends(get_current_admin_user),
 ):
     try:
@@ -280,15 +280,15 @@ async def run_price_repair_sync(
             detail="end_date must be on or after start_date",
         )
 
-    result = await vnstock_service.run_price_repair_sync(
+    result = await vnstock_service.run_history_repair_sync(
         symbols=payload.symbols,
         start_date=payload.start_date,
         end_date=payload.end_date,
     )
-    return PriceSyncActionResponse(**result)
+    return HistorySyncActionResponse(**result)
 
 
-@router.post("/finance/run", response_model=PriceSyncActionResponse)
+@router.post("/finance/run", response_model=HistorySyncActionResponse)
 async def run_finance_sync(
     payload: FinanceSyncRunRequest,
     _current_admin=Depends(get_current_admin_user),
@@ -305,10 +305,10 @@ async def run_finance_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    return PriceSyncActionResponse(**result)
+    return HistorySyncActionResponse(**result)
 
 
-@router.post("/company/run", response_model=PriceSyncActionResponse)
+@router.post("/company/run", response_model=HistorySyncActionResponse)
 async def run_company_sync(
     payload: CompanySyncRunRequest,
     _current_admin=Depends(get_current_admin_user),
@@ -325,4 +325,4 @@ async def run_company_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    return PriceSyncActionResponse(**result)
+    return HistorySyncActionResponse(**result)

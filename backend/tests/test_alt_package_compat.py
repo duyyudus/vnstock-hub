@@ -533,6 +533,79 @@ def test_vnstock_alt_trading_price_board_contract(monkeypatch: pytest.MonkeyPatc
         assert {"listing_symbol", "match_match_price"}.issubset(board.columns)
 
 
+def test_vnstock_data_alt_vci_trading_history_and_flow_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    trading_module = _import("app.lib.vnstock_data_alt.explorer.vci.trading")
+
+    def fake_fetch_data(self, endpoint: str, params: dict):
+        assert params["timeFrame"] == "ONE_DAY"
+        if endpoint == "price-history":
+            return {
+                "data": {
+                    "content": [
+                        {
+                            "tradingDate": "2026-01-02",
+                            "openPrice": 10.0,
+                            "highestPrice": 11.0,
+                            "lowestPrice": 9.5,
+                            "closePrice": 10.5,
+                            "totalMatchVolume": 100,
+                            "totalMatchValue": 1000,
+                            "totalDealVolume": 40,
+                            "totalDealValue": 400,
+                            "foreignBuyVolume": 140,
+                            "foreignBuyValue": 1400,
+                            "foreignSellVolume": 60,
+                            "foreignSellValue": 600,
+                            "foreignNetVolume": 80,
+                            "foreignNetValue": 800,
+                        }
+                    ]
+                }
+            }
+        if endpoint == "proprietary-history":
+            return {
+                "data": {
+                    "content": [
+                        {
+                            "tradingDate": "2026-01-02",
+                            "proprietaryBuyVolume": 70,
+                            "proprietaryBuyValue": 700,
+                            "proprietarySellVolume": 20,
+                            "proprietarySellValue": 200,
+                        }
+                    ]
+                }
+            }
+        raise AssertionError(f"Unexpected endpoint: {endpoint}")
+
+    monkeypatch.setattr(trading_module.Trading, "_fetch_data", fake_fetch_data)
+
+    trading = trading_module.Trading(symbol="VCB", show_log=False)
+    history = trading.price_history(start="2026-01-01", end="2026-01-31", get_all=True)
+    foreign = trading.foreign_trade(start="2026-01-01", end="2026-01-31")
+    prop = trading.prop_trade(start="2026-01-01", end="2026-01-31")
+
+    assert {"matched_volume", "matched_value", "deal_volume", "deal_value"}.issubset(history.columns)
+    assert {"fr_buy_volume", "fr_buy_value", "fr_sell_volume", "fr_sell_value", "fr_net_volume", "fr_net_value"}.issubset(history.columns)
+    assert history.loc[0, "matched_value"] == 1000
+    assert history.loc[0, "deal_value"] == 400
+    assert history.loc[0, "fr_buy_value"] == 1400
+    assert history.loc[0, "fr_sell_value"] == 600
+
+    assert "matched_volume" not in foreign.columns
+    assert "deal_value" not in foreign.columns
+    assert {"fr_buy_volume", "fr_buy_value", "fr_sell_volume", "fr_sell_value", "fr_net_volume", "fr_net_value"}.issubset(foreign.columns)
+    assert foreign.loc[0, "fr_buy_value"] == 1400
+    assert foreign.loc[0, "fr_sell_value"] == 600
+    assert foreign.loc[0, "fr_net_value"] == 800
+
+    assert "matched_volume" not in prop.columns
+    assert "deal_value" not in prop.columns
+    assert {"prop_buy_volume", "prop_buy_value", "prop_sell_volume", "prop_sell_value"}.issubset(prop.columns)
+    assert prop.loc[0, "prop_buy_value"] == 700
+    assert prop.loc[0, "prop_sell_value"] == 200
+
+
 def test_vnstock_alt_company_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
     company_module = _import("app.lib.vnstock_alt.explorer.vci.company")
 

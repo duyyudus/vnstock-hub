@@ -6,12 +6,12 @@ import threading
 from datetime import datetime, date, timedelta
 import pandas as pd
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.database import async_session
-from app.db.models import StockDailyPrice, StockCompany, StockPriceSyncState
+from app.db.models import StockDailyHistory, StockCompany, StockHistorySyncState
 from app.services.sync_status import sync_status
 
 from .core import (
@@ -30,6 +30,68 @@ from .models import StockInfo
 
 # Weekly price history defaults
 REQUEST_HISTORY_SYNC_TIMEOUT_SECONDS = 12.0
+
+STANDARD_FOREIGN_HISTORY_ALIASES = {
+    "time": "time",
+    "date": "time",
+    "tradingdate": "time",
+    "ngay": "time",
+    "frbuyvolume": "fr_buy_volume",
+    "foreignbuyvolume": "fr_buy_volume",
+    "klmua": "fr_buy_volume",
+    "frbuyvalue": "fr_buy_value",
+    "foreignbuyvalue": "fr_buy_value",
+    "gtmua": "fr_buy_value",
+    "frsellvolume": "fr_sell_volume",
+    "foreignsellvolume": "fr_sell_volume",
+    "klban": "fr_sell_volume",
+    "frsellvalue": "fr_sell_value",
+    "foreignsellvalue": "fr_sell_value",
+    "gtban": "fr_sell_value",
+    "frnetvolume": "fr_net_volume",
+    "foreignnetvolume": "fr_net_volume",
+    "klgdrong": "fr_net_volume",
+    "frnetvalue": "fr_net_value",
+    "foreignnetvalue": "fr_net_value",
+    "gtdgrong": "fr_net_value",
+    "frbuyvolumetotal": "fr_buy_volume_total",
+    "frbuyvaluetotal": "fr_buy_value_total",
+    "frsellvolumetotal": "fr_sell_volume_total",
+    "frsellvaluetotal": "fr_sell_value_total",
+    "frnetvolumetotal": "fr_net_volume_total",
+    "frnetvaluetotal": "fr_net_value_total",
+}
+
+STANDARD_PROP_HISTORY_ALIASES = {
+    "time": "time",
+    "date": "time",
+    "tradingdate": "time",
+    "ngay": "time",
+    "propbuyvolume": "prop_buy_volume",
+    "proprietarybuyvolume": "prop_buy_volume",
+    "klcpmua": "prop_buy_volume",
+    "propbuyvalue": "prop_buy_value",
+    "proprietarybuyvalue": "prop_buy_value",
+    "gtmua": "prop_buy_value",
+    "propsellvolume": "prop_sell_volume",
+    "proprietarysellvolume": "prop_sell_volume",
+    "klcpban": "prop_sell_volume",
+    "propsellvalue": "prop_sell_value",
+    "proprietarysellvalue": "prop_sell_value",
+    "gtban": "prop_sell_value",
+    "totalbuytradevolume": "total_buy_trade_volume",
+    "totalbuytradevalue": "total_buy_trade_value",
+    "totalselltradevolume": "total_sell_trade_volume",
+    "totalselltradevalue": "total_sell_trade_value",
+    "totalmatchtradebuyvolume": "total_match_trade_buy_volume",
+    "totalmatchtradebuyvalue": "total_match_trade_buy_value",
+    "totaldealtradebuyvolume": "total_deal_trade_buy_volume",
+    "totaldealtradebuyvalue": "total_deal_trade_buy_value",
+    "totalmatchtradesellvolume": "total_match_trade_sell_volume",
+    "totalmatchtradesellvalue": "total_match_trade_sell_value",
+    "totaldealtradesellvolume": "total_deal_trade_sell_volume",
+    "totaldealtradesellvalue": "total_deal_trade_sell_value",
+}
 
 
 class HistoryService:
@@ -63,17 +125,168 @@ class HistoryService:
                 self._symbol_sync_locks[symbol_key] = lock
             return lock
 
-    def _normalize_price_history_payload(
+    @staticmethod
+    def _coerce_float(value: Any) -> float | None:
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _coerce_int(cls, value: Any) -> int | None:
+        coerced = cls._coerce_float(value)
+        if coerced is None:
+            return None
+        return int(coerced)
+
+    @staticmethod
+    def _normalize_history_column_key(column_name: Any) -> str:
+        return "".join(ch for ch in str(column_name).lower() if ch.isalnum())
+
+    def _normalize_history_frame_columns(
+        self,
+        hist: pd.DataFrame | None,
+        aliases: Dict[str, str],
+    ) -> pd.DataFrame | None:
+        if hist is None or hist.empty:
+            return hist
+
+        rename_map: Dict[str, str] = {}
+        existing_columns = set(hist.columns)
+
+        for column in hist.columns:
+            target = aliases.get(self._normalize_history_column_key(column))
+            if target is None or column == target or target in existing_columns:
+                continue
+            rename_map[column] = target
+            existing_columns.add(target)
+
+        if not rename_map:
+            return hist
+
+        return hist.rename(columns=rename_map)
+
+    def _normalize_foreign_trade_history_frame(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        normalized = self._normalize_history_frame_columns(hist, STANDARD_FOREIGN_HISTORY_ALIASES)
+        return self._ensure_foreign_trade_canonical_columns(normalized)
+
+    def _normalize_prop_trade_history_frame(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        normalized = self._normalize_history_frame_columns(hist, STANDARD_PROP_HISTORY_ALIASES)
+        return self._ensure_prop_trade_canonical_columns(normalized)
+
+    @staticmethod
+    def _coalesce_frame_columns(
+        hist: pd.DataFrame,
+        candidate_columns: tuple[str, ...],
+    ) -> pd.Series | None:
+        series: pd.Series | None = None
+        for column in candidate_columns:
+            if column not in hist.columns:
+                continue
+            candidate = hist[column]
+            if series is None:
+                series = candidate.copy()
+            else:
+                series = series.where(series.notna(), candidate)
+        return series
+
+    @staticmethod
+    def _sum_frame_columns(
+        hist: pd.DataFrame,
+        component_columns: tuple[str, ...],
+    ) -> pd.Series | None:
+        series: pd.Series | None = None
+        has_value = pd.Series(False, index=hist.index)
+
+        for column in component_columns:
+            if column not in hist.columns:
+                continue
+            candidate = pd.to_numeric(hist[column], errors="coerce")
+            has_value = has_value | candidate.notna()
+            if series is None:
+                series = candidate
+            else:
+                series = series.add(candidate.fillna(0), fill_value=0)
+
+        if series is None:
+            return None
+        return series.where(has_value)
+
+    def _ensure_foreign_trade_canonical_columns(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        if hist is None or hist.empty:
+            return hist
+
+        normalized = hist.copy()
+        specs = {
+            "fr_buy_volume": (("fr_buy_volume", "fr_buy_volume_total"), ("fr_buy_volume_matched", "fr_buy_volume_deal")),
+            "fr_buy_value": (("fr_buy_value", "fr_buy_value_total"), ("fr_buy_value_matched", "fr_buy_value_deal")),
+            "fr_sell_volume": (("fr_sell_volume", "fr_sell_volume_total"), ("fr_sell_volume_matched", "fr_sell_volume_deal")),
+            "fr_sell_value": (("fr_sell_value", "fr_sell_value_total"), ("fr_sell_value_matched", "fr_sell_value_deal")),
+            "fr_net_volume": (("fr_net_volume", "fr_net_volume_total"), ("fr_net_volume_matched", "fr_net_volume_deal")),
+            "fr_net_value": (("fr_net_value", "fr_net_value_total"), ("fr_net_value_matched", "fr_net_value_deal")),
+        }
+
+        for target, (direct_candidates, component_candidates) in specs.items():
+            direct = self._coalesce_frame_columns(normalized, direct_candidates)
+            if direct is not None:
+                normalized[target] = direct
+                continue
+            summed = self._sum_frame_columns(normalized, component_candidates)
+            if summed is not None:
+                normalized[target] = summed
+
+        return normalized
+
+    def _ensure_prop_trade_canonical_columns(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        if hist is None or hist.empty:
+            return hist
+
+        normalized = hist.copy()
+        specs = {
+            "prop_buy_volume": (("prop_buy_volume", "total_buy_trade_volume"), ("total_match_trade_buy_volume", "total_deal_trade_buy_volume")),
+            "prop_buy_value": (("prop_buy_value", "total_buy_trade_value"), ("total_match_trade_buy_value", "total_deal_trade_buy_value")),
+            "prop_sell_volume": (("prop_sell_volume", "total_sell_trade_volume"), ("total_match_trade_sell_volume", "total_deal_trade_sell_volume")),
+            "prop_sell_value": (("prop_sell_value", "total_sell_trade_value"), ("total_match_trade_sell_value", "total_deal_trade_sell_value")),
+        }
+
+        for target, (direct_candidates, component_candidates) in specs.items():
+            direct = self._coalesce_frame_columns(normalized, direct_candidates)
+            if direct is not None:
+                normalized[target] = direct
+                continue
+            summed = self._sum_frame_columns(normalized, component_candidates)
+            if summed is not None:
+                normalized[target] = summed
+
+        return normalized
+
+    @staticmethod
+    def _preserve_existing_on_null(insert_stmt, column_name: str):
+        column = getattr(StockDailyHistory.__table__.c, column_name)
+        excluded = getattr(insert_stmt.excluded, column_name)
+        return func.coalesce(excluded, column)
+
+    def _build_daily_history_payload(
         self,
         symbol: str,
-        hist: pd.DataFrame,
+        ohlcv_hist: pd.DataFrame,
+        foreign_hist: pd.DataFrame | None = None,
+        prop_hist: pd.DataFrame | None = None,
         created_at: datetime | None = None
     ) -> tuple[List[Dict[str, Any]], date | None, date | None]:
         symbol_key = symbol[:3].upper()
         row_created_at = created_at or datetime.utcnow()
         deduped_by_date: Dict[date, Dict[str, Any]] = {}
+        foreign_hist = self._normalize_foreign_trade_history_frame(foreign_hist)
+        prop_hist = self._normalize_prop_trade_history_frame(prop_hist)
 
-        for _, row in hist.iterrows():
+        for _, row in ohlcv_hist.iterrows():
             raw_time = row.get('time')
             if pd.isna(raw_time):
                 continue
@@ -81,20 +294,56 @@ class HistoryService:
             if pd.isna(raw_close):
                 continue
             try:
-                price_date = pd.to_datetime(raw_time).date()
+                history_date = pd.to_datetime(raw_time).date()
             except Exception:
                 continue
 
-            deduped_by_date[price_date] = {
+            deduped_by_date[history_date] = {
                 'symbol': symbol_key,
-                'date': price_date,
-                'open': float(row.get('open', 0)) if pd.notna(row.get('open')) else None,
-                'high': float(row.get('high', 0)) if pd.notna(row.get('high')) else None,
-                'low': float(row.get('low', 0)) if pd.notna(row.get('low')) else None,
+                'date': history_date,
+                'open': self._coerce_float(row.get('open')),
+                'high': self._coerce_float(row.get('high')),
+                'low': self._coerce_float(row.get('low')),
                 'close': float(raw_close),
-                'volume': int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None,
+                'volume': self._coerce_int(row.get('volume')),
+                'foreign_buy_volume': None,
+                'foreign_buy_value': None,
+                'foreign_sell_volume': None,
+                'foreign_sell_value': None,
+                'foreign_net_volume': None,
+                'foreign_net_value': None,
+                'prop_buy_volume': None,
+                'prop_buy_value': None,
+                'prop_sell_volume': None,
+                'prop_sell_value': None,
                 'created_at': row_created_at,
             }
+
+        self._merge_daily_metric_history(
+            deduped_by_date=deduped_by_date,
+            hist=foreign_hist,
+            field_mapping={
+                # Provider foreign/proprietary flow endpoints already expose daily totals.
+                # We persist those aggregate fields directly; matched/deal stays a separate
+                # concern on the price-history endpoint and is not recomputed here.
+                'foreign_buy_volume': ('fr_buy_volume', 'foreign_buy_volume'),
+                'foreign_buy_value': ('fr_buy_value', 'foreign_buy_value'),
+                'foreign_sell_volume': ('fr_sell_volume', 'foreign_sell_volume'),
+                'foreign_sell_value': ('fr_sell_value', 'foreign_sell_value'),
+                'foreign_net_volume': ('fr_net_volume', 'foreign_net_volume'),
+                'foreign_net_value': ('fr_net_value', 'foreign_net_value'),
+            },
+        )
+        self._merge_daily_metric_history(
+            deduped_by_date=deduped_by_date,
+            hist=prop_hist,
+            field_mapping={
+                'prop_buy_volume': ('prop_buy_volume',),
+                'prop_buy_value': ('prop_buy_value',),
+                'prop_sell_volume': ('prop_sell_volume',),
+                'prop_sell_value': ('prop_sell_value',),
+            },
+        )
 
         if not deduped_by_date:
             return [], None, None
@@ -102,6 +351,43 @@ class HistoryService:
         ordered_dates = sorted(deduped_by_date.keys())
         payload = [deduped_by_date[d] for d in ordered_dates]
         return payload, ordered_dates[0], ordered_dates[-1]
+
+    def _merge_daily_metric_history(
+        self,
+        deduped_by_date: Dict[date, Dict[str, Any]],
+        hist: pd.DataFrame | None,
+        field_mapping: Dict[str, tuple[str, ...]],
+    ) -> None:
+        if hist is None or hist.empty or not deduped_by_date:
+            return
+
+        for _, row in hist.iterrows():
+            raw_time = row.get('time')
+            if pd.isna(raw_time):
+                continue
+
+            try:
+                history_date = pd.to_datetime(raw_time).date()
+            except Exception:
+                continue
+
+            target_row = deduped_by_date.get(history_date)
+            if target_row is None:
+                continue
+
+            for payload_field, candidate_columns in field_mapping.items():
+                for column in candidate_columns:
+                    if column not in row.index:
+                        continue
+
+                    if payload_field.endswith("_volume"):
+                        coerced = self._coerce_int(row.get(column))
+                    else:
+                        coerced = self._coerce_float(row.get(column))
+
+                    if coerced is not None:
+                        target_row[payload_field] = coerced
+                    break
 
     async def start_background_workers(self) -> None:
         """No background workers are started for history service."""
@@ -226,13 +512,13 @@ class HistoryService:
             min_date = target_date - timedelta(days=7)
             max_date = target_date + timedelta(days=1)
 
-            stmt = select(StockDailyPrice).where(
+            stmt = select(StockDailyHistory).where(
                 and_(
-                    StockDailyPrice.symbol.in_(symbols),
-                    StockDailyPrice.date >= min_date,
-                    StockDailyPrice.date <= max_date
+                    StockDailyHistory.symbol.in_(symbols),
+                    StockDailyHistory.date >= min_date,
+                    StockDailyHistory.date <= max_date
                 )
-            ).order_by(StockDailyPrice.date.desc())
+            ).order_by(StockDailyHistory.date.desc())
 
             rows = session.execute(stmt).scalars().all()
 
@@ -247,7 +533,93 @@ class HistoryService:
 
         return result
 
-    def _upsert_stock_price_history(
+    def _fetch_foreign_trade_history(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        from vnstock_data import Trading
+
+        span_days = max(1, (end_date - start_date).days + 5)
+        trading = Trading(source='VCI', symbol=symbol)
+        fetch_method = getattr(trading, "foreign_trade", None)
+        if not callable(fetch_method):
+            return pd.DataFrame()
+        frame = fetch_method(
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+            resolution='1D',
+            limit=max(100, span_days),
+        )
+        normalized = self._normalize_foreign_trade_history_frame(frame)
+        return normalized if normalized is not None else pd.DataFrame()
+
+    def _fetch_prop_trade_history(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        from vnstock_data import Trading
+
+        span_days = max(1, (end_date - start_date).days + 5)
+        trading = Trading(source='VCI', symbol=symbol)
+        fetch_method = getattr(trading, "prop_trade", None)
+        if not callable(fetch_method):
+            return pd.DataFrame()
+        frame = fetch_method(
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+            resolution='1D',
+            limit=max(100, span_days),
+        )
+        normalized = self._normalize_prop_trade_history_frame(frame)
+        return normalized if normalized is not None else pd.DataFrame()
+
+    def _fetch_auxiliary_history_frames(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        log,
+    ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+        foreign_hist: pd.DataFrame | None = None
+        prop_hist: pd.DataFrame | None = None
+
+        try:
+            foreign_hist = retry_with_backoff(
+                lambda: self._fetch_foreign_trade_history(symbol, start_date, end_date),
+                max_retries=2,
+            )
+            foreign_hist = self._normalize_foreign_trade_history_frame(foreign_hist)
+        except Exception as e:
+            log.warning(
+                "Continuing without foreign flow enrichment for %s (%s -> %s): %s",
+                symbol,
+                start_date,
+                end_date,
+                e,
+            )
+
+        try:
+            prop_hist = retry_with_backoff(
+                lambda: self._fetch_prop_trade_history(symbol, start_date, end_date),
+                max_retries=2,
+            )
+            prop_hist = self._normalize_prop_trade_history_frame(prop_hist)
+        except Exception as e:
+            log.warning(
+                "Continuing without proprietary flow enrichment for %s (%s -> %s): %s",
+                symbol,
+                start_date,
+                end_date,
+                e,
+            )
+
+        return foreign_hist, prop_hist
+
+    def _upsert_stock_daily_history(
         self,
         symbol: str,
         start_date: date,
@@ -284,27 +656,48 @@ class HistoryService:
                         interval='1D'
                     )
 
-                hist = retry_with_backoff(fetch_history, max_retries=2)
+                ohlcv_hist = retry_with_backoff(fetch_history, max_retries=2)
 
-                if hist is None or hist.empty:
+                if ohlcv_hist is None or ohlcv_hist.empty:
                     return 0
 
-                payload, min_payload_date, max_payload_date = self._normalize_price_history_payload(
+                foreign_hist, prop_hist = self._fetch_auxiliary_history_frames(
                     symbol=symbol_key,
-                    hist=hist
+                    start_date=start_date,
+                    end_date=end_date,
+                    log=active_logger,
+                )
+
+                payload, min_payload_date, max_payload_date = self._build_daily_history_payload(
+                    symbol=symbol_key,
+                    ohlcv_hist=ohlcv_hist,
+                    foreign_hist=foreign_hist,
+                    prop_hist=prop_hist,
                 )
                 if not payload:
                     return 0
 
-                insert_stmt = pg_insert(StockDailyPrice.__table__).values(payload)
+                insert_stmt = pg_insert(StockDailyHistory.__table__).values(payload)
                 upsert_stmt = insert_stmt.on_conflict_do_update(
-                    constraint='uq_symbol_date',
+                    constraint='uq_stock_daily_history_symbol_date',
                     set_={
                         'open': insert_stmt.excluded.open,
                         'high': insert_stmt.excluded.high,
                         'low': insert_stmt.excluded.low,
                         'close': insert_stmt.excluded.close,
                         'volume': insert_stmt.excluded.volume,
+                        # Preserve existing enrichment when the current sync run
+                        # could only fetch OHLCV and auxiliary flow data is absent.
+                        'foreign_buy_volume': self._preserve_existing_on_null(insert_stmt, 'foreign_buy_volume'),
+                        'foreign_buy_value': self._preserve_existing_on_null(insert_stmt, 'foreign_buy_value'),
+                        'foreign_sell_volume': self._preserve_existing_on_null(insert_stmt, 'foreign_sell_volume'),
+                        'foreign_sell_value': self._preserve_existing_on_null(insert_stmt, 'foreign_sell_value'),
+                        'foreign_net_volume': self._preserve_existing_on_null(insert_stmt, 'foreign_net_volume'),
+                        'foreign_net_value': self._preserve_existing_on_null(insert_stmt, 'foreign_net_value'),
+                        'prop_buy_volume': self._preserve_existing_on_null(insert_stmt, 'prop_buy_volume'),
+                        'prop_buy_value': self._preserve_existing_on_null(insert_stmt, 'prop_buy_value'),
+                        'prop_sell_volume': self._preserve_existing_on_null(insert_stmt, 'prop_sell_volume'),
+                        'prop_sell_value': self._preserve_existing_on_null(insert_stmt, 'prop_sell_value'),
                     }
                 )
 
@@ -312,7 +705,7 @@ class HistoryService:
                 session.commit()
                 count = len(payload)
                 active_logger.debug(
-                    f"Upserted {count} price records for {symbol_key} "
+                    f"Upserted {count} daily history records for {symbol_key} "
                     f"({min_payload_date} -> {max_payload_date})"
                 )
                 return count
@@ -322,7 +715,7 @@ class HistoryService:
             except Exception:
                 pass
             active_logger.error(
-                f"Error in _upsert_stock_price_history for {symbol_key} "
+                f"Error in _upsert_stock_daily_history for {symbol_key} "
                 f"({start_date} -> {end_date}): {e}"
             )
             if raise_on_error:
@@ -347,7 +740,7 @@ class HistoryService:
                 return
 
             try:
-                count = self._upsert_stock_price_history(
+                count = self._upsert_stock_daily_history(
                     symbol=symbol,
                     start_date=three_years_ago,
                     end_date=today,
@@ -517,13 +910,13 @@ class HistoryService:
             }
 
         async with async_session() as session:
-            stmt = select(StockDailyPrice).where(
+            stmt = select(StockDailyHistory).where(
                 and_(
-                    StockDailyPrice.symbol.in_(clean_symbols),
-                    StockDailyPrice.date >= bounded_start,
-                    StockDailyPrice.date <= bounded_end,
+                    StockDailyHistory.symbol.in_(clean_symbols),
+                    StockDailyHistory.date >= bounded_start,
+                    StockDailyHistory.date <= bounded_end,
                 )
-            ).order_by(StockDailyPrice.symbol.asc(), StockDailyPrice.date.asc())
+            ).order_by(StockDailyHistory.symbol.asc(), StockDailyHistory.date.asc())
             result = await session.execute(stmt)
             records = result.scalars().all()
 
@@ -606,13 +999,13 @@ class HistoryService:
                 start_date = end_date - timedelta(days=safe_days - 1)
 
                 # Query cached data
-                stmt = select(StockDailyPrice).where(
+                stmt = select(StockDailyHistory).where(
                     and_(
-                        StockDailyPrice.symbol == symbol_clean,
-                        StockDailyPrice.date >= start_date,
-                        StockDailyPrice.date <= end_date
+                        StockDailyHistory.symbol == symbol_clean,
+                        StockDailyHistory.date >= start_date,
+                        StockDailyHistory.date <= end_date
                     )
-                ).order_by(StockDailyPrice.date.asc())
+                ).order_by(StockDailyHistory.date.asc())
 
                 cached_records = session.execute(stmt).scalars().all()
 
@@ -669,20 +1062,20 @@ class HistoryService:
                 start_date = end_date - timedelta(days=safe_days - 1)
 
                 # Query cached data
-                stmt = select(StockDailyPrice).where(
+                stmt = select(StockDailyHistory).where(
                     and_(
-                        StockDailyPrice.symbol == symbol_clean,
-                        StockDailyPrice.date >= start_date,
-                        StockDailyPrice.date <= end_date
+                        StockDailyHistory.symbol == symbol_clean,
+                        StockDailyHistory.date >= start_date,
+                        StockDailyHistory.date <= end_date
                     )
-                ).order_by(StockDailyPrice.date.asc())
+                ).order_by(StockDailyHistory.date.asc())
 
                 cached_records = session.execute(stmt).scalars().all()
 
                 data = [
                     {
                         'date': record.date.strftime('%Y-%m-%d'),
-                        # StockDailyPrice.close is stored in 1,000 VND; convert to VND for UI parity.
+                        # StockDailyHistory.close is stored in 1,000 VND; convert to VND for UI parity.
                         'close': round(record.close * 1000, 2),
                     }
                     for record in cached_records
@@ -717,9 +1110,9 @@ class HistoryService:
                 if company:
                     company_name = company.company_name
 
-                stmt = select(StockDailyPrice).where(
-                    StockDailyPrice.symbol == symbol_clean
-                ).order_by(StockDailyPrice.date.desc())
+                stmt = select(StockDailyHistory).where(
+                    StockDailyHistory.symbol == symbol_clean
+                ).order_by(StockDailyHistory.date.desc())
                 cached_records = session.execute(stmt).scalars().all()
 
                 data = [
@@ -832,13 +1225,13 @@ class HistoryService:
         Uses Friday as the weekly reference point.
         """
         async with async_session() as session:
-            stmt = select(StockDailyPrice).where(
+            stmt = select(StockDailyHistory).where(
                 and_(
-                    StockDailyPrice.symbol.in_(symbols),
-                    StockDailyPrice.date >= start_date,
-                    StockDailyPrice.date <= end_date
+                    StockDailyHistory.symbol.in_(symbols),
+                    StockDailyHistory.date >= start_date,
+                    StockDailyHistory.date <= end_date
                 )
-            ).order_by(StockDailyPrice.symbol, StockDailyPrice.date)
+            ).order_by(StockDailyHistory.symbol, StockDailyHistory.date)
 
             result = await session.execute(stmt)
             records = result.scalars().all()
@@ -1074,9 +1467,9 @@ class HistoryService:
         try:
             async with async_session() as session:
                 stmt = select(
-                    StockPriceSyncState.symbol,
-                    StockPriceSyncState.weekly_sync_last_attempt_at,
-                ).where(StockPriceSyncState.symbol.in_(symbols))
+                    StockHistorySyncState.symbol,
+                    StockHistorySyncState.weekly_sync_last_attempt_at,
+                ).where(StockHistorySyncState.symbol.in_(symbols))
                 result = await session.execute(stmt)
                 rows = result.all()
 
@@ -1099,8 +1492,8 @@ class HistoryService:
 
         try:
             async with async_session() as session:
-                stmt = select(StockPriceSyncState).where(
-                    StockPriceSyncState.symbol.in_(symbols)
+                stmt = select(StockHistorySyncState).where(
+                    StockHistorySyncState.symbol.in_(symbols)
                 )
                 existing_rows = await session.execute(stmt)
                 existing = {row.symbol: row for row in existing_rows.scalars().all()}
@@ -1108,7 +1501,7 @@ class HistoryService:
                 for symbol in symbols:
                     state = existing.get(symbol)
                     if state is None:
-                        state = StockPriceSyncState(symbol=symbol)
+                        state = StockHistorySyncState(symbol=symbol)
                         session.add(state)
                         existing[symbol] = state
 
@@ -1124,15 +1517,15 @@ class HistoryService:
             return set()
 
         # Ignore stale DB "running" flags when price sync runtime is not active.
-        if not sync_status.price_sync.is_running:
+        if not sync_status.history_sync.is_running:
             return set()
 
         try:
             async with async_session() as session:
-                stmt = select(StockPriceSyncState.symbol).where(
+                stmt = select(StockHistorySyncState.symbol).where(
                     and_(
-                        StockPriceSyncState.symbol.in_(symbols),
-                        StockPriceSyncState.sync_status == "running",
+                        StockHistorySyncState.symbol.in_(symbols),
+                        StockHistorySyncState.sync_status == "running",
                     )
                 )
                 result = await session.execute(stmt)

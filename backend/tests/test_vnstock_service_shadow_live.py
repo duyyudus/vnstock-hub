@@ -57,6 +57,29 @@ def upstream_and_alt(
     return upstream, alt
 
 
+@pytest.fixture
+def upstream_and_alt_vnstock_data(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> tuple[Any, Any]:
+    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+
+    upstream = pytest.importorskip("vnstock_data", reason="vnstock_data must be installed for live differential checks.")
+    alt = importlib.import_module("app.lib.vnstock_data_alt")
+    return upstream, alt
+
+
+@pytest.fixture
+def alt_vnstock_data_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Any:
+    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    return importlib.import_module("app.lib.vnstock_data_alt")
+
+
 def _date_window() -> tuple[dt.date, dt.date]:
     today = dt.date.today()
     end = today - dt.timedelta(days=10)
@@ -196,6 +219,29 @@ def _run_service_call(
         }
 
 
+def _run_vnstock_data_service_call(
+    monkeypatch: pytest.MonkeyPatch,
+    package: Any,
+    call: Callable[[pytest.MonkeyPatch], Any],
+) -> dict[str, Any]:
+    monkeypatch.setitem(sys.modules, "vnstock_data", package)
+    _reset_service_state()
+    try:
+        return {
+            "status": "ok",
+            "value": _normalize_output(call(monkeypatch)),
+            "rate_limited": False,
+        }
+    except Exception as exc:  # pragma: no cover - exercised on live failures
+        message = str(exc)
+        return {
+            "status": "error",
+            "type": type(exc).__name__,
+            "message": message,
+            "rate_limited": "429" in message or "rate limit" in message.lower(),
+        }
+
+
 SERVICE_LIVE_DIFF_CASES: list[tuple[str, Callable[[pytest.MonkeyPatch], Any]]] = [
     (
         "finance_income_statement",
@@ -305,6 +351,21 @@ SERVICE_LIVE_DIFF_CASES: list[tuple[str, Callable[[pytest.MonkeyPatch], Any]]] =
     ),
 ]
 
+SERVICE_VNSTOCK_DATA_LIVE_DIFF_CASES: list[tuple[str, Callable[[pytest.MonkeyPatch], Any]]] = [
+    (
+        "history_foreign_trade_fetch_vcb",
+        lambda monkeypatch: importlib.import_module("app.services.vnstock_service.history")
+        .HistoryService()
+        ._fetch_foreign_trade_history("VCB", *_date_window()),
+    ),
+    (
+        "history_prop_trade_fetch_vcb",
+        lambda monkeypatch: importlib.import_module("app.services.vnstock_service.history")
+        .HistoryService()
+        ._fetch_prop_trade_history("VCB", *_date_window()),
+    ),
+]
+
 
 @pytest.mark.parametrize("case_name,call", SERVICE_LIVE_DIFF_CASES, ids=[case[0] for case in SERVICE_LIVE_DIFF_CASES])
 def test_backend_service_shadow_matches_upstream(
@@ -326,3 +387,54 @@ def test_backend_service_shadow_matches_upstream(
         f"upstream={json.dumps(upstream_result, ensure_ascii=False, sort_keys=True, default=str)[:4000]}\n"
         f"alt={json.dumps(alt_result, ensure_ascii=False, sort_keys=True, default=str)[:4000]}"
     )
+
+
+@pytest.mark.parametrize(
+    "case_name,call",
+    SERVICE_VNSTOCK_DATA_LIVE_DIFF_CASES,
+    ids=[case[0] for case in SERVICE_VNSTOCK_DATA_LIVE_DIFF_CASES],
+)
+def test_backend_history_aux_service_shadow_matches_upstream_vnstock_data(
+    case_name: str,
+    call: Callable[[pytest.MonkeyPatch], Any],
+    upstream_and_alt_vnstock_data: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upstream, alt = upstream_and_alt_vnstock_data
+
+    upstream_result = _run_vnstock_data_service_call(monkeypatch, upstream, call)
+    alt_result = _run_vnstock_data_service_call(monkeypatch, alt, call)
+
+    if upstream_result.get("rate_limited") or alt_result.get("rate_limited"):
+        pytest.skip(f"Live rate limit encountered during {case_name}; skipping differential assertion.")
+
+    assert alt_result == upstream_result, (
+        f"Service vnstock_data shadow mismatch for {case_name}\n"
+        f"upstream={json.dumps(upstream_result, ensure_ascii=False, sort_keys=True, default=str)[:4000]}\n"
+        f"alt={json.dumps(alt_result, ensure_ascii=False, sort_keys=True, default=str)[:4000]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "method_name,expected_columns",
+    [
+        ("_fetch_foreign_trade_history", {"time", "fr_buy_volume", "fr_buy_value", "fr_sell_volume", "fr_sell_value"}),
+        ("_fetch_prop_trade_history", {"time", "prop_buy_volume", "prop_buy_value", "prop_sell_volume", "prop_sell_value"}),
+    ],
+    ids=["foreign_trade", "prop_trade"],
+)
+def test_backend_history_aux_live_with_alt_vnstock_data_only(
+    method_name: str,
+    expected_columns: set[str],
+    alt_vnstock_data_only: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "vnstock_data", alt_vnstock_data_only)
+
+    service = importlib.import_module("app.services.vnstock_service.history").HistoryService()
+    frame = getattr(service, method_name)("VCB", *_date_window())
+
+    assert isinstance(frame, pd.DataFrame)
+    if frame.empty:
+        pytest.skip(f"{method_name} returned no live rows for the current date window")
+    assert expected_columns.issubset(set(frame.columns))
