@@ -7,6 +7,7 @@ import { stockApi } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
+import { ThemeSelector } from './components/ThemeSelector';
 import { useAuthUser } from '../auth/useAuthUser';
 import { PortfolioTab } from './portfolio/PortfolioTab';
 
@@ -255,6 +256,7 @@ export const Dashboard: React.FC = () => {
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">
+                        <ThemeSelector />
                         <AuthWidget />
                         {user ? (
                             <a href="/admin" className="btn btn-ghost btn-circle" aria-label="Open admin page">
