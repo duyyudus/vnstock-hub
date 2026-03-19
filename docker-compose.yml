@@ -4,6 +4,7 @@ services:
       context: ./backend
       args:
         - VNSTOCK_API_KEY=
+        - BUILD_NUMBER=${BUILD_NUMBER:-unknown}
     image: ${REGISTRY_REF:-192.168.100.x:5000}/vnstock-hub-backend:latest
     ports:
       - "8020:8000"
@@ -15,6 +16,7 @@ services:
       context: ./frontend
       args:
         - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://192.168.100.x:8020}
+        - VITE_APP_BUILD=${BUILD_NUMBER:-unknown}
     image: ${REGISTRY_REF:-192.168.100.x:5000}/vnstock-hub-frontend:latest
     ports:
       - "3030:80"

@@ -38,6 +38,7 @@ if [[ "${REGISTRY_REF}" == "host.docker.internal:${RELAY_PORT}" ]]; then
   fi
 fi
 
-echo "Using registry ${REGISTRY_REF}"
-REGISTRY_REF="${REGISTRY_REF}" docker compose -f prod-docker-compose.yml build
+BUILD_NUMBER=$(git rev-list --count HEAD)
+echo "Using registry ${REGISTRY_REF}, build number: ${BUILD_NUMBER}"
+REGISTRY_REF="${REGISTRY_REF}" BUILD_NUMBER="${BUILD_NUMBER}" docker compose -f prod-docker-compose.yml build
 REGISTRY_REF="${REGISTRY_REF}" docker compose -f prod-docker-compose.yml push

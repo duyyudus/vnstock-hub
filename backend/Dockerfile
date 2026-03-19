@@ -20,9 +20,11 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime
 
+ARG BUILD_NUMBER=""
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    BUILD_NUMBER=$BUILD_NUMBER
 
 WORKDIR /app
 

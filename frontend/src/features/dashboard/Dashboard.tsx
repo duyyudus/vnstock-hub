@@ -4,6 +4,7 @@ import IndicesTab from './indices/IndicesTab';
 import { ScreenersTab } from './screeners/ScreenersTab';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
+import type { AppInfoResponse } from '../../api/stockApi';
 import type { IndexConfig } from './indices/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
@@ -62,6 +63,11 @@ export const Dashboard: React.FC = () => {
     const [openVolumePopups, setOpenVolumePopups] = useState<OpenVolumePopup[]>([]);
     const [openPricePopups, setOpenPricePopups] = useState<OpenPricePopup[]>([]);
     const [maxZIndex, setMaxZIndex] = useState(100);
+    const [backendInfo, setBackendInfo] = useState<AppInfoResponse | null>(null);
+
+    useEffect(() => {
+        stockApi.getAppInfo().then(setBackendInfo).catch(() => {});
+    }, []);
 
     const availableTabs = user
         ? DASHBOARD_TABS
@@ -340,6 +346,11 @@ export const Dashboard: React.FC = () => {
                     onFocus={() => focusPricePopup(popup.ticker)}
                 />
             ))}
+            {/* Version footer */}
+            <footer className="text-center py-2 text-xs text-base-content/40">
+                Frontend v{__APP_VERSION__} ({__APP_BUILD__})
+                {backendInfo && ` · Backend v${backendInfo.backend_version} (${backendInfo.build_number})`}
+            </footer>
         </div>
     );
 };

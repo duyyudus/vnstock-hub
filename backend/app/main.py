@@ -2,6 +2,7 @@
 FastAPI application entry point.
 """
 from contextlib import asynccontextmanager
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,6 +27,7 @@ from app.api.v1.sync import router as sync_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.bookmarks import router as bookmarks_router
 from app.api.v1.portfolio import router as portfolio_router
+from app.api.v1.info import router as info_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
 from app.services.vnstock_service import vnstock_service
@@ -55,10 +57,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error stopping background workers: {e}")
 
 # Create FastAPI app
+try:
+    _api_version = pkg_version("vnstock-hub-backend")
+except PackageNotFoundError:
+    _api_version = "unknown"
+
 app = FastAPI(
     title="VNStock Hub API",
     description="API for Vietnam stock market data and trading",
-    version="1.0.0",
+    version=_api_version,
     lifespan=lifespan
 )
 
@@ -82,12 +89,13 @@ app.include_router(sync_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(bookmarks_router, prefix=settings.api_v1_prefix)
 app.include_router(portfolio_router, prefix=settings.api_v1_prefix)
+app.include_router(info_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "VNStock Hub API", "version": "1.0.0"}
+    return {"message": "VNStock Hub API", "version": _api_version}
 
 
 @app.get("/health")

@@ -247,6 +247,12 @@ const primeAuthSession = () => {
 
 primeAuthSession();
 
+// App info
+export interface AppInfoResponse {
+    backend_version: string;
+    build_number: string;
+}
+
 // Stock data types
 export interface Stock {
     ticker: string;
@@ -1147,6 +1153,11 @@ export const stockApi = {
 
     async getBookmarkGroupStocks(groupId: number): Promise<BookmarkGroupStocksResponse> {
         const response = await apiClient.get<BookmarkGroupStocksResponse>(`/bookmarks/groups/${groupId}/stocks`);
+        return response.data;
+    },
+
+    async getAppInfo(): Promise<AppInfoResponse> {
+        const response = await apiClient.get<AppInfoResponse>('/info');
         return response.data;
     },
 };

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     # Sync admin allowlist (JSON array of lowercased emails)
     sync_admin_emails: str = "[]"
+
+    # Build number (set via BUILD_NUMBER env var in CI/Docker; falls back to git hash)
+    build_number: str | None = None
     
     @property
     def cors_origins_list(self) -> List[str]:
