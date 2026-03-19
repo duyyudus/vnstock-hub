@@ -120,7 +120,21 @@ async def test_get_volume_history(client):
     mock_volume = {
         "symbol": "TCB",
         "company_name": "Techcombank",
-        "data": [{"date": "2023-01-01", "volume": 1000, "value": 50.0}],
+        "data": [{
+            "date": "2023-01-01",
+            "volume": 1000,
+            "value": 50.0,
+            "matched_volume": 1100,
+            "matched_value": 52.0,
+            "deal_volume": 100,
+            "deal_value": 8.0,
+            "total_volume": 1200,
+            "total_value": 60.0,
+            "foreign_net_value": 12.5,
+            "prop_buy_value": 4.0,
+            "prop_sell_value": 1.5,
+            "prop_net_value": 2.5,
+        }],
         "sync_performed": True,
         "sync_timed_out": False,
         "sync_error": None,
@@ -134,6 +148,16 @@ async def test_get_volume_history(client):
     mock_get_volume_history.assert_called_once_with("TCB", days=30, auto_sync=True)
     assert data["symbol"] == "TCB"
     assert data["data"][0]["volume"] == 1000
+    assert data["data"][0]["matched_volume"] == 1100
+    assert data["data"][0]["matched_value"] == 52.0
+    assert data["data"][0]["deal_volume"] == 100
+    assert data["data"][0]["deal_value"] == 8.0
+    assert data["data"][0]["total_volume"] == 1200
+    assert data["data"][0]["total_value"] == 60.0
+    assert data["data"][0]["foreign_net_value"] == 12.5
+    assert data["data"][0]["prop_buy_value"] == 4.0
+    assert data["data"][0]["prop_sell_value"] == 1.5
+    assert data["data"][0]["prop_net_value"] == 2.5
     assert data["sync_performed"] is True
     assert data["sync_timed_out"] is False
     assert data["sync_error"] is None

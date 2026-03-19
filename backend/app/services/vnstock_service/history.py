@@ -93,6 +93,22 @@ STANDARD_PROP_HISTORY_ALIASES = {
     "totaldealtradesellvalue": "total_deal_trade_sell_value",
 }
 
+STANDARD_TURNOVER_HISTORY_ALIASES = {
+    "time": "time",
+    "date": "time",
+    "tradingdate": "time",
+    "matchedvolume": "matched_volume",
+    "matchedvalue": "matched_value",
+    "dealvolume": "deal_volume",
+    "dealvalue": "deal_value",
+    "totalvolume": "total_volume",
+    "totalvalue": "total_value",
+    "totalmatchvolume": "matched_volume",
+    "totalmatchvalue": "matched_value",
+    "totaldealvolume": "deal_volume",
+    "totaldealvalue": "deal_value",
+}
+
 
 class HistoryService:
     """Historical price and volume data operations."""
@@ -115,6 +131,28 @@ class HistoryService:
         handler: Callable[[List[str]], Awaitable[Dict[str, Any]]]
     ) -> None:
         self._weekly_sync_trigger_handler = handler
+
+    @staticmethod
+    def _round_optional_value(value: float | None) -> float | None:
+        if value is None:
+            return None
+        return round(value, 2)
+
+    @classmethod
+    def _vnd_to_billion_vnd(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        return cls._round_optional_value(value / 1e9)
+
+    @classmethod
+    def _derive_net_value(
+        cls,
+        buy_value: float | None,
+        sell_value: float | None,
+    ) -> float | None:
+        if buy_value is None or sell_value is None:
+            return None
+        return cls._vnd_to_billion_vnd(buy_value - sell_value)
 
     def _get_symbol_sync_lock(self, symbol: str) -> threading.Lock:
         symbol_key = symbol[:3].upper()
@@ -179,6 +217,10 @@ class HistoryService:
     def _normalize_prop_trade_history_frame(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
         normalized = self._normalize_history_frame_columns(hist, STANDARD_PROP_HISTORY_ALIASES)
         return self._ensure_prop_trade_canonical_columns(normalized)
+
+    def _normalize_turnover_history_frame(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        normalized = self._normalize_history_frame_columns(hist, STANDARD_TURNOVER_HISTORY_ALIASES)
+        return self._ensure_turnover_history_canonical_columns(normalized)
 
     @staticmethod
     def _coalesce_frame_columns(
@@ -266,6 +308,32 @@ class HistoryService:
 
         return normalized
 
+    def _ensure_turnover_history_canonical_columns(self, hist: pd.DataFrame | None) -> pd.DataFrame | None:
+        if hist is None or hist.empty:
+            return hist
+
+        normalized = hist.copy()
+        specs = {
+            "matched_volume": (("matched_volume",), ()),
+            "matched_value": (("matched_value",), ()),
+            "deal_volume": (("deal_volume",), ()),
+            "deal_value": (("deal_value",), ()),
+            "total_volume": (("total_volume",), ("matched_volume", "deal_volume")),
+            "total_value": (("total_value",), ("matched_value", "deal_value")),
+        }
+
+        for target, (direct_candidates, component_candidates) in specs.items():
+            direct = self._coalesce_frame_columns(normalized, direct_candidates)
+            if direct is not None:
+                normalized[target] = direct
+                continue
+            if component_candidates:
+                summed = self._sum_frame_columns(normalized, component_candidates)
+                if summed is not None:
+                    normalized[target] = summed
+
+        return normalized
+
     @staticmethod
     def _preserve_existing_on_null(insert_stmt, column_name: str):
         column = getattr(StockDailyHistory.__table__.c, column_name)
@@ -276,6 +344,7 @@ class HistoryService:
         self,
         symbol: str,
         ohlcv_hist: pd.DataFrame,
+        turnover_hist: pd.DataFrame | None = None,
         foreign_hist: pd.DataFrame | None = None,
         prop_hist: pd.DataFrame | None = None,
         created_at: datetime | None = None
@@ -283,6 +352,7 @@ class HistoryService:
         symbol_key = symbol[:3].upper()
         row_created_at = created_at or datetime.utcnow()
         deduped_by_date: Dict[date, Dict[str, Any]] = {}
+        turnover_hist = self._normalize_turnover_history_frame(turnover_hist)
         foreign_hist = self._normalize_foreign_trade_history_frame(foreign_hist)
         prop_hist = self._normalize_prop_trade_history_frame(prop_hist)
 
@@ -306,6 +376,12 @@ class HistoryService:
                 'low': self._coerce_float(row.get('low')),
                 'close': float(raw_close),
                 'volume': self._coerce_int(row.get('volume')),
+                'matched_volume': None,
+                'matched_value': None,
+                'deal_volume': None,
+                'deal_value': None,
+                'total_volume': None,
+                'total_value': None,
                 'foreign_buy_volume': None,
                 'foreign_buy_value': None,
                 'foreign_sell_volume': None,
@@ -319,6 +395,18 @@ class HistoryService:
                 'created_at': row_created_at,
             }
 
+        self._merge_daily_metric_history(
+            deduped_by_date=deduped_by_date,
+            hist=turnover_hist,
+            field_mapping={
+                'matched_volume': ('matched_volume',),
+                'matched_value': ('matched_value',),
+                'deal_volume': ('deal_volume',),
+                'deal_value': ('deal_value',),
+                'total_volume': ('total_volume',),
+                'total_value': ('total_value',),
+            },
+        )
         self._merge_daily_metric_history(
             deduped_by_date=deduped_by_date,
             hist=foreign_hist,
@@ -577,15 +665,49 @@ class HistoryService:
         normalized = self._normalize_prop_trade_history_frame(frame)
         return normalized if normalized is not None else pd.DataFrame()
 
+    def _fetch_turnover_history(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        from vnstock_data import Trading
+
+        span_days = max(1, (end_date - start_date).days + 5)
+        trading = Trading(source="vci", symbol=symbol, show_log=False)
+        frame = trading.price_history(
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+            limit=max(100, span_days),
+        )
+        normalized = self._normalize_turnover_history_frame(frame)
+        return normalized if normalized is not None else pd.DataFrame()
+
     def _fetch_auxiliary_history_frames(
         self,
         symbol: str,
         start_date: date,
         end_date: date,
         log,
-    ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
+        turnover_hist: pd.DataFrame | None = None
         foreign_hist: pd.DataFrame | None = None
         prop_hist: pd.DataFrame | None = None
+
+        try:
+            turnover_hist = retry_with_backoff(
+                lambda: self._fetch_turnover_history(symbol, start_date, end_date),
+                max_retries=2,
+            )
+            turnover_hist = self._normalize_turnover_history_frame(turnover_hist)
+        except Exception as e:
+            log.warning(
+                "Continuing without turnover enrichment for %s (%s -> %s): %s",
+                symbol,
+                start_date,
+                end_date,
+                e,
+            )
 
         try:
             foreign_hist = retry_with_backoff(
@@ -617,7 +739,7 @@ class HistoryService:
                 e,
             )
 
-        return foreign_hist, prop_hist
+        return turnover_hist, foreign_hist, prop_hist
 
     def _upsert_stock_daily_history(
         self,
@@ -661,7 +783,7 @@ class HistoryService:
                 if ohlcv_hist is None or ohlcv_hist.empty:
                     return 0
 
-                foreign_hist, prop_hist = self._fetch_auxiliary_history_frames(
+                turnover_hist, foreign_hist, prop_hist = self._fetch_auxiliary_history_frames(
                     symbol=symbol_key,
                     start_date=start_date,
                     end_date=end_date,
@@ -671,6 +793,7 @@ class HistoryService:
                 payload, min_payload_date, max_payload_date = self._build_daily_history_payload(
                     symbol=symbol_key,
                     ohlcv_hist=ohlcv_hist,
+                    turnover_hist=turnover_hist,
                     foreign_hist=foreign_hist,
                     prop_hist=prop_hist,
                 )
@@ -686,6 +809,12 @@ class HistoryService:
                         'low': insert_stmt.excluded.low,
                         'close': insert_stmt.excluded.close,
                         'volume': insert_stmt.excluded.volume,
+                        'matched_volume': self._preserve_existing_on_null(insert_stmt, 'matched_volume'),
+                        'matched_value': self._preserve_existing_on_null(insert_stmt, 'matched_value'),
+                        'deal_volume': self._preserve_existing_on_null(insert_stmt, 'deal_volume'),
+                        'deal_value': self._preserve_existing_on_null(insert_stmt, 'deal_value'),
+                        'total_volume': self._preserve_existing_on_null(insert_stmt, 'total_volume'),
+                        'total_value': self._preserve_existing_on_null(insert_stmt, 'total_value'),
                         # Preserve existing enrichment when the current sync run
                         # could only fetch OHLCV and auxiliary flow data is absent.
                         'foreign_buy_volume': self._preserve_existing_on_null(insert_stmt, 'foreign_buy_volume'),
@@ -1016,10 +1145,43 @@ class HistoryService:
                         # Calculate value in billion VND: (volume * close_price_in_1000_VND) / 1e6
                         value = (record.volume * record.close) / 1e6
 
+                    matched_value = self._vnd_to_billion_vnd(record.matched_value)
+                    deal_value = self._vnd_to_billion_vnd(record.deal_value)
+                    total_value = self._vnd_to_billion_vnd(record.total_value)
+                    if total_value is None and (record.matched_value is not None or record.deal_value is not None):
+                        total_value = self._vnd_to_billion_vnd((record.matched_value or 0) + (record.deal_value or 0))
+
+                    total_volume = record.total_volume
+                    if total_volume is None and (record.matched_volume is not None or record.deal_volume is not None):
+                        total_volume = (record.matched_volume or 0) + (record.deal_volume or 0)
+
+                    foreign_net_value = self._vnd_to_billion_vnd(record.foreign_net_value)
+                    if foreign_net_value is None:
+                        foreign_net_value = self._derive_net_value(
+                            record.foreign_buy_value,
+                            record.foreign_sell_value,
+                        )
+
+                    prop_buy_value = self._vnd_to_billion_vnd(record.prop_buy_value)
+                    prop_sell_value = self._vnd_to_billion_vnd(record.prop_sell_value)
+
                     data.append({
                         'date': record.date.strftime('%Y-%m-%d'),
                         'volume': record.volume if record.volume else 0,
-                        'value': round(value, 2) if value else None
+                        'value': round(value, 2) if value else None,
+                        'matched_volume': record.matched_volume,
+                        'matched_value': matched_value,
+                        'deal_volume': record.deal_volume,
+                        'deal_value': deal_value,
+                        'total_volume': total_volume,
+                        'total_value': total_value,
+                        'foreign_net_value': foreign_net_value,
+                        'prop_buy_value': prop_buy_value,
+                        'prop_sell_value': prop_sell_value,
+                        'prop_net_value': self._derive_net_value(
+                            record.prop_buy_value,
+                            record.prop_sell_value,
+                        ),
                     })
 
                 return {

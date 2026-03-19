@@ -31,6 +31,8 @@ interface HistorySyncTabProps {
     onAuditAutoRepairChange: (checked: boolean) => void;
     onRunAudit: () => void | Promise<void>;
     auditActive: boolean;
+    repairIndexSymbol: string;
+    onRepairIndexSymbolChange: (value: string) => void;
     repairSymbols: string;
     onRepairSymbolsChange: (value: string) => void;
     repairStartDate: string;
@@ -72,6 +74,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     onAuditAutoRepairChange,
     onRunAudit,
     auditActive,
+    repairIndexSymbol,
+    onRepairIndexSymbolChange,
     repairSymbols,
     onRepairSymbolsChange,
     repairStartDate,
@@ -266,13 +270,28 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                     <div className="card-body space-y-3">
                         <h2 className="card-title">Run Repair</h2>
                         <label className="form-control">
-                            <span className="label-text">Symbols (comma/space separated)</span>
+                            <span className="label-text">Index scope (optional)</span>
+                            <select
+                                className="select select-bordered"
+                                value={repairIndexSymbol}
+                                onChange={(event) => onRepairIndexSymbolChange(event.target.value)}
+                            >
+                                <option value="">All indices</option>
+                                {indexOptions.map((index) => (
+                                    <option key={index.symbol} value={index.symbol}>
+                                        {index.symbol} - {index.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-control">
+                            <span className="label-text">Symbols (optional, comma/space separated)</span>
                             <input
                                 type="text"
                                 className="input input-bordered"
                                 value={repairSymbols}
                                 onChange={(event) => onRepairSymbolsChange(event.target.value)}
-                                placeholder="VCB,FPT,SSI"
+                                placeholder="All symbols in selected index if empty"
                             />
                         </label>
                         <div className="grid grid-cols-2 gap-2">

@@ -468,6 +468,94 @@ async def test_repair_tracks_failed_tickers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_repair_uses_merged_manual_and_index_symbols(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    repaired_symbols = []
+
+    async def _fake_fetch_symbols_for_index(_index_symbol: str):
+        return ["FPT", "SSI", "HPG"]
+
+    def _fake_upsert(symbol: str, _start_date: date, _end_date: date):
+        repaired_symbols.append(symbol)
+
+    async def _fake_mark_symbol_sync_result(_symbol: str):
+        return None
+
+    async def _fake_mark_symbol_error(symbol: str, error_message: str):
+        raise AssertionError(f"Did not expect failure for {symbol}: {error_message}")
+
+    monkeypatch.setattr(service, "_fetch_symbols_for_index", _fake_fetch_symbols_for_index)
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _fake_upsert)
+    monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
+    monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
+
+    result = await service.run_repair_sync(
+        symbols=["FPT", "VCB"],
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 3),
+        index_symbol="VN30",
+    )
+
+    assert result["started"] is True
+    assert result["processed_symbols"] == 4
+    assert repaired_symbols == ["FPT", "VCB", "SSI", "HPG"]
+
+
+@pytest.mark.asyncio
+async def test_repair_supports_index_only_scope(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    repaired_symbols = []
+
+    async def _fake_fetch_symbols_for_index(_index_symbol: str):
+        return ["AAA", "BBB"]
+
+    def _fake_upsert(symbol: str, _start_date: date, _end_date: date):
+        repaired_symbols.append(symbol)
+
+    async def _fake_mark_symbol_sync_result(_symbol: str):
+        return None
+
+    async def _fake_mark_symbol_error(symbol: str, error_message: str):
+        raise AssertionError(f"Did not expect failure for {symbol}: {error_message}")
+
+    monkeypatch.setattr(service, "_fetch_symbols_for_index", _fake_fetch_symbols_for_index)
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _fake_upsert)
+    monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
+    monkeypatch.setattr(service, "_mark_symbol_error", _fake_mark_symbol_error)
+
+    result = await service.run_repair_sync(
+        symbols=None,
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 3),
+        index_symbol="VN30",
+    )
+
+    assert result["started"] is True
+    assert result["processed_symbols"] == 2
+    assert repaired_symbols == ["AAA", "BBB"]
+
+
+@pytest.mark.asyncio
+async def test_repair_returns_not_started_without_symbols_or_index():
+    service = HistorySyncService(history=HistoryService())
+
+    result = await service.run_repair_sync(
+        symbols=None,
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 3),
+        index_symbol=None,
+    )
+
+    assert result == {
+        "started": False,
+        "message": "No symbols available for repair",
+        "processed_symbols": 0,
+        "success_symbols": 0,
+        "failed_symbols": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_global_worker_cap_shared_across_sync_audit_repair(monkeypatch):
     service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 2

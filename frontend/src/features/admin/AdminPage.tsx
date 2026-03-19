@@ -41,6 +41,7 @@ export const AdminPage: React.FC = () => {
     const [auditResult, setAuditResult] = useState<HistoryAuditActionResponse | null>(null);
 
     const [repairSymbols, setRepairSymbols] = useState('');
+    const [repairIndexSymbol, setRepairIndexSymbol] = useState('');
     const [repairStartDate, setRepairStartDate] = useState('');
     const [repairEndDate, setRepairEndDate] = useState('');
 
@@ -180,8 +181,8 @@ export const AdminPage: React.FC = () => {
     const handleRunRepair = async () => {
         const symbols = parseSymbolsInput(repairSymbols);
 
-        if (symbols.length === 0) {
-            setActionError('Please provide at least one symbol for repair.');
+        if (symbols.length === 0 && !repairIndexSymbol) {
+            setActionError('Please provide at least one symbol or select an index scope for repair.');
             return;
         }
 
@@ -191,7 +192,12 @@ export const AdminPage: React.FC = () => {
         }
 
         await runAction(
-            () => stockApi.runHistoryRepairSync(symbols, repairStartDate, repairEndDate),
+            () => stockApi.runHistoryRepairSync(
+                symbols.length > 0 ? symbols : undefined,
+                repairStartDate,
+                repairEndDate,
+                repairIndexSymbol || undefined,
+            ),
             setRepairRunning,
         );
     };
@@ -416,6 +422,8 @@ export const AdminPage: React.FC = () => {
                         onAuditAutoRepairChange={(checked) => setAuditAutoRepair(checked)}
                         onRunAudit={handleRunAudit}
                         auditActive={auditActive}
+                        repairIndexSymbol={repairIndexSymbol}
+                        onRepairIndexSymbolChange={(value) => setRepairIndexSymbol(value)}
                         repairSymbols={repairSymbols}
                         onRepairSymbolsChange={(value) => setRepairSymbols(value)}
                         repairStartDate={repairStartDate}

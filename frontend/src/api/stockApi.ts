@@ -358,7 +358,20 @@ export interface FinancialDataResponse {
 export interface VolumeDataPoint {
     date: string;
     volume: number;
+    // API response value already normalized for UI display.
+    // `value` is derived server-side from cached DB fields and returned in billion VND.
     value: number | null;
+    matched_volume: number | null;
+    // These `*_value` fields are also API-normalized to billion VND, not raw DB units.
+    matched_value: number | null;
+    deal_volume: number | null;
+    deal_value: number | null;
+    total_volume: number | null;
+    total_value: number | null;
+    foreign_net_value: number | null;
+    prop_buy_value: number | null;
+    prop_sell_value: number | null;
+    prop_net_value: number | null;
 }
 
 export interface VolumeHistoryResponse {
@@ -985,12 +998,14 @@ export const stockApi = {
     },
 
     async runHistoryRepairSync(
-        symbols: string[],
+        symbols: string[] | undefined,
         startDate: string,
-        endDate: string
+        endDate: string,
+        indexSymbol?: string
     ): Promise<HistorySyncActionResponse> {
         const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/repair/run', {
-            symbols,
+            symbols: symbols && symbols.length > 0 ? symbols : undefined,
+            index_symbol: indexSymbol || undefined,
             start_date: startDate,
             end_date: endDate,
         });

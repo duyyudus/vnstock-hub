@@ -492,15 +492,25 @@ class HistorySyncService:
                 "results": [row for row in results if row is not None],
             }
 
-    async def run_repair_sync(self, symbols: List[str], start_date: date, end_date: date) -> Dict[str, Any]:
+    async def run_repair_sync(
+        self,
+        symbols: Optional[List[str]],
+        start_date: date,
+        end_date: date,
+        index_symbol: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Run manual repair sync for selected symbols/date range."""
-        clean_symbols = list(dict.fromkeys(self._normalize_symbol(s) for s in symbols if s))
+        clean_symbols = await self._resolve_symbols_filter(
+            symbols=symbols,
+            index_symbol=index_symbol,
+        )
+        clean_symbols = clean_symbols or []
         total_symbols = len(clean_symbols)
 
         if total_symbols == 0:
             return {
                 "started": False,
-                "message": "No symbols provided",
+                "message": "No symbols available for repair",
                 "processed_symbols": 0,
                 "success_symbols": 0,
                 "failed_symbols": 0,

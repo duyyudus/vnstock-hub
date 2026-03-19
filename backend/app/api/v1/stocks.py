@@ -98,7 +98,17 @@ class VolumeDataPoint(BaseModel):
     """A single data point for volume history."""
     date: str
     volume: int
-    value: Optional[float] = None
+    value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    matched_volume: Optional[int] = None
+    matched_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    deal_volume: Optional[int] = None
+    deal_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    total_volume: Optional[int] = None
+    total_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    foreign_net_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    prop_buy_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    prop_sell_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
+    prop_net_value: Optional[float] = None  # API-normalized to billion VND; not a raw DB unit.
 
 
 class VolumeHistoryResponse(BaseModel):

@@ -198,14 +198,21 @@ class VnstockService:
             index_symbol=index_symbol,
         )
 
-    async def run_history_repair_sync(self, symbols: List[str], start_date: str, end_date: str) -> Dict[str, Any]:
+    async def run_history_repair_sync(
+        self,
+        symbols: List[str] | None,
+        start_date: str,
+        end_date: str,
+        index_symbol: str | None = None,
+    ) -> Dict[str, Any]:
         from datetime import datetime
         parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
         parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date()
         return await self.history_sync.run_repair_sync(
             symbols=symbols,
             start_date=parsed_start,
-            end_date=parsed_end
+            end_date=parsed_end,
+            index_symbol=index_symbol,
         )
 
     # Finance Sync

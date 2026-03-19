@@ -482,6 +482,19 @@ def test_build_daily_history_payload_merges_foreign_and_prop_metrics():
             },
         ]
     )
+    turnover_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "matched_volume": 1_000,
+                "matched_value": 9_000_000_000.0,
+                "deal_volume": 50,
+                "deal_value": 450_000_000.0,
+                "total_volume": 1_050,
+                "total_value": 9_450_000_000.0,
+            }
+        ]
+    )
     foreign_hist = pd.DataFrame(
         [
             {
@@ -510,12 +523,19 @@ def test_build_daily_history_payload_merges_foreign_and_prop_metrics():
     payload, min_date, max_date = service._build_daily_history_payload(
         symbol="inc",
         ohlcv_hist=ohlcv_hist,
+        turnover_hist=turnover_hist,
         foreign_hist=foreign_hist,
         prop_hist=prop_hist,
     )
 
     assert min_date == date(2021, 10, 29)
     assert max_date == date(2021, 11, 1)
+    assert payload[0]["matched_volume"] == 1_000
+    assert payload[0]["matched_value"] == 9_000_000_000.0
+    assert payload[0]["deal_volume"] == 50
+    assert payload[0]["deal_value"] == 450_000_000.0
+    assert payload[0]["total_volume"] == 1_050
+    assert payload[0]["total_value"] == 9_450_000_000.0
     assert payload[0]["foreign_buy_volume"] == 200
     assert payload[0]["foreign_net_value"] == 300.25
     assert payload[0]["prop_buy_volume"] is None
@@ -632,6 +652,32 @@ def test_normalize_prop_trade_history_frame_from_live_total_columns():
     assert normalized.loc[0, "prop_sell_value"] == 420.0
 
 
+def test_normalize_turnover_history_frame_derives_total_columns():
+    service = HistoryService()
+    raw_hist = pd.DataFrame(
+        [
+            {
+                "trading_date": "2021-10-29",
+                "matched_volume": 777_777,
+                "matched_value": 7_777_777.0,
+                "deal_volume": 666_666,
+                "deal_value": 6_666_666.0,
+            }
+        ]
+    )
+
+    normalized = service._normalize_turnover_history_frame(raw_hist)
+
+    assert normalized is not None
+    assert normalized.loc[0, "time"] == "2021-10-29"
+    assert normalized.loc[0, "matched_volume"] == 777_777
+    assert normalized.loc[0, "matched_value"] == 7_777_777.0
+    assert normalized.loc[0, "deal_volume"] == 666_666
+    assert normalized.loc[0, "deal_value"] == 6_666_666.0
+    assert normalized.loc[0, "total_volume"] == 1_444_443
+    assert normalized.loc[0, "total_value"] == 14_444_443.0
+
+
 def test_auxiliary_trade_fetches_use_vnstock_data_trading(monkeypatch):
     service = HistoryService()
     calls = []
@@ -689,6 +735,56 @@ def test_auxiliary_trade_fetches_use_vnstock_data_trading(monkeypatch):
     ]
 
 
+def test_turnover_fetch_uses_vendored_vnstock_data_alt_trading(monkeypatch):
+    service = HistoryService()
+    calls = []
+
+    class FakeTrading:
+        def __init__(self, source, symbol, show_log=False):
+            calls.append(("init", source, symbol, show_log))
+
+        def price_history(self, **kwargs):
+            calls.append(("price_history", kwargs))
+            return pd.DataFrame(
+                [
+                    {
+                        "trading_date": "2025-03-07",
+                        "matched_volume": 100,
+                        "matched_value": 1_000.0,
+                        "deal_volume": 50,
+                        "deal_value": 700.0,
+                    }
+                ]
+            )
+
+    monkeypatch.setattr("app.lib.vnstock_data_alt.api.trading.Trading", FakeTrading)
+
+    turnover = service._fetch_turnover_history(
+        symbol="VCB",
+        start_date=date(2025, 3, 1),
+        end_date=date(2025, 3, 7),
+    )
+
+    assert turnover is not None
+    assert turnover.loc[0, "matched_volume"] == 100
+    assert turnover.loc[0, "matched_value"] == 1_000.0
+    assert turnover.loc[0, "deal_volume"] == 50
+    assert turnover.loc[0, "deal_value"] == 700.0
+    assert turnover.loc[0, "total_volume"] == 150
+    assert turnover.loc[0, "total_value"] == 1_700.0
+    assert calls == [
+        ("init", "vci", "VCB", False),
+        (
+            "price_history",
+            {
+                "start": "2025-03-01",
+                "end": "2025-03-07",
+                "limit": 100,
+            },
+        ),
+    ]
+
+
 def test_build_daily_history_payload_uses_provider_aggregate_flow_fields():
     service = HistoryService()
     ohlcv_hist = pd.DataFrame(
@@ -739,11 +835,18 @@ def test_build_daily_history_payload_uses_provider_aggregate_flow_fields():
     payload, _, _ = service._build_daily_history_payload(
         symbol="inc",
         ohlcv_hist=ohlcv_hist,
+        turnover_hist=foreign_hist[["time", "matched_volume", "matched_value", "deal_volume", "deal_value"]].copy(),
         foreign_hist=foreign_hist,
         prop_hist=prop_hist,
     )
 
     assert len(payload) == 1
+    assert payload[0]["matched_volume"] == 999_999
+    assert payload[0]["matched_value"] == 9_999_999.0
+    assert payload[0]["deal_volume"] == 888_888
+    assert payload[0]["deal_value"] == 8_888_888.0
+    assert payload[0]["total_volume"] == 1_888_887
+    assert payload[0]["total_value"] == 18_888_887.0
     assert payload[0]["foreign_buy_value"] == 1000.5
     assert payload[0]["foreign_sell_value"] == 700.25
     assert payload[0]["foreign_net_value"] == 300.25
@@ -1035,6 +1138,15 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
                 low=20.0,
                 close=21.11,
                 volume=1_000_000,
+                matched_volume=1_010_000,
+                matched_value=21_310_000_000,
+                deal_volume=90_000,
+                deal_value=1_890_000_000,
+                total_volume=1_100_000,
+                total_value=23_200_000_000,
+                foreign_net_value=2_750_000_000,
+                prop_buy_value=4_500_000_000,
+                prop_sell_value=1_250_000_000,
             )
         )
         session.add(
@@ -1057,8 +1169,93 @@ def test_fetch_volume_history_sync_uses_db_calendar_window_and_normalizes_symbol
     assert [point["date"] for point in result["data"]] == ["2025-11-14", "2026-02-10"]
     assert result["data"][0]["volume"] == 1_000_000
     assert result["data"][0]["value"] == 21.11
+    assert result["data"][0]["matched_volume"] == 1_010_000
+    assert result["data"][0]["matched_value"] == 21.31
+    assert result["data"][0]["deal_volume"] == 90_000
+    assert result["data"][0]["deal_value"] == 1.89
+    assert result["data"][0]["total_volume"] == 1_100_000
+    assert result["data"][0]["total_value"] == 23.2
+    assert result["data"][0]["foreign_net_value"] == 2.75
+    assert result["data"][0]["prop_buy_value"] == 4.5
+    assert result["data"][0]["prop_sell_value"] == 1.25
+    assert result["data"][0]["prop_net_value"] == 3.25
     assert result["data"][1]["volume"] == 0
     assert result["data"][1]["value"] is None
+    assert result["data"][1]["matched_volume"] is None
+    assert result["data"][1]["matched_value"] is None
+    assert result["data"][1]["deal_volume"] is None
+    assert result["data"][1]["deal_value"] is None
+    assert result["data"][1]["total_volume"] is None
+    assert result["data"][1]["total_value"] is None
+    assert result["data"][1]["foreign_net_value"] is None
+    assert result["data"][1]["prop_buy_value"] is None
+    assert result["data"][1]["prop_sell_value"] is None
+    assert result["data"][1]["prop_net_value"] is None
+
+
+def test_fetch_volume_history_sync_derives_missing_net_values_only_when_buy_and_sell_exist(monkeypatch):
+    service = HistoryService()
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    StockCompany.__table__.create(bind=engine, checkfirst=True)
+    StockDailyHistory.__table__.create(bind=engine, checkfirst=True)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 2, 11, 10, 0, 0)
+
+    monkeypatch.setattr(history_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(history_module, "get_sync_engine", lambda: engine)
+
+    with Session(engine) as session:
+        session.add(StockCompany(symbol="TCB", company_name="Techcombank"))
+        session.add(
+            StockDailyHistory(
+                symbol="TCB",
+                date=date(2026, 2, 10),
+                open=20.5,
+                high=21.0,
+                low=20.0,
+                close=20.5,
+                volume=1_000_000,
+                matched_value=10_000_000_000,
+                deal_value=3_000_000_000,
+                foreign_buy_value=12_500_000_000,
+                foreign_sell_value=7_250_000_000,
+                foreign_net_value=None,
+                prop_buy_value=9_000_000_000,
+                prop_sell_value=3_400_000_000,
+            )
+        )
+        session.add(
+            StockDailyHistory(
+                symbol="TCB",
+                date=date(2026, 2, 11),
+                open=20.8,
+                high=21.1,
+                low=20.2,
+                close=20.7,
+                volume=900_000,
+                foreign_buy_value=5_000_000_000,
+                foreign_sell_value=None,
+                foreign_net_value=None,
+                prop_buy_value=4_200_000_000,
+                prop_sell_value=None,
+            )
+        )
+        session.commit()
+
+    result = service._fetch_volume_history_sync("TCB", 2)
+
+    assert result["data"][0]["total_value"] == 13.0
+    assert result["data"][0]["foreign_net_value"] == 5.25
+    assert result["data"][0]["prop_net_value"] == 5.6
+    assert result["data"][1]["foreign_net_value"] is None
+    assert result["data"][1]["prop_net_value"] is None
 
 
 def test_fetch_price_history_sync_uses_db_calendar_window_and_normalizes_symbol(monkeypatch):
@@ -1623,6 +1820,28 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
                         [
                             {
                                 "time": "2021-10-29",
+                                "matched_volume": 900,
+                                "matched_value": 9_000.0,
+                                "deal_volume": 100,
+                                "deal_value": 1_100.0,
+                                "total_volume": 1_000,
+                                "total_value": 10_100.0,
+                            },
+                            {
+                                "time": "2021-11-01",
+                                "matched_volume": 1_250,
+                                "matched_value": 12_500.0,
+                                "deal_volume": 150,
+                                "deal_value": 1_600.0,
+                                "total_volume": 1_400,
+                                "total_value": 14_100.0,
+                            },
+                        ]
+                    ),
+                    pd.DataFrame(
+                        [
+                            {
+                                "time": "2021-10-29",
                                 "fr_buy_volume": 200,
                                 "fr_buy_value": 1000.0,
                                 "fr_sell_volume": 150,
@@ -1680,6 +1899,9 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
             assert rows[0].date == date(2021, 10, 29)
             assert rows[0].close == 9.0
             assert rows[0].volume == 1250
+            assert rows[0].matched_volume == 900
+            assert rows[0].deal_value == 1_100.0
+            assert rows[0].total_value == 10_100.0
             assert rows[0].foreign_buy_volume == 200
             assert rows[0].foreign_net_value == 200.0
             assert rows[0].prop_buy_volume == 20
@@ -1687,6 +1909,7 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
             assert rows[1].date == date(2021, 11, 1)
             assert rows[1].close == 9.35
             assert rows[1].volume == 1400
+            assert rows[1].total_volume == 1_400
             assert rows[1].foreign_buy_volume == 210
             assert rows[1].prop_sell_value == 60.0
 
@@ -1706,7 +1929,7 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
             monkeypatch.setattr(
                 service,
                 "_fetch_auxiliary_history_frames",
-                lambda **_kwargs: (None, None),
+                lambda **_kwargs: (None, None, None),
             )
 
             synced = service._upsert_stock_daily_history(
@@ -1726,6 +1949,8 @@ def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
 
             assert preserved_row.close == 9.1
             assert preserved_row.volume == 1300
+            assert preserved_row.matched_volume == 900
+            assert preserved_row.total_value == 10_100.0
             assert preserved_row.foreign_buy_volume == 200
             assert preserved_row.foreign_net_value == 200.0
             assert preserved_row.prop_buy_volume == 20

@@ -81,7 +81,8 @@ class HistoryAuditRunRequest(BaseModel):
 
 
 class HistoryRepairRunRequest(BaseModel):
-    symbols: List[str] = Field(min_length=1)
+    symbols: Optional[List[str]] = None
+    index_symbol: Optional[str] = None
     start_date: str
     end_date: str
 
@@ -280,11 +281,18 @@ async def run_history_repair_sync(
             detail="end_date must be on or after start_date",
         )
 
-    result = await vnstock_service.run_history_repair_sync(
-        symbols=payload.symbols,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-    )
+    try:
+        result = await vnstock_service.run_history_repair_sync(
+            symbols=payload.symbols,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            index_symbol=payload.index_symbol,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
     return HistorySyncActionResponse(**result)
 
 

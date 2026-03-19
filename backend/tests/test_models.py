@@ -22,6 +22,8 @@ def test_daily_history_and_history_sync_models_expose_renamed_schema():
     assert StockHistorySyncState.__tablename__ == "stock_history_sync_state"
     assert "foreign_buy_value" in daily_columns
     assert "foreign_net_value" in daily_columns
+    assert "matched_value" in daily_columns
+    assert "total_value" in daily_columns
     assert "prop_buy_volume" in daily_columns
     assert "prop_sell_value" in daily_columns
     assert "ix_stock_history_sync_state_symbol" in sync_indexes
