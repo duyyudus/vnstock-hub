@@ -20,6 +20,23 @@ const DASHBOARD_TABS = [
     { id: 'portfolio', label: 'Portfolio' },
 ];
 
+const DEFAULT_DASHBOARD_TAB = 'indices';
+const DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'vnstock_dashboard_active_tab';
+const DASHBOARD_TAB_IDS = new Set(DASHBOARD_TABS.map((tab) => tab.id));
+
+const getStoredDashboardTab = () => {
+    if (typeof window === 'undefined') {
+        return DEFAULT_DASHBOARD_TAB;
+    }
+
+    const storedTab = window.localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY);
+    if (storedTab && DASHBOARD_TAB_IDS.has(storedTab)) {
+        return storedTab;
+    }
+
+    return DEFAULT_DASHBOARD_TAB;
+};
+
 import { CompanyFinancialPopup } from './components/CompanyFinancialPopup';
 import { VolumeChartPopup } from './components/VolumeChartPopup';
 import { PriceChartPopup } from './components/PriceChartPopup';
@@ -55,7 +72,7 @@ interface DashboardWindowCallbacks extends Window {
  * Main dashboard component with tab navigation.
  */
 export const Dashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState('indices');
+    const [activeTab, setActiveTab] = useState(getStoredDashboardTab);
     const user = useAuthUser();
     const [indices, setIndices] = useState<IndexConfig[]>([]);
     const [loadingIndices, setLoadingIndices] = useState(true);
@@ -75,9 +92,17 @@ export const Dashboard: React.FC = () => {
 
     useEffect(() => {
         if (!user && activeTab === 'portfolio') {
-            setActiveTab('indices');
+            setActiveTab(DEFAULT_DASHBOARD_TAB);
         }
     }, [user, activeTab]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        window.localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, activeTab);
+    }, [activeTab]);
 
 
     useEffect(() => {
