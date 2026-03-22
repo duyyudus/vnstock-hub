@@ -37,7 +37,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'table' | 'growth' | 'comparison' | 'risk_return' | 'volume';
+type ViewMode = 'performance_table' | 'growth' | 'comparison' | 'risk_return' | 'volume';
 
 interface ExportNotice {
     kind: 'success' | 'warning';
@@ -73,7 +73,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [portfolioHoldings, setPortfolioHoldings] = useState<Record<string, PortfolioHoldingSummary>>({});
 
     // --- View State ---
-    const [viewMode, setViewMode] = useState<ViewMode>('table');
+    const [viewMode, setViewMode] = useState<ViewMode>('performance_table');
     const [searchQuery, setSearchQuery] = useState('');
     const indexDetailsDialogRef = useRef<HTMLDialogElement>(null);
     const batchExportDialogRef = useRef<HTMLDialogElement>(null);
@@ -732,8 +732,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 <div className="overflow-x-auto">
                     <div className="join min-w-max">
                         <button
-                            className={`join-item btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setViewMode('table')}
+                            className={`join-item btn btn-sm ${viewMode === 'performance_table' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('performance_table')}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
