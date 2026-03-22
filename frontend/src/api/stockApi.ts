@@ -247,6 +247,17 @@ const primeAuthSession = () => {
 
 primeAuthSession();
 
+const buildStockRangeParams = (options?: StockListRangeParams): URLSearchParams => {
+    const params = new URLSearchParams();
+    if (options?.rangeStart) {
+        params.set('range_start', options.rangeStart);
+    }
+    if (options?.rangeEnd) {
+        params.set('range_end', options.rangeEnd);
+    }
+    return params;
+};
+
 // App info
 export interface AppInfoResponse {
     backend_version: string;
@@ -274,7 +285,18 @@ export interface Stock {
     price_change_1y: number | null;
     price_change_2y?: number | null;
     price_change_3y?: number | null;
+    atl_price?: number | null;
+    atl_date?: string | null;
+    atl_diff_pct?: number | null;
+    ath_price?: number | null;
+    ath_date?: string | null;
+    ath_diff_pct?: number | null;
     industry: string;  // ICB Level 2 industry classification
+}
+
+export interface StockListRangeParams {
+    rangeStart?: string;
+    rangeEnd?: string;
 }
 
 export interface BookmarkGroup {
@@ -738,8 +760,12 @@ export const stockApi = {
      * Fetch stocks for a given index
      * @param indexSymbol - Index symbol (e.g. 'VN30') to use with the generic endpoint
      */
-    async getIndexStocks(indexSymbol: string): Promise<IndexStocksResponse> {
-        const response = await apiClient.get<IndexStocksResponse>(`/stocks/index/${indexSymbol}`);
+    async getIndexStocks(indexSymbol: string, options?: StockListRangeParams): Promise<IndexStocksResponse> {
+        const params = buildStockRangeParams(options);
+        const query = params.toString();
+        const response = await apiClient.get<IndexStocksResponse>(
+            `/stocks/index/${indexSymbol}${query ? `?${query}` : ''}`
+        );
         return response.data;
     },
 
@@ -754,8 +780,12 @@ export const stockApi = {
     /**
      * Fetch stocks for a given industry
      */
-    async getIndustryStocks(industryName: string): Promise<IndustryStocksResponse> {
-        const response = await apiClient.get<IndustryStocksResponse>(`/stocks/industry/${encodeURIComponent(industryName)}`);
+    async getIndustryStocks(industryName: string, options?: StockListRangeParams): Promise<IndustryStocksResponse> {
+        const params = buildStockRangeParams(options);
+        const query = params.toString();
+        const response = await apiClient.get<IndustryStocksResponse>(
+            `/stocks/industry/${encodeURIComponent(industryName)}${query ? `?${query}` : ''}`
+        );
         return response.data;
     },
 
@@ -1151,8 +1181,12 @@ export const stockApi = {
         return response.data;
     },
 
-    async getBookmarkGroupStocks(groupId: number): Promise<BookmarkGroupStocksResponse> {
-        const response = await apiClient.get<BookmarkGroupStocksResponse>(`/bookmarks/groups/${groupId}/stocks`);
+    async getBookmarkGroupStocks(groupId: number, options?: StockListRangeParams): Promise<BookmarkGroupStocksResponse> {
+        const params = buildStockRangeParams(options);
+        const query = params.toString();
+        const response = await apiClient.get<BookmarkGroupStocksResponse>(
+            `/bookmarks/groups/${groupId}/stocks${query ? `?${query}` : ''}`
+        );
         return response.data;
     },
 

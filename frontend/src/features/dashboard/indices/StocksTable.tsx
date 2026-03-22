@@ -227,6 +227,26 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         return { text, className };
     };
 
+    const formatExtremeMetric = (
+        extremePrice: number | null | undefined,
+        diffPct: number | null | undefined
+    ): { priceText: string; diffText: string; diffClassName: string } => {
+        if (extremePrice == null) {
+            return {
+                priceText: '-',
+                diffText: '-',
+                diffClassName: 'text-base-content/50',
+            };
+        }
+
+        const diffDisplay = formatPriceChange(diffPct ?? null);
+        return {
+            priceText: formatPrice(extremePrice),
+            diffText: diffDisplay.text,
+            diffClassName: diffDisplay.className,
+        };
+    };
+
     const getErrorMessage = (error: unknown, fallback: string) => {
         if (typeof error === 'object' && error && 'response' in error) {
             const response = (error as { response?: { data?: { detail?: string } } }).response;
@@ -543,7 +563,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         );
     };
 
-    const totalColumns = isLoggedIn ? 18 : 17;
+    const totalColumns = isLoggedIn ? 17 : 16;
 
     return (
         <div className="dashboard-adaptive-table-wrap rounded-xl">
@@ -702,29 +722,20 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         </th>
                         <th
                             className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_1y')}
+                            onClick={() => handleSort('atl_diff_pct')}
                         >
                             <div className="flex items-center justify-end">
-                                1Y
-                                {renderSortIcon('price_change_1y')}
+                                ATL
+                                {renderSortIcon('atl_diff_pct')}
                             </div>
                         </th>
                         <th
                             className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_2y')}
+                            onClick={() => handleSort('ath_diff_pct')}
                         >
                             <div className="flex items-center justify-end">
-                                2Y
-                                {renderSortIcon('price_change_2y')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_3y')}
-                        >
-                            <div className="flex items-center justify-end">
-                                3Y
-                                {renderSortIcon('price_change_3y')}
+                                ATH
+                                {renderSortIcon('ath_diff_pct')}
                             </div>
                         </th>
                     </tr>
@@ -743,9 +754,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const change1w = formatPriceChange(stock.price_change_1w);
                             const change1m = formatPriceChange(stock.price_change_1m);
                             const change6m = formatPriceChange(stock.price_change_6m ?? null);
-                            const change1y = formatPriceChange(stock.price_change_1y);
-                            const change2y = formatPriceChange(stock.price_change_2y ?? null);
-                            const change3y = formatPriceChange(stock.price_change_3y ?? null);
+                            const atlMetric = formatExtremeMetric(stock.atl_price, stock.atl_diff_pct);
+                            const athMetric = formatExtremeMetric(stock.ath_price, stock.ath_diff_pct);
                             const fullNameWithExchange = stock.exchange 
                                 ? `${stock.exchange} - ${stock.company_name}`
                                 : stock.company_name;
@@ -757,6 +767,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const hasRoomData = stock.current_room != null || stock.total_room != null;
                             const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
                             const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
+                            const atlTooltipText = stock.atl_date ? `Recorded on ${stock.atl_date}` : '';
+                            const athTooltipText = stock.ath_date ? `Recorded on ${stock.ath_date}` : '';
 
                             return (
                                 <tr key={stock.ticker} className="hover">
@@ -859,14 +871,41 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     <td className={`text-right font-mono ${change6m.className}`}>
                                         {change6m.text}
                                     </td>
-                                    <td className={`text-right font-mono ${change1y.className}`}>
-                                        {change1y.text}
+                                    <td className="text-right font-mono whitespace-nowrap text-xs">
+                                        {stock.atl_date ? (
+                                            <div
+                                                className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
+                                                data-tip={atlTooltipText}
+                                            >
+                                                <div className="cursor-help leading-tight">
+                                                    <div className="text-base-content">{atlMetric.priceText}</div>
+                                                    <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="leading-tight">
+                                                <div className="text-base-content">{atlMetric.priceText}</div>
+                                                <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
+                                            </div>
+                                        )}
                                     </td>
-                                    <td className={`text-right font-mono ${change2y.className}`}>
-                                        {change2y.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change3y.className}`}>
-                                        {change3y.text}
+                                    <td className="text-right font-mono whitespace-nowrap text-xs">
+                                        {stock.ath_date ? (
+                                            <div
+                                                className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
+                                                data-tip={athTooltipText}
+                                            >
+                                                <div className="cursor-help leading-tight">
+                                                    <div className="text-base-content">{athMetric.priceText}</div>
+                                                    <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="leading-tight">
+                                                <div className="text-base-content">{athMetric.priceText}</div>
+                                                <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             );

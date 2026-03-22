@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import List, Dict, Optional
 import asyncio
 import pandas as pd
@@ -32,7 +33,13 @@ class StocksService:
         self._metadata = metadata
         self._history = history
 
-    async def get_index_stocks(self, index_symbol: str, limit: int = 100) -> List[StockInfo]:
+    async def get_index_stocks(
+        self,
+        index_symbol: str,
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
         """
         Fetch stocks for a specific index with price and market cap data.
         """
@@ -43,7 +50,8 @@ class StocksService:
         asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
 
         # Apply current cache to the response immediately
-        return await self._metadata.apply_cache_to_stocks(stocks)
+        stocks = await self._metadata.apply_cache_to_stocks(stocks)
+        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
 
     async def get_industry_list(self) -> List[Dict[str, str]]:
         """
@@ -118,7 +126,13 @@ class StocksService:
             })
         return industries
 
-    async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
+    async def get_industry_stocks(
+        self,
+        industry_name: str,
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
         """
         Fetch stocks for a specific ICB industry.
         """
@@ -129,9 +143,16 @@ class StocksService:
         asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
 
         # Apply current cache to the response immediately
-        return await self._metadata.apply_cache_to_stocks(stocks)
+        stocks = await self._metadata.apply_cache_to_stocks(stocks)
+        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
 
-    async def get_symbol_stocks(self, symbols: List[str], limit: int = 100) -> List[StockInfo]:
+    async def get_symbol_stocks(
+        self,
+        symbols: List[str],
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
         """
         Fetch stocks for a list of symbols.
         """
@@ -147,7 +168,8 @@ class StocksService:
         asyncio.create_task(self._metadata.enrich_stocks_with_metadata(stocks))
 
         # Apply current cache to the response immediately
-        return await self._metadata.apply_cache_to_stocks(stocks)
+        stocks = await self._metadata.apply_cache_to_stocks(stocks)
+        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
 
     def _fetch_industries_sync(self) -> pd.DataFrame:
         """Fetch industries synchronously."""

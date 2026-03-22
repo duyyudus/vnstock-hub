@@ -1,3 +1,4 @@
+from datetime import date
 import pytest
 from unittest.mock import patch
 from app.db.models import StockIndex
@@ -43,6 +44,12 @@ async def test_get_stocks_by_index(client):
             foreign_sell_value=34.01,
             current_room=1234567,
             total_room=8765432,
+            atl_price=45000.0,
+            atl_date="2026-01-15",
+            atl_diff_pct=11.11,
+            ath_price=52000.0,
+            ath_date="2026-03-01",
+            ath_diff_pct=-3.85,
         ),
         StockInfo(
             ticker="VCB",
@@ -56,22 +63,34 @@ async def test_get_stocks_by_index(client):
         )
     ]
 
-    with patch.object(vnstock_service, 'get_index_stocks', return_value=mock_stocks):
-        response = await client.get("/api/v1/stocks/index/VN30")
+    with patch.object(vnstock_service, 'get_index_stocks', return_value=mock_stocks) as mock_get_index_stocks:
+        response = await client.get("/api/v1/stocks/index/VN30?range_start=2026-01-01&range_end=2026-03-22")
         assert response.status_code == 200
         data = response.json()
-        assert "stocks" in data
-        assert data["count"] == 2
-        assert data["index_symbol"] == "VN30"
-        assert data["stocks"][0]["ticker"] == "TCB"
-        assert data["stocks"][0]["foreign_buy_value"] == 65.01
-        assert data["stocks"][0]["foreign_sell_value"] == 34.01
-        assert data["stocks"][0]["current_room"] == 1234567
-        assert data["stocks"][0]["total_room"] == 8765432
-        assert data["stocks"][1]["foreign_buy_value"] is None
-        assert data["stocks"][1]["foreign_sell_value"] is None
-        assert data["stocks"][1]["current_room"] is None
-        assert data["stocks"][1]["total_room"] is None
+    mock_get_index_stocks.assert_called_once_with(
+        "VN30",
+        1000,
+        range_start=date(2026, 1, 1),
+        range_end=date(2026, 3, 22),
+    )
+    assert "stocks" in data
+    assert data["count"] == 2
+    assert data["index_symbol"] == "VN30"
+    assert data["stocks"][0]["ticker"] == "TCB"
+    assert data["stocks"][0]["foreign_buy_value"] == 65.01
+    assert data["stocks"][0]["foreign_sell_value"] == 34.01
+    assert data["stocks"][0]["current_room"] == 1234567
+    assert data["stocks"][0]["total_room"] == 8765432
+    assert data["stocks"][0]["atl_price"] == 45000.0
+    assert data["stocks"][0]["atl_date"] == "2026-01-15"
+    assert data["stocks"][0]["atl_diff_pct"] == 11.11
+    assert data["stocks"][0]["ath_price"] == 52000.0
+    assert data["stocks"][0]["ath_date"] == "2026-03-01"
+    assert data["stocks"][0]["ath_diff_pct"] == -3.85
+    assert data["stocks"][1]["foreign_buy_value"] is None
+    assert data["stocks"][1]["foreign_sell_value"] is None
+    assert data["stocks"][1]["current_room"] is None
+    assert data["stocks"][1]["total_room"] is None
 
 @pytest.mark.asyncio
 async def test_get_industries(client):
@@ -107,13 +126,19 @@ async def test_get_stocks_by_industry(client):
     mock_stocks = [
         StockInfo(ticker="TCB", price=50000, market_cap=100000, company_name="Techcombank")
     ]
-    with patch.object(vnstock_service, 'get_industry_stocks', return_value=mock_stocks):
-        response = await client.get("/api/v1/stocks/industry/Banks")
+    with patch.object(vnstock_service, 'get_industry_stocks', return_value=mock_stocks) as mock_get_industry_stocks:
+        response = await client.get("/api/v1/stocks/industry/Banks?range_start=2026-02-01&range_end=2026-03-01")
         assert response.status_code == 200
         data = response.json()
-        assert data["count"] == 1
-        assert data["industry_name"] == "Banks"
-        assert data["stocks"][0]["ticker"] == "TCB"
+    mock_get_industry_stocks.assert_called_once_with(
+        "Banks",
+        1000,
+        range_start=date(2026, 2, 1),
+        range_end=date(2026, 3, 1),
+    )
+    assert data["count"] == 1
+    assert data["industry_name"] == "Banks"
+    assert data["stocks"][0]["ticker"] == "TCB"
 
 @pytest.mark.asyncio
 async def test_get_volume_history(client):

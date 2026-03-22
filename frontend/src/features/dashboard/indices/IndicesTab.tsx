@@ -37,6 +37,36 @@ interface ExportNotice {
     message: string;
 }
 
+const toDateOnly = (value: Date): Date => {
+    const next = new Date(value);
+    next.setHours(0, 0, 0, 0);
+    return next;
+};
+
+const addDays = (value: Date, days: number): Date => {
+    const next = new Date(value);
+    next.setDate(next.getDate() + days);
+    return toDateOnly(next);
+};
+
+const formatIsoDate = (value: Date): string => {
+    const year = value.getFullYear();
+    const month = `${value.getMonth() + 1}`.padStart(2, '0');
+    const day = `${value.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseIsoDate = (value: string): Date | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return null;
+    }
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return toDateOnly(parsed);
+};
+
 /**
  * Indices Tab - Main container for Index/Industry stock views.
  * Manages state for selection, fetching, and view switching.
@@ -74,6 +104,20 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [batchExporting, setBatchExporting] = useState(false);
     const [batchExportNotice, setBatchExportNotice] = useState<ExportNotice | null>(null);
     const [includePriceHistoryInBatchExport, setIncludePriceHistoryInBatchExport] = useState(true);
+    const tableRangeDomain = useMemo(() => {
+        const end = toDateOnly(new Date());
+        const start = addDays(new Date(end.getFullYear() - 1, end.getMonth(), end.getDate()), 1);
+        return {
+            startDate: formatIsoDate(start),
+            endDate: formatIsoDate(end),
+        };
+    }, []);
+    const [tableRangeStart, setTableRangeStart] = useState<string>(tableRangeDomain.startDate);
+    const [tableRangeEnd, setTableRangeEnd] = useState<string>(tableRangeDomain.endDate);
+    const [debouncedTableRange, setDebouncedTableRange] = useState(() => ({
+        startDate: tableRangeDomain.startDate,
+        endDate: tableRangeDomain.endDate,
+    }));
 
     const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
 
@@ -220,6 +264,25 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
     }, [batchExportNotice]);
 
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            const parsedStart = parseIsoDate(tableRangeStart);
+            const parsedEnd = parseIsoDate(tableRangeEnd);
+            if (!parsedStart || !parsedEnd) {
+                return;
+            }
+
+            setDebouncedTableRange({
+                startDate: tableRangeStart,
+                endDate: tableRangeEnd,
+            });
+        }, 300);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [tableRangeEnd, tableRangeStart]);
+
     const {
         selectorIndustries,
         industryAllocation,
@@ -259,15 +322,24 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
                 if (selectedBookmarkGroupId) {
                     // Bookmark overrides everything
-                    const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId);
+                    const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId, {
+                        rangeStart: debouncedTableRange.startDate,
+                        rangeEnd: debouncedTableRange.endDate,
+                    });
                     setStocks(response.stocks);
                     setIndexUniverseStocks([]);
                     setIndexUniverseIndexId(null);
                 } else if (selectedIndex && selectedIndustryName) {
                     // Both index and industry selected - fetch both and compute intersection
                     const [indexResponse, industryResponse] = await Promise.all([
-                        stockApi.getIndexStocks(selectedIndex.apiEndpoint),
-                        stockApi.getIndustryStocks(selectedIndustryName)
+                        stockApi.getIndexStocks(selectedIndex.apiEndpoint, {
+                            rangeStart: debouncedTableRange.startDate,
+                            rangeEnd: debouncedTableRange.endDate,
+                        }),
+                        stockApi.getIndustryStocks(selectedIndustryName, {
+                            rangeStart: debouncedTableRange.startDate,
+                            rangeEnd: debouncedTableRange.endDate,
+                        })
                     ]);
 
                     setIndexUniverseStocks(indexResponse.stocks);
@@ -284,13 +356,19 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     setStocks(intersectedStocks);
                 } else if (selectedIndustryName) {
                     // Only industry selected
-                    const response = await stockApi.getIndustryStocks(selectedIndustryName);
+                    const response = await stockApi.getIndustryStocks(selectedIndustryName, {
+                        rangeStart: debouncedTableRange.startDate,
+                        rangeEnd: debouncedTableRange.endDate,
+                    });
                     setStocks(response.stocks);
                     setIndexUniverseStocks([]);
                     setIndexUniverseIndexId(null);
                 } else if (selectedIndex) {
                     // Only index selected (default case)
-                    const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint);
+                    const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint, {
+                        rangeStart: debouncedTableRange.startDate,
+                        rangeEnd: debouncedTableRange.endDate,
+                    });
                     setStocks(response.stocks);
                     setIndexUniverseStocks(response.stocks);
                     setIndexUniverseIndexId(selectedIndex.id);
@@ -324,7 +402,14 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
 
         fetchData();
-    }, [selectedIndex, selectedIndustryName, selectedBookmarkGroupId, bookmarkRefreshKey]);
+    }, [
+        bookmarkRefreshKey,
+        debouncedTableRange.endDate,
+        debouncedTableRange.startDate,
+        selectedBookmarkGroupId,
+        selectedIndex,
+        selectedIndustryName,
+    ]);
 
     // --- Handlers ---
 
@@ -596,6 +681,31 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         selectedIndex={selectedIndex}
                         onIndexChange={handleIndexChange}
                     />
+                    {viewMode === 'table' ? (
+                        <>
+                            <label className="flex items-center gap-2 text-sm text-base-content/70">
+                                <span>From</span>
+                                <input
+                                    type="date"
+                                    className="input input-sm input-bordered"
+                                    value={tableRangeStart}
+                                    onChange={(event) => setTableRangeStart(event.target.value)}
+                                    max={tableRangeEnd}
+                                />
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-base-content/70">
+                                <span>To</span>
+                                <input
+                                    type="date"
+                                    className="input input-sm input-bordered"
+                                    value={tableRangeEnd}
+                                    onChange={(event) => setTableRangeEnd(event.target.value)}
+                                    min={tableRangeStart}
+                                    max={tableRangeDomain.endDate}
+                                />
+                            </label>
+                        </>
+                    ) : null}
                     {isIndexContextActive ? (
                         <button
                             type="button"

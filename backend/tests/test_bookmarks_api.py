@@ -1,3 +1,4 @@
+from datetime import date
 import pytest
 from httpx import AsyncClient
 from unittest.mock import patch, MagicMock
@@ -197,26 +198,43 @@ async def test_get_group_stocks_details(client: AsyncClient, auth_headers):
         price_change_24h=1.5, 
         price_change_1w=None,
         price_change_1m=None, 
-        price_change_1y=None
+        price_change_1y=None,
+        atl_price=45500.0,
+        atl_date="2026-02-15",
+        atl_diff_pct=9.89,
+        ath_price=53000.0,
+        ath_date="2026-03-18",
+        ath_diff_pct=-5.66,
     )
     
-    with patch.object(vnstock_service, 'get_symbol_stocks', return_value=[mock_stock_info]):
+    with patch.object(vnstock_service, 'get_symbol_stocks', return_value=[mock_stock_info]) as mock_get_symbol_stocks:
         response = await client.get(
-            f"/api/v1/bookmarks/groups/{group_id}/stocks",
+            f"/api/v1/bookmarks/groups/{group_id}/stocks?range_start=2026-02-01&range_end=2026-03-22",
             headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["group_name"] == "Bank Stocks"
-        assert len(data["stocks"]) == 1
-        stock = data["stocks"][0]
-        assert stock["ticker"] == "TCB"
-        assert stock["company_name"] == "Techcombank"
-        assert stock["price"] == 50000.0
-        assert stock["foreign_buy_value"] == 12.3
-        assert stock["foreign_sell_value"] == 9.8
-        assert stock["current_room"] == 1234567
-        assert stock["total_room"] == 2000000
+    mock_get_symbol_stocks.assert_called_once_with(
+        ["TCB"],
+        range_start=date(2026, 2, 1),
+        range_end=date(2026, 3, 22),
+    )
+    assert data["group_name"] == "Bank Stocks"
+    assert len(data["stocks"]) == 1
+    stock = data["stocks"][0]
+    assert stock["ticker"] == "TCB"
+    assert stock["company_name"] == "Techcombank"
+    assert stock["price"] == 50000.0
+    assert stock["foreign_buy_value"] == 12.3
+    assert stock["foreign_sell_value"] == 9.8
+    assert stock["current_room"] == 1234567
+    assert stock["total_room"] == 2000000
+    assert stock["atl_price"] == 45500.0
+    assert stock["atl_date"] == "2026-02-15"
+    assert stock["atl_diff_pct"] == 9.89
+    assert stock["ath_price"] == 53000.0
+    assert stock["ath_date"] == "2026-03-18"
+    assert stock["ath_diff_pct"] == -5.66
 
 @pytest.mark.asyncio
 async def test_unauthorized_access(client: AsyncClient, auth_headers):

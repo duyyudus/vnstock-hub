@@ -35,4 +35,10 @@ class StockInfo:
     price_change_1y: float | None = None  # Percentage
     price_change_2y: float | None = None  # Percentage
     price_change_3y: float | None = None  # Percentage
+    atl_price: float | None = None  # VND
+    atl_date: str | None = None
+    atl_diff_pct: float | None = None  # Percentage
+    ath_price: float | None = None  # VND
+    ath_date: str | None = None
+    ath_diff_pct: float | None = None  # Percentage
     industry: str = ""  # ICB Level 2 industry classification

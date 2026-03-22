@@ -32,6 +32,12 @@ class StockResponse(BaseModel):
     price_change_1y: Optional[float] = None  # Percentage
     price_change_2y: Optional[float] = None  # Percentage
     price_change_3y: Optional[float] = None  # Percentage
+    atl_price: Optional[float] = None  # VND
+    atl_date: Optional[str] = None
+    atl_diff_pct: Optional[float] = None  # Percentage
+    ath_price: Optional[float] = None  # VND
+    ath_date: Optional[str] = None
+    ath_diff_pct: Optional[float] = None  # Percentage
     industry: str = ""  # ICB Level 2 industry classification
 
 
@@ -233,6 +239,37 @@ class StockQuotesResponse(BaseModel):
     count: int
 
 
+def serialize_stock_response(stock) -> StockResponse:
+    return StockResponse(
+        ticker=stock.ticker,
+        price=stock.price,
+        market_cap=stock.market_cap,
+        company_name=stock.company_name,
+        exchange=stock.exchange,
+        charter_capital=stock.charter_capital,
+        pe_ratio=stock.pe_ratio,
+        accumulated_value=stock.accumulated_value,
+        foreign_buy_value=stock.foreign_buy_value,
+        foreign_sell_value=stock.foreign_sell_value,
+        current_room=stock.current_room,
+        total_room=stock.total_room,
+        price_change_24h=stock.price_change_24h,
+        price_change_1w=stock.price_change_1w,
+        price_change_1m=stock.price_change_1m,
+        price_change_6m=stock.price_change_6m,
+        price_change_1y=stock.price_change_1y,
+        price_change_2y=stock.price_change_2y,
+        price_change_3y=stock.price_change_3y,
+        atl_price=stock.atl_price,
+        atl_date=stock.atl_date,
+        atl_diff_pct=stock.atl_diff_pct,
+        ath_price=stock.ath_price,
+        ath_date=stock.ath_date,
+        ath_diff_pct=stock.ath_diff_pct,
+        industry=stock.industry,
+    )
+
+
 @router.get("/index-values", response_model=IndexValuesResponse)
 async def get_index_values():
     """
@@ -275,38 +312,24 @@ async def get_indices():
 
 
 @router.get("/index/{index_symbol}", response_model=IndexStocksResponse)
-async def get_stocks_by_index(index_symbol: str, limit: int = 1000):
+async def get_stocks_by_index(
+    index_symbol: str,
+    limit: int = 1000,
+    range_start: Optional[date] = None,
+    range_end: Optional[date] = None,
+):
     """
     Get stocks for a specific index.
     """
-    stocks = await vnstock_service.get_index_stocks(index_symbol, limit)
+    stocks = await vnstock_service.get_index_stocks(
+        index_symbol,
+        limit,
+        range_start=range_start,
+        range_end=range_end,
+    )
     
     return IndexStocksResponse(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                foreign_buy_value=stock.foreign_buy_value,
-                foreign_sell_value=stock.foreign_sell_value,
-                current_room=stock.current_room,
-                total_room=stock.total_room,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_6m=stock.price_change_6m,
-                price_change_1y=stock.price_change_1y,
-                price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y,
-                industry=stock.industry
-            )
-            for stock in stocks
-        ],
+        stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks),
         index_symbol=index_symbol
     )
@@ -335,38 +358,24 @@ async def get_industries():
 
 
 @router.get("/industry/{industry_name}", response_model=IndustryStocksResponse)
-async def get_stocks_by_industry(industry_name: str, limit: int = 1000):
+async def get_stocks_by_industry(
+    industry_name: str,
+    limit: int = 1000,
+    range_start: Optional[date] = None,
+    range_end: Optional[date] = None,
+):
     """
     Get stocks for a specific industry.
     """
-    stocks = await vnstock_service.get_industry_stocks(industry_name, limit)
+    stocks = await vnstock_service.get_industry_stocks(
+        industry_name,
+        limit,
+        range_start=range_start,
+        range_end=range_end,
+    )
     
     return IndustryStocksResponse(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                foreign_buy_value=stock.foreign_buy_value,
-                foreign_sell_value=stock.foreign_sell_value,
-                current_room=stock.current_room,
-                total_room=stock.total_room,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_6m=stock.price_change_6m,
-                price_change_1y=stock.price_change_1y,
-                price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y,
-                industry=stock.industry
-            )
-            for stock in stocks
-        ],
+        stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks),
         industry_name=industry_name
     )
@@ -383,31 +392,7 @@ async def get_stock_quotes(request: StockQuotesRequest):
     unique_symbols = list(dict.fromkeys(symbols))
     stocks = await vnstock_service.get_symbol_stocks(unique_symbols)
     return StockQuotesResponse(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                foreign_buy_value=stock.foreign_buy_value,
-                foreign_sell_value=stock.foreign_sell_value,
-                current_room=stock.current_room,
-                total_room=stock.total_room,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_6m=stock.price_change_6m,
-                price_change_1y=stock.price_change_1y,
-                price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y,
-                industry=stock.industry
-            )
-            for stock in stocks
-        ],
+        stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks)
     )
 

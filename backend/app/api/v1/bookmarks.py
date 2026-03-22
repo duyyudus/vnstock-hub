@@ -1,4 +1,5 @@
 """Bookmark group endpoints for user favorite stocks."""
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,7 +11,7 @@ from app.core.deps import get_current_user
 from app.db.database import get_db
 from app.db.models import BookmarkGroup, BookmarkStock
 from app.services.vnstock_service import vnstock_service
-from app.api.v1.stocks import StockResponse
+from app.api.v1.stocks import StockResponse, serialize_stock_response
 
 router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
 
@@ -236,6 +237,8 @@ async def delete_bookmark_group(
 @router.get("/groups/{group_id}/stocks", response_model=BookmarkGroupStocksResponse)
 async def get_group_stocks(
     group_id: int,
+    range_start: Optional[date] = None,
+    range_end: Optional[date] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
@@ -253,32 +256,13 @@ async def get_group_stocks(
             group_name=group.name
         )
 
-    stocks = await vnstock_service.get_symbol_stocks(tickers)
+    stocks = await vnstock_service.get_symbol_stocks(
+        tickers,
+        range_start=range_start,
+        range_end=range_end,
+    )
     return BookmarkGroupStocksResponse(
-        stocks=[
-            StockResponse(
-                ticker=stock.ticker,
-                price=stock.price,
-                market_cap=stock.market_cap,
-                company_name=stock.company_name,
-                exchange=stock.exchange,
-                charter_capital=stock.charter_capital,
-                pe_ratio=stock.pe_ratio,
-                accumulated_value=stock.accumulated_value,
-                foreign_buy_value=stock.foreign_buy_value,
-                foreign_sell_value=stock.foreign_sell_value,
-                current_room=stock.current_room,
-                total_room=stock.total_room,
-                price_change_24h=stock.price_change_24h,
-                price_change_1w=stock.price_change_1w,
-                price_change_1m=stock.price_change_1m,
-                price_change_6m=stock.price_change_6m,
-                price_change_1y=stock.price_change_1y,
-                price_change_2y=stock.price_change_2y,
-                price_change_3y=stock.price_change_3y
-            )
-            for stock in stocks
-        ],
+        stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks),
         group_id=group.id,
         group_name=group.name

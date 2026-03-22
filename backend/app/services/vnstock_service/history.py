@@ -164,6 +164,23 @@ class HistoryService:
             return lock
 
     @staticmethod
+    def _normalize_price_extremes_range(
+        range_start: date | None,
+        range_end: date | None,
+    ) -> tuple[date, date] | None:
+        if range_start is None and range_end is None:
+            return None
+
+        today = date.today()
+        bounded_start = min(range_start or date(1900, 1, 1), today)
+        bounded_end = min(range_end or today, today)
+
+        if bounded_end < bounded_start:
+            bounded_start, bounded_end = bounded_end, bounded_start
+
+        return bounded_start, bounded_end
+
+    @staticmethod
     def _coerce_float(value: Any) -> float | None:
         try:
             if pd.isna(value):
@@ -1102,6 +1119,92 @@ class HistoryService:
             "is_stale": is_stale,
             "is_syncing": is_syncing,
         }
+
+    async def enrich_with_price_extremes(
+        self,
+        stocks: List[StockInfo],
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
+        normalized_range = self._normalize_price_extremes_range(range_start, range_end)
+        if not stocks or normalized_range is None:
+            return stocks
+
+        bounded_start, bounded_end = normalized_range
+        symbols = list(dict.fromkeys(stock.ticker[:3].upper() for stock in stocks if stock.ticker))
+        if not symbols:
+            return stocks
+
+        async with async_session() as session:
+            stmt = (
+                select(
+                    StockDailyHistory.symbol,
+                    StockDailyHistory.date,
+                    StockDailyHistory.low,
+                    StockDailyHistory.high,
+                )
+                .where(
+                    and_(
+                        StockDailyHistory.symbol.in_(symbols),
+                        StockDailyHistory.date >= bounded_start,
+                        StockDailyHistory.date <= bounded_end,
+                    )
+                )
+                .order_by(StockDailyHistory.symbol.asc(), StockDailyHistory.date.desc())
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+        metrics_by_symbol: Dict[str, Dict[str, Any]] = {}
+        for symbol, record_date, low, high in rows:
+            metrics = metrics_by_symbol.setdefault(
+                symbol,
+                {
+                    "atl_raw": None,
+                    "atl_date": None,
+                    "ath_raw": None,
+                    "ath_date": None,
+                },
+            )
+
+            if low is not None and (metrics["atl_raw"] is None or low < metrics["atl_raw"]):
+                metrics["atl_raw"] = low
+                metrics["atl_date"] = record_date
+
+            if high is not None and (metrics["ath_raw"] is None or high > metrics["ath_raw"]):
+                metrics["ath_raw"] = high
+                metrics["ath_date"] = record_date
+
+        for stock in stocks:
+            stock.atl_price = None
+            stock.atl_date = None
+            stock.atl_diff_pct = None
+            stock.ath_price = None
+            stock.ath_date = None
+            stock.ath_diff_pct = None
+
+            symbol = stock.ticker[:3].upper()
+            metrics = metrics_by_symbol.get(symbol)
+            if not metrics:
+                continue
+
+            current_price_unit = stock.price / 1000 if stock.price is not None else None
+            atl_raw = metrics["atl_raw"]
+            ath_raw = metrics["ath_raw"]
+
+            if atl_raw is not None:
+                stock.atl_price = round(atl_raw * 1000, 2)
+                stock.atl_date = metrics["atl_date"].strftime("%Y-%m-%d") if metrics["atl_date"] else None
+                if current_price_unit is not None and atl_raw > 0:
+                    stock.atl_diff_pct = round(((current_price_unit - atl_raw) / atl_raw) * 100, 2)
+
+            if ath_raw is not None:
+                stock.ath_price = round(ath_raw * 1000, 2)
+                stock.ath_date = metrics["ath_date"].strftime("%Y-%m-%d") if metrics["ath_date"] else None
+                if current_price_unit is not None and ath_raw > 0:
+                    stock.ath_diff_pct = round(((current_price_unit - ath_raw) / ath_raw) * 100, 2)
+
+        return stocks
 
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""

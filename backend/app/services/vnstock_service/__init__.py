@@ -94,17 +94,35 @@ class VnstockService:
         return await self.indices.get_index_values(symbols)
 
     # Stocks
-    async def get_index_stocks(self, index_symbol: str, limit: int = 100) -> List[StockInfo]:
-        return await self.stocks.get_index_stocks(index_symbol, limit)
+    async def get_index_stocks(
+        self,
+        index_symbol: str,
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
+        return await self.stocks.get_index_stocks(index_symbol, limit, range_start, range_end)
 
     async def get_industry_list(self) -> List[Dict[str, str]]:
         return await self.stocks.get_industry_list()
 
-    async def get_industry_stocks(self, industry_name: str, limit: int = 100) -> List[StockInfo]:
-        return await self.stocks.get_industry_stocks(industry_name, limit)
+    async def get_industry_stocks(
+        self,
+        industry_name: str,
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
+        return await self.stocks.get_industry_stocks(industry_name, limit, range_start, range_end)
 
-    async def get_symbol_stocks(self, symbols: List[str], limit: int = 100) -> List[StockInfo]:
-        return await self.stocks.get_symbol_stocks(symbols, limit)
+    async def get_symbol_stocks(
+        self,
+        symbols: List[str],
+        limit: int = 100,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> List[StockInfo]:
+        return await self.stocks.get_symbol_stocks(symbols, limit, range_start, range_end)
 
     # Finance
     async def get_income_statement(self, symbol: str, lang: str = 'en') -> List[Dict[str, Any]]:

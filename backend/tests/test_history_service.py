@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.db.models import StockDailyHistory, StockCompany, StockHistorySyncState
 from app.services.sync_status import sync_status
 from app.services.vnstock_service.history import HistoryService
+from app.services.vnstock_service.models import StockInfo
 
 
 def test_check_prices_staleness_allows_late_first_point_if_latest_is_fresh():
@@ -1756,6 +1757,97 @@ async def test_get_stocks_volume_series_triggers_sync_for_stale_symbols(monkeypa
     assert trigger_calls[0]["start_date"] == date(2026, 1, 1)
     assert trigger_calls[0]["end_date"] == date(2026, 2, 11)
     assert trigger_calls[0]["force"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrich_with_price_extremes_normalizes_range_and_uses_most_recent_ties(monkeypatch, db_session):
+    service = HistoryService()
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 22)
+
+    monkeypatch.setattr(history_module, "date", FixedDate)
+
+    db_session.add_all([
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 19),
+            open=20.0,
+            high=21.4,
+            low=19.5,
+            close=20.8,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 20),
+            open=20.3,
+            high=21.2,
+            low=19.5,
+            close=21.0,
+            volume=1_200_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 21),
+            open=21.0,
+            high=21.4,
+            low=20.0,
+            close=21.2,
+            volume=1_100_000,
+        ),
+    ])
+    await db_session.commit()
+
+    stock = StockInfo(ticker="TCB", price=22_000.0, market_cap=100_000.0, company_name="Techcombank")
+
+    result = await service.enrich_with_price_extremes(
+        [stock],
+        range_start=date(2026, 3, 30),
+        range_end=date(2026, 3, 18),
+    )
+
+    assert result[0].atl_price == 19_500.0
+    assert result[0].atl_date == "2026-03-20"
+    assert result[0].atl_diff_pct == 12.82
+    assert result[0].ath_price == 21_400.0
+    assert result[0].ath_date == "2026-03-21"
+    assert result[0].ath_diff_pct == 2.8
+
+
+@pytest.mark.asyncio
+async def test_enrich_with_price_extremes_returns_nulls_when_no_history_in_range(db_session):
+    service = HistoryService()
+
+    db_session.add(
+        StockDailyHistory(
+            symbol="VCB",
+            date=date(2026, 1, 10),
+            open=30.0,
+            high=31.0,
+            low=29.5,
+            close=30.2,
+            volume=900_000,
+        )
+    )
+    await db_session.commit()
+
+    stock = StockInfo(ticker="VCB", price=32_000.0, market_cap=200_000.0, company_name="Vietcombank")
+
+    result = await service.enrich_with_price_extremes(
+        [stock],
+        range_start=date(2026, 2, 1),
+        range_end=date(2026, 2, 28),
+    )
+
+    assert result[0].atl_price is None
+    assert result[0].atl_date is None
+    assert result[0].atl_diff_pct is None
+    assert result[0].ath_price is None
+    assert result[0].ath_date is None
+    assert result[0].ath_diff_pct is None
 
 
 def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
