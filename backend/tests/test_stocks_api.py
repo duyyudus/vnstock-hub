@@ -238,6 +238,59 @@ async def test_get_stocks_volume_series(client):
 
 
 @pytest.mark.asyncio
+async def test_get_stocks_weekly_prices(client):
+    mock_series = {
+        "stocks": [
+            {
+                "symbol": "TCB",
+                "ticker": "TCB",
+                "company_name": "Techcombank",
+                "prices": [
+                    {"date": "2025-11-14", "close": 25.1},
+                    {"date": "2026-02-11", "close": 27.3},
+                ],
+            },
+        ],
+        "benchmarks": {
+            "VNINDEX": [
+                {"date": "2025-11-14", "close": 1200.0},
+                {"date": "2026-02-11", "close": 1245.0},
+            ],
+        },
+        "start_date": "2025-11-14",
+        "end_date": "2026-02-11",
+        "is_stale": False,
+        "is_syncing": True,
+    }
+    with patch.object(vnstock_service, 'get_stocks_weekly_prices', return_value=mock_series) as mock_get_stocks_weekly_prices:
+        response = await client.post(
+            "/api/v1/stocks/weekly-prices",
+            json={
+                "symbols": ["TCB"],
+                "start_date": "2025-11-14",
+                "end_date": "2026-02-11",
+                "include_benchmarks": True,
+            }
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+    mock_get_stocks_weekly_prices.assert_called_once_with(
+        symbols=["TCB"],
+        start_date=date(2025, 11, 14),
+        end_date=date(2026, 2, 11),
+        include_benchmarks=True,
+    )
+    assert data["start_date"] == "2025-11-14"
+    assert data["end_date"] == "2026-02-11"
+    assert data["is_stale"] is False
+    assert data["is_syncing"] is True
+    assert data["stocks"][0]["symbol"] == "TCB"
+    assert data["stocks"][0]["prices"][0]["close"] == 25.1
+    assert data["benchmarks"]["VNINDEX"][0]["close"] == 1200.0
+
+
+@pytest.mark.asyncio
 async def test_get_price_history(client):
     mock_prices = {
         "symbol": "TCB",

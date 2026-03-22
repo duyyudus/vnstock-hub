@@ -184,7 +184,8 @@ class StockWeeklyPriceData(BaseModel):
 class StocksWeeklyPricesRequest(BaseModel):
     """Request model for fetching weekly prices for multiple stocks."""
     symbols: List[str]
-    start_year: int
+    start_date: date
+    end_date: date
     include_benchmarks: bool = True
 
 
@@ -600,14 +601,15 @@ async def get_stocks_weekly_prices(request: StocksWeeklyPricesRequest):
     Used for growth chart visualization.
 
     Args:
-        request: Request with list of symbols, start year, and benchmark options
+        request: Request with list of symbols, date range, and benchmark options
 
     Returns:
         Weekly prices for each stock normalized for chart display
     """
     result = await vnstock_service.get_stocks_weekly_prices(
         symbols=request.symbols,
-        start_year=request.start_year,
+        start_date=request.start_date,
+        end_date=request.end_date,
         include_benchmarks=request.include_benchmarks
     )
     return StocksWeeklyPricesResponse(**result)

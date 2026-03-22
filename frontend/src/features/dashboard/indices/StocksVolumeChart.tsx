@@ -11,9 +11,11 @@ import {
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../api/stockApi';
+import type { DateRange } from './dateRange';
 
 interface StocksVolumeChartProps {
     stocks: Stock[];
+    dateRange: DateRange;
 }
 
 type TopNOption = 10 | 15 | 20 | 30 | 'all';
@@ -45,8 +47,6 @@ interface CustomTooltipProps {
     symbolToCompany: Map<string, string>;
 }
 
-const DEFAULT_RANGE_DAYS = 90;
-const DOMAIN_YEARS = 3;
 const TOP_N_OPTIONS: TopNOption[] = [10, 15, 20, 30, 'all'];
 const TOP_COLORS = [
     '#3b82f6',
@@ -60,36 +60,6 @@ const TOP_COLORS = [
     '#f97316',
     '#6366f1',
 ];
-
-const toDateOnly = (value: Date): Date => {
-    const next = new Date(value);
-    next.setHours(0, 0, 0, 0);
-    return next;
-};
-
-const addDays = (value: Date, days: number): Date => {
-    const next = new Date(value);
-    next.setDate(next.getDate() + days);
-    return toDateOnly(next);
-};
-
-const formatIsoDate = (value: Date): string => {
-    const year = value.getFullYear();
-    const month = `${value.getMonth() + 1}`.padStart(2, '0');
-    const day = `${value.getDate()}`.padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
-const parseIsoDate = (value: string): Date | null => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return null;
-    }
-    const parsed = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return toDateOnly(parsed);
-};
 
 const formatDateShort = (dateStr: string): string => {
     const date = new Date(`${dateStr}T00:00:00`);
@@ -139,21 +109,9 @@ const CustomTooltip = ({ active, payload, label, symbolToCompany }: CustomToolti
     );
 };
 
-export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) => {
+export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks, dateRange }) => {
     const requestIdRef = useRef(0);
     const stockPickerRef = useRef<HTMLDivElement | null>(null);
-
-    const domain = useMemo(() => {
-        const end = toDateOnly(new Date());
-        const start = toDateOnly(new Date(end.getFullYear() - DOMAIN_YEARS, end.getMonth(), end.getDate()));
-        return { start, end };
-    }, []);
-
-    const initialEndDate = formatIsoDate(domain.end);
-    const initialStartDate = formatIsoDate(addDays(domain.end, -(DEFAULT_RANGE_DAYS - 1)));
-
-    const [startDateValue, setStartDateValue] = useState<string>(initialStartDate);
-    const [endDateValue, setEndDateValue] = useState<string>(initialEndDate);
     const [topN, setTopN] = useState<TopNOption>(15);
     const [activeFilter, setActiveFilter] = useState<ActiveFilter>('topn');
     const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
@@ -166,20 +124,6 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
     const symbols = useMemo(() => {
         return Array.from(new Set(stocks.map((stock) => stock.ticker.toUpperCase())));
     }, [stocks]);
-
-    const [debouncedRange, setDebouncedRange] = useState({
-        startDate: initialStartDate,
-        endDate: initialEndDate,
-    });
-
-    useEffect(() => {
-        const timeoutId = window.setTimeout(() => {
-            setDebouncedRange({ startDate: startDateValue, endDate: endDateValue });
-        }, 300);
-        return () => {
-            window.clearTimeout(timeoutId);
-        };
-    }, [startDateValue, endDateValue]);
 
     useEffect(() => {
         if (symbols.length === 0) {
@@ -196,7 +140,7 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
             setError(null);
         }, 0);
 
-        stockApi.getStocksVolumeSeries(symbols, debouncedRange.startDate, debouncedRange.endDate)
+        stockApi.getStocksVolumeSeries(symbols, dateRange.startDate, dateRange.endDate)
             .then((response) => {
                 if (requestId !== requestIdRef.current) {
                     return;
@@ -216,7 +160,7 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
                 }
                 setLoading(false);
             });
-    }, [debouncedRange.endDate, debouncedRange.startDate, symbols]);
+    }, [dateRange.endDate, dateRange.startDate, symbols]);
 
     useEffect(() => {
         const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -320,34 +264,6 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
         return Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     }, [visibleSeries]);
 
-    const handleStartDateInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const nextValue = event.target.value;
-        const parsed = parseIsoDate(nextValue);
-        if (!parsed) {
-            return;
-        }
-
-        const safeStart = parsed < domain.start ? domain.start : parsed;
-        const clampedStart = safeStart > domain.end ? domain.end : safeStart;
-        const parsedEnd = parseIsoDate(endDateValue) ?? domain.end;
-        const nextStart = clampedStart > parsedEnd ? parsedEnd : clampedStart;
-        setStartDateValue(formatIsoDate(nextStart));
-    };
-
-    const handleEndDateInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const nextValue = event.target.value;
-        const parsed = parseIsoDate(nextValue);
-        if (!parsed) {
-            return;
-        }
-
-        const safeEnd = parsed > domain.end ? domain.end : parsed;
-        const clampedEnd = safeEnd < domain.start ? domain.start : safeEnd;
-        const parsedStart = parseIsoDate(startDateValue) ?? domain.start;
-        const nextEnd = clampedEnd < parsedStart ? parsedStart : clampedEnd;
-        setEndDateValue(formatIsoDate(nextEnd));
-    };
-
     const handleTopNChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
         const value = event.target.value;
         if (value === 'all') {
@@ -394,30 +310,6 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
         <div className="w-full h-full flex flex-col space-y-4">
             <div className="flex flex-col gap-3 border-b border-base-300 pb-3">
                 <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm">
-                        Start
-                        <input
-                            type="date"
-                            className="input input-sm input-bordered"
-                            value={startDateValue}
-                            min={formatIsoDate(domain.start)}
-                            max={endDateValue}
-                            onChange={handleStartDateInputChange}
-                        />
-                    </label>
-
-                    <label className="flex items-center gap-2 text-sm">
-                        End
-                        <input
-                            type="date"
-                            className="input input-sm input-bordered"
-                            value={endDateValue}
-                            min={startDateValue}
-                            max={formatIsoDate(domain.end)}
-                            onChange={handleEndDateInputChange}
-                        />
-                    </label>
-
                     <label className="flex items-center gap-2 text-sm">
                         Show
                         <select
@@ -501,7 +393,7 @@ export const StocksVolumeChart: React.FC<StocksVolumeChartProps> = ({ stocks }) 
                 </div>
 
                 <div className="text-xs text-base-content/60">
-                    Range: {startDateValue} to {endDateValue} | {visibleSeries.length} of {rankedSeries.length} stocks shown | Mode: {activeFilter === 'topn' ? `Show ${formatTopNLabel(topN)}` : 'Specific stocks'}
+                    Range: {dateRange.startDate} to {dateRange.endDate} | {visibleSeries.length} of {rankedSeries.length} stocks shown | Mode: {activeFilter === 'topn' ? `Show ${formatTopNLabel(topN)}` : 'Specific stocks'}
                 </div>
             </div>
 

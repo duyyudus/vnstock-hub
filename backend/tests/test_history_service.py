@@ -103,7 +103,8 @@ async def test_get_stocks_weekly_prices_does_not_mark_stale_for_historical_gap_o
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
-        start_year=2019,
+        start_date=date(2019, 1, 1),
+        end_date=date(2026, 2, 6),
         include_benchmarks=True
     )
 
@@ -141,7 +142,8 @@ async def test_get_stocks_weekly_prices_missing_symbol_data_triggers_latest_sync
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
-        start_year=2019,
+        start_date=date(2019, 1, 1),
+        end_date=date(2026, 2, 6),
         include_benchmarks=True
     )
 
@@ -149,6 +151,8 @@ async def test_get_stocks_weekly_prices_missing_symbol_data_triggers_latest_sync
     assert result["is_syncing"] is True
     assert len(trigger_calls) == 1
     assert trigger_calls[0]["symbols"] == ["AAA"]
+    assert trigger_calls[0]["start_date"] == date(2019, 1, 1)
+    assert trigger_calls[0]["end_date"] == date(2026, 2, 6)
 
 
 @pytest.mark.asyncio
@@ -186,7 +190,8 @@ async def test_get_stocks_weekly_prices_triggers_request_path_sync_when_latest_i
 
     result = await service.get_stocks_weekly_prices(
         symbols=["AAA"],
-        start_year=2019,
+        start_date=date(2019, 1, 1),
+        end_date=date(2026, 2, 6),
         include_benchmarks=True
     )
 
@@ -194,6 +199,8 @@ async def test_get_stocks_weekly_prices_triggers_request_path_sync_when_latest_i
     assert result["is_syncing"] is True
     assert len(trigger_calls) == 1
     assert trigger_calls[0]["symbols"] == ["AAA"]
+    assert trigger_calls[0]["start_date"] == date(2019, 1, 1)
+    assert trigger_calls[0]["end_date"] == date(2026, 2, 6)
 
 
 @pytest.mark.asyncio
@@ -301,7 +308,8 @@ async def test_get_stocks_weekly_prices_reports_db_syncing_status(monkeypatch, d
 
         result = await service.get_stocks_weekly_prices(
             symbols=["AAA"],
-            start_year=2026,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 2, 6),
             include_benchmarks=True,
         )
 
@@ -309,6 +317,65 @@ async def test_get_stocks_weekly_prices_reports_db_syncing_status(monkeypatch, d
         assert result["is_syncing"] is True
     finally:
         sync_status.complete_history_sync(success=True)
+
+
+@pytest.mark.asyncio
+async def test_get_stocks_weekly_prices_normalizes_swapped_and_future_dates(monkeypatch):
+    service = HistoryService()
+    load_calls = []
+    trigger_calls = []
+    benchmark_calls = []
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 6)
+
+    async def _fake_load_weekly_prices(_symbols, start_date_arg, end_date_arg):
+        load_calls.append((start_date_arg, end_date_arg))
+        return {}
+
+    async def _fake_company_names(_symbols):
+        return {"AAA": "AAA Corp"}
+
+    async def _fake_benchmarks(start_date_arg, end_date_arg):
+        benchmark_calls.append((start_date_arg, end_date_arg))
+        return {}
+
+    async def _fake_trigger(symbols, start_date=None, end_date=None, force=False):
+        trigger_calls.append({
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+            "force": force,
+        })
+        return True
+
+    monkeypatch.setattr(service, "_load_weekly_prices_from_db", _fake_load_weekly_prices)
+    monkeypatch.setattr(service, "_load_benchmark_prices", _fake_benchmarks)
+    monkeypatch.setattr(service, "_get_company_names", _fake_company_names)
+    monkeypatch.setattr(service, "_trigger_price_history_sync", _fake_trigger)
+    monkeypatch.setattr(history_module, "date", FixedDate)
+
+    result = await service.get_stocks_weekly_prices(
+        symbols=["AAA"],
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 2, 1),
+        include_benchmarks=True,
+    )
+
+    assert load_calls == [(date(2026, 2, 1), date(2026, 2, 6))]
+    assert benchmark_calls == [(date(2026, 2, 1), date(2026, 2, 6))]
+    assert trigger_calls == [{
+        "symbols": ["AAA"],
+        "start_date": date(2026, 2, 1),
+        "end_date": date(2026, 2, 6),
+        "force": False,
+    }]
+    assert result["start_date"] == "2026-02-01"
+    assert result["end_date"] == "2026-02-06"
+    assert result["is_stale"] is True
+    assert result["is_syncing"] is True
 
 
 @pytest.mark.asyncio

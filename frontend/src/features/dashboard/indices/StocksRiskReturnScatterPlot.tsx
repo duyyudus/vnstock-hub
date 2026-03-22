@@ -14,9 +14,11 @@ import {
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksWeeklyPricesResponse, WeeklyPricePoint } from '../../../api/stockApi';
+import type { DateRange } from './dateRange';
 
 interface StocksRiskReturnScatterPlotProps {
     stocks: Stock[];
+    dateRange: DateRange;
 }
 
 type Benchmark = 'VNINDEX' | 'VN30';
@@ -49,9 +51,9 @@ const getColor = (sharpe: number): string => {
     return '#ef4444';
 };
 
-const calculateMetrics = (history: WeeklyPricePoint[], startStr: string): RiskMetrics | null => {
+const calculateMetrics = (history: WeeklyPricePoint[], startStr: string, endStr: string): RiskMetrics | null => {
     const filtered = history
-        .filter((point) => point.date >= startStr)
+        .filter((point) => point.date >= startStr && point.date <= endStr)
         .sort((a, b) => a.date.localeCompare(b.date));
 
     if (filtered.length < 2) return null;
@@ -90,8 +92,7 @@ const calculateMetrics = (history: WeeklyPricePoint[], startStr: string): RiskMe
     return { return: totalReturn, volatility, sharpe };
 };
 
-export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotProps> = ({ stocks }) => {
-    const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
+export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotProps> = ({ stocks, dateRange }) => {
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
     const [priceData, setPriceData] = useState<StocksWeeklyPricesResponse | null>(null);
     const [loading, setLoading] = useState(false);
@@ -99,12 +100,8 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
     const [isSyncing, setIsSyncing] = useState(false);
 
     const symbols = useMemo(() => stocks.map((stock) => stock.ticker), [stocks]);
-    const startStr = `${startYear}-01-01`;
-
-    const yearOptions = useMemo(() => {
-        const currentYear = new Date().getFullYear();
-        return Array.from({ length: 10 }, (_, i) => currentYear - i);
-    }, []);
+    const startStr = dateRange.startDate;
+    const endStr = dateRange.endDate;
 
     useEffect(() => {
         const fetchData = async () => {
@@ -119,7 +116,7 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
             setError(null);
 
             try {
-                const response = await stockApi.getStocksWeeklyPrices(symbols, startYear, true);
+                const response = await stockApi.getStocksWeeklyPrices(symbols, startStr, endStr, true);
                 setPriceData(response);
                 setIsSyncing(response.is_syncing || false);
             } catch (err) {
@@ -131,14 +128,14 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
         };
 
         fetchData();
-    }, [symbols, startYear]);
+    }, [endStr, startStr, symbols]);
 
     useEffect(() => {
         if (!isSyncing || symbols.length === 0) return;
 
         const pollForFreshData = async () => {
             try {
-                const response = await stockApi.getStocksWeeklyPrices(symbols, startYear, true);
+                const response = await stockApi.getStocksWeeklyPrices(symbols, startStr, endStr, true);
                 setPriceData(response);
                 setIsSyncing(response.is_syncing || false);
             } catch (err) {
@@ -148,14 +145,14 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
 
         const interval = setInterval(pollForFreshData, 5000);
         return () => clearInterval(interval);
-    }, [isSyncing, symbols, startYear]);
+    }, [endStr, isSyncing, startStr, symbols]);
 
     const chartData = useMemo(() => {
         if (!priceData?.stocks?.length) return [];
 
         return priceData.stocks
             .map((stock): ScatterPoint | null => {
-                const metrics = calculateMetrics(stock.prices, startStr);
+                const metrics = calculateMetrics(stock.prices, startStr, endStr);
                 if (!metrics) return null;
 
                 return {
@@ -169,13 +166,13 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
             })
             .filter((entry): entry is ScatterPoint => entry !== null)
             .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
-    }, [priceData, startStr]);
+    }, [endStr, priceData, startStr]);
 
     const benchmarkPoint = useMemo(() => {
         const benchmarkHistory = priceData?.benchmarks?.[benchmark];
         if (!benchmarkHistory?.length) return null;
 
-        const metrics = calculateMetrics(benchmarkHistory, startStr);
+        const metrics = calculateMetrics(benchmarkHistory, startStr, endStr);
         if (!metrics) return null;
 
         return {
@@ -185,7 +182,7 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
             y: metrics.return,
             sharpe: metrics.sharpe,
         };
-    }, [benchmark, priceData, startStr]);
+    }, [benchmark, endStr, priceData, startStr]);
 
     const cmlSlope = benchmarkPoint && benchmarkPoint.x > 0
         ? (benchmarkPoint.y - RISK_FREE_RATE) / benchmarkPoint.x
@@ -229,19 +226,6 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
     return (
         <div className="w-full h-full flex flex-col space-y-4">
             <div className="flex flex-wrap items-center gap-4 border-b border-base-300 pb-2">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-base-content/70">Start:</span>
-                    <select
-                        className="select select-sm select-bordered"
-                        value={startYear}
-                        onChange={(e) => setStartYear(parseInt(e.target.value))}
-                    >
-                        {yearOptions.map((year) => (
-                            <option key={year} value={year}>From {year}</option>
-                        ))}
-                    </select>
-                </div>
-
                 <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-base-content/70">Vs:</span>
                     <button
@@ -368,7 +352,7 @@ export const StocksRiskReturnScatterPlot: React.FC<StocksRiskReturnScatterPlotPr
                         </div>
                     </div>
                     <p className="text-[10px] text-center text-base-content/40 mt-1">
-                        * Based on stock data starting from {startYear}. Total return is not annualized. Volatility is annualized.
+                        * Based on stock data from {dateRange.startDate} to {dateRange.endDate}. Total return is not annualized. Volatility is annualized.
                     </p>
                 </div>
             )}

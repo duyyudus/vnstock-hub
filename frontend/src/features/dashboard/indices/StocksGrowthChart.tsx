@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksWeeklyPricesResponse } from '../../../api/stockApi';
+import type { DateRange } from './dateRange';
 
 interface StocksGrowthChartProps {
     stocks: Stock[];
+    dateRange: DateRange;
 }
 
 type Benchmark = 'VNINDEX' | 'VN30';
@@ -109,9 +111,8 @@ const CustomTooltip = ({
 
 export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
     stocks,
+    dateRange,
 }) => {
-    // Local State
-    const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
 
     // Data State
@@ -125,17 +126,13 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
     // Extract symbols from stocks
     const symbols = useMemo(() => stocks.map(s => s.ticker), [stocks]);
 
-    // Generate year options (last 10 years)
-    const yearOptions = useMemo(() => {
-        const currentYear = new Date().getFullYear();
-        return Array.from({ length: 10 }, (_, i) => currentYear - i);
-    }, []);
-
-    // Fetch price data when stocks or startYear change
+    // Fetch price data when stocks or date range change
     useEffect(() => {
         const fetchData = async () => {
             if (symbols.length === 0) {
                 setPriceData(null);
+                setError(null);
+                setIsSyncing(false);
                 return;
             }
 
@@ -146,7 +143,8 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
                 // Always request benchmarks
                 const response = await stockApi.getStocksWeeklyPrices(
                     symbols,
-                    startYear,
+                    dateRange.startDate,
+                    dateRange.endDate,
                     true
                 );
                 setPriceData(response);
@@ -160,7 +158,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         };
 
         fetchData();
-    }, [symbols, startYear]);
+    }, [dateRange.endDate, dateRange.startDate, symbols]);
 
     // Poll for fresh data when syncing
     useEffect(() => {
@@ -170,7 +168,8 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
             try {
                 const response = await stockApi.getStocksWeeklyPrices(
                     symbols,
-                    startYear,
+                    dateRange.startDate,
+                    dateRange.endDate,
                     true
                 );
                 setPriceData(response);
@@ -182,7 +181,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
 
         const interval = setInterval(pollForFreshData, 5000);
         return () => clearInterval(interval);
-    }, [isSyncing, symbols, startYear]);
+    }, [dateRange.endDate, dateRange.startDate, isSyncing, symbols]);
 
     // Process data for chart - normalize to base 100
     const chartData = useMemo(() => {
@@ -195,9 +194,10 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         priceData.stocks.forEach((stock) => {
             const prices = stock.prices;
             if (prices.length > 0) {
-                // Filter to ensure we respect startYear (robustness against backend extra points)
-                const startOfSelectedYear = `${startYear}-01-01`;
-                const filteredPrices = prices.filter(p => p.date >= startOfSelectedYear);
+                // Keep the client robust if the backend returns slightly wider ranges.
+                const filteredPrices = prices.filter(
+                    (point) => point.date >= dateRange.startDate && point.date <= dateRange.endDate
+                );
 
                 if (filteredPrices.length > 0) {
                     // Normalize to base 100 at start of FILTERED range
@@ -218,8 +218,9 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         if (priceData.benchmarks && priceData.benchmarks[benchmarkKey]) {
             const prices = priceData.benchmarks[benchmarkKey];
             if (prices && prices.length > 0) {
-                const startOfSelectedYear = `${startYear}-01-01`;
-                const filteredPrices = prices.filter(p => p.date >= startOfSelectedYear);
+                const filteredPrices = prices.filter(
+                    (point) => point.date >= dateRange.startDate && point.date <= dateRange.endDate
+                );
 
                 if (filteredPrices.length > 0) {
                     const basePrice = filteredPrices[0].close;
@@ -238,7 +239,7 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         return Array.from(dateMap.values()).sort((a, b) =>
             String(a.date).localeCompare(String(b.date))
         );
-    }, [priceData, benchmark, startYear]);
+    }, [benchmark, dateRange.endDate, dateRange.startDate, priceData]);
 
     // Sort stocks by final performance to determine colors
     const sortedStocks = useMemo(() => {
@@ -277,19 +278,6 @@ export const StocksGrowthChart: React.FC<StocksGrowthChartProps> = ({
         <div className="w-full h-full flex flex-col space-y-4">
             {/* Controls Bar */}
             <div className="flex flex-wrap items-center gap-4 border-b border-base-300 pb-2">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-base-content/70">Start:</span>
-                    <select
-                        className="select select-sm select-bordered"
-                        value={startYear}
-                        onChange={(e) => setStartYear(parseInt(e.target.value))}
-                    >
-                        {yearOptions.map(year => (
-                            <option key={year} value={year}>From {year}</option>
-                        ))}
-                    </select>
-                </div>
-
                 <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-base-content/70">Vs:</span>
                     <button

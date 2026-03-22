@@ -1410,7 +1410,8 @@ class HistoryService:
     async def get_stocks_weekly_prices(
         self,
         symbols: List[str],
-        start_year: int,
+        start_date: date,
+        end_date: date,
         include_benchmarks: bool = True
     ) -> Dict[str, Any]:
         """
@@ -1420,20 +1421,24 @@ class HistoryService:
         # Clean symbols (use first 3 chars)
         clean_symbols = list(dict.fromkeys(s[:3].upper() for s in symbols if s))
 
-        # Calculate date range
-        start_date = date(start_year, 1, 1)
-        end_date = date.today()
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+
+        today = date.today()
+        bounded_end = min(end_date, today)
+        bounded_start = min(start_date, bounded_end)
+
         # Load from database
-        stocks_data = await self._load_weekly_prices_from_db(clean_symbols, start_date, end_date)
+        stocks_data = await self._load_weekly_prices_from_db(clean_symbols, bounded_start, bounded_end)
 
         # Check freshness from latest locally available date only.
-        stale_latest_symbols = self._get_symbols_with_stale_latest(stocks_data, clean_symbols, end_date)
+        stale_latest_symbols = self._get_symbols_with_stale_latest(stocks_data, clean_symbols, bounded_end)
         is_stale = len(stale_latest_symbols) > 0
 
         # Load benchmarks if requested
         benchmarks = {}
         if include_benchmarks:
-            benchmarks = await self._load_benchmark_prices(start_date, end_date)
+            benchmarks = await self._load_benchmark_prices(bounded_start, bounded_end)
 
         # Get company names
         company_names = await self._get_company_names(clean_symbols)
@@ -1455,8 +1460,8 @@ class HistoryService:
         if stale_latest_symbols:
             triggered = await self._trigger_price_history_sync(
                 symbols=stale_latest_symbols,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=bounded_start,
+                end_date=bounded_end,
                 force=False
             )
             if triggered:
@@ -1465,8 +1470,8 @@ class HistoryService:
         return {
             'stocks': stocks_response,
             'benchmarks': benchmarks,
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
+            'start_date': bounded_start.strftime('%Y-%m-%d'),
+            'end_date': bounded_end.strftime('%Y-%m-%d'),
             'is_stale': is_stale,
             'is_syncing': is_syncing
         }

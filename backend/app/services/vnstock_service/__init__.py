@@ -163,12 +163,14 @@ class VnstockService:
     async def get_stocks_weekly_prices(
         self,
         symbols: List[str],
-        start_year: int,
+        start_date: date,
+        end_date: date,
         include_benchmarks: bool = True
     ) -> Dict[str, Any]:
         return await self.history.get_stocks_weekly_prices(
             symbols=symbols,
-            start_year=start_year,
+            start_date=start_date,
+            end_date=end_date,
             include_benchmarks=include_benchmarks
         )
 

@@ -24,6 +24,13 @@ import {
     PRICE_HISTORY_EXPORT_DEFINITIONS,
     runTickerExportDefinitions,
 } from './stockExport';
+import {
+    buildIndicesDateRangeDomain,
+    clampDateToDomain,
+    formatIsoDate,
+    parseIsoDate,
+    type DateRange,
+} from './dateRange';
 
 interface IndicesTabProps {
     /** List of available indices */
@@ -36,36 +43,6 @@ interface ExportNotice {
     kind: 'success' | 'warning';
     message: string;
 }
-
-const toDateOnly = (value: Date): Date => {
-    const next = new Date(value);
-    next.setHours(0, 0, 0, 0);
-    return next;
-};
-
-const addDays = (value: Date, days: number): Date => {
-    const next = new Date(value);
-    next.setDate(next.getDate() + days);
-    return toDateOnly(next);
-};
-
-const formatIsoDate = (value: Date): string => {
-    const year = value.getFullYear();
-    const month = `${value.getMonth() + 1}`.padStart(2, '0');
-    const day = `${value.getDate()}`.padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
-const parseIsoDate = (value: string): Date | null => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return null;
-    }
-    const parsed = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return toDateOnly(parsed);
-};
 
 /**
  * Indices Tab - Main container for Index/Industry stock views.
@@ -104,22 +81,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [batchExporting, setBatchExporting] = useState(false);
     const [batchExportNotice, setBatchExportNotice] = useState<ExportNotice | null>(null);
     const [includePriceHistoryInBatchExport, setIncludePriceHistoryInBatchExport] = useState(true);
-    const tableRangeDomain = useMemo(() => {
-        const end = toDateOnly(new Date());
-        const start = addDays(new Date(end.getFullYear() - 1, end.getMonth(), end.getDate()), 1);
-        return {
-            startDate: formatIsoDate(start),
-            endDate: formatIsoDate(end),
-        };
-    }, []);
-    const [tableRangeStart, setTableRangeStart] = useState<string>(tableRangeDomain.startDate);
-    const [tableRangeEnd, setTableRangeEnd] = useState<string>(tableRangeDomain.endDate);
-    const [debouncedTableRange, setDebouncedTableRange] = useState(() => ({
-        startDate: tableRangeDomain.startDate,
-        endDate: tableRangeDomain.endDate,
-    }));
+    const dateRangeDomain = useMemo(() => buildIndicesDateRangeDomain(10, 1), []);
+    const [dateRange, setDateRange] = useState<DateRange>(dateRangeDomain.defaultRange);
+    const [appliedDateRange, setAppliedDateRange] = useState<DateRange>(dateRangeDomain.defaultRange);
 
     const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
+    const shouldShowDateRangeControls = viewMode !== 'comparison';
 
     // --- Effects ---
 
@@ -266,22 +233,19 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     useEffect(() => {
         const timeoutId = window.setTimeout(() => {
-            const parsedStart = parseIsoDate(tableRangeStart);
-            const parsedEnd = parseIsoDate(tableRangeEnd);
+            const parsedStart = parseIsoDate(dateRange.startDate);
+            const parsedEnd = parseIsoDate(dateRange.endDate);
             if (!parsedStart || !parsedEnd) {
                 return;
             }
 
-            setDebouncedTableRange({
-                startDate: tableRangeStart,
-                endDate: tableRangeEnd,
-            });
+            setAppliedDateRange(dateRange);
         }, 300);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [tableRangeEnd, tableRangeStart]);
+    }, [dateRange]);
 
     const {
         selectorIndustries,
@@ -323,8 +287,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 if (selectedBookmarkGroupId) {
                     // Bookmark overrides everything
                     const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId, {
-                        rangeStart: debouncedTableRange.startDate,
-                        rangeEnd: debouncedTableRange.endDate,
+                        rangeStart: appliedDateRange.startDate,
+                        rangeEnd: appliedDateRange.endDate,
                     });
                     setStocks(response.stocks);
                     setIndexUniverseStocks([]);
@@ -333,12 +297,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     // Both index and industry selected - fetch both and compute intersection
                     const [indexResponse, industryResponse] = await Promise.all([
                         stockApi.getIndexStocks(selectedIndex.apiEndpoint, {
-                            rangeStart: debouncedTableRange.startDate,
-                            rangeEnd: debouncedTableRange.endDate,
+                            rangeStart: appliedDateRange.startDate,
+                            rangeEnd: appliedDateRange.endDate,
                         }),
                         stockApi.getIndustryStocks(selectedIndustryName, {
-                            rangeStart: debouncedTableRange.startDate,
-                            rangeEnd: debouncedTableRange.endDate,
+                            rangeStart: appliedDateRange.startDate,
+                            rangeEnd: appliedDateRange.endDate,
                         })
                     ]);
 
@@ -357,8 +321,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 } else if (selectedIndustryName) {
                     // Only industry selected
                     const response = await stockApi.getIndustryStocks(selectedIndustryName, {
-                        rangeStart: debouncedTableRange.startDate,
-                        rangeEnd: debouncedTableRange.endDate,
+                        rangeStart: appliedDateRange.startDate,
+                        rangeEnd: appliedDateRange.endDate,
                     });
                     setStocks(response.stocks);
                     setIndexUniverseStocks([]);
@@ -366,8 +330,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 } else if (selectedIndex) {
                     // Only index selected (default case)
                     const response = await stockApi.getIndexStocks(selectedIndex.apiEndpoint, {
-                        rangeStart: debouncedTableRange.startDate,
-                        rangeEnd: debouncedTableRange.endDate,
+                        rangeStart: appliedDateRange.startDate,
+                        rangeEnd: appliedDateRange.endDate,
                     });
                     setStocks(response.stocks);
                     setIndexUniverseStocks(response.stocks);
@@ -404,8 +368,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         fetchData();
     }, [
         bookmarkRefreshKey,
-        debouncedTableRange.endDate,
-        debouncedTableRange.startDate,
+        appliedDateRange.endDate,
+        appliedDateRange.startDate,
         selectedBookmarkGroupId,
         selectedIndex,
         selectedIndustryName,
@@ -436,6 +400,38 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             setSelectedIndustryName(null);
             setSelectedIndex(null);
         }
+    };
+
+    const handleDateRangeStartChange = (nextValue: string) => {
+        const parsed = parseIsoDate(nextValue);
+        if (!parsed) {
+            return;
+        }
+
+        const clampedStart = clampDateToDomain(parsed, dateRangeDomain);
+        const parsedEnd = parseIsoDate(dateRange.endDate) ?? dateRangeDomain.max;
+        const nextStart = clampedStart > parsedEnd ? parsedEnd : clampedStart;
+
+        setDateRange((previous) => ({
+            ...previous,
+            startDate: formatIsoDate(nextStart),
+        }));
+    };
+
+    const handleDateRangeEndChange = (nextValue: string) => {
+        const parsed = parseIsoDate(nextValue);
+        if (!parsed) {
+            return;
+        }
+
+        const clampedEnd = clampDateToDomain(parsed, dateRangeDomain);
+        const parsedStart = parseIsoDate(dateRange.startDate) ?? dateRangeDomain.min;
+        const nextEnd = clampedEnd < parsedStart ? parsedStart : clampedEnd;
+
+        setDateRange((previous) => ({
+            ...previous,
+            endDate: formatIsoDate(nextEnd),
+        }));
     };
 
     const handleBookmarksUpdated = async (groupId?: number) => {
@@ -681,31 +677,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         selectedIndex={selectedIndex}
                         onIndexChange={handleIndexChange}
                     />
-                    {viewMode === 'table' ? (
-                        <>
-                            <label className="flex items-center gap-2 text-sm text-base-content/70">
-                                <span>From</span>
-                                <input
-                                    type="date"
-                                    className="input input-sm input-bordered"
-                                    value={tableRangeStart}
-                                    onChange={(event) => setTableRangeStart(event.target.value)}
-                                    max={tableRangeEnd}
-                                />
-                            </label>
-                            <label className="flex items-center gap-2 text-sm text-base-content/70">
-                                <span>To</span>
-                                <input
-                                    type="date"
-                                    className="input input-sm input-bordered"
-                                    value={tableRangeEnd}
-                                    onChange={(event) => setTableRangeEnd(event.target.value)}
-                                    min={tableRangeStart}
-                                    max={tableRangeDomain.endDate}
-                                />
-                            </label>
-                        </>
-                    ) : null}
                     {isIndexContextActive ? (
                         <button
                             type="button"
@@ -714,6 +685,32 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         >
                             Index Details
                         </button>
+                    ) : null}
+                    {shouldShowDateRangeControls ? (
+                        <>
+                            <label className="flex items-center gap-2 text-sm text-base-content/70">
+                                <span>From</span>
+                                <input
+                                    type="date"
+                                    className="input input-sm input-bordered"
+                                    value={dateRange.startDate}
+                                    onChange={(event) => handleDateRangeStartChange(event.target.value)}
+                                    min={dateRangeDomain.minDate}
+                                    max={dateRange.endDate}
+                                />
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-base-content/70">
+                                <span>To</span>
+                                <input
+                                    type="date"
+                                    className="input input-sm input-bordered"
+                                    value={dateRange.endDate}
+                                    onChange={(event) => handleDateRangeEndChange(event.target.value)}
+                                    min={dateRange.startDate}
+                                    max={dateRangeDomain.maxDate}
+                                />
+                            </label>
+                        </>
                     ) : null}
                     <button
                         type="button"
@@ -803,6 +800,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         {viewMode === 'growth' ? (
                             <StocksGrowthChart
                                 stocks={filteredStocks}
+                                dateRange={appliedDateRange}
                             />
                         ) : viewMode === 'comparison' ? (
                             <StocksComparisonChart
@@ -811,10 +809,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         ) : viewMode === 'risk_return' ? (
                             <StocksRiskReturnScatterPlot
                                 stocks={filteredStocks}
+                                dateRange={appliedDateRange}
                             />
                         ) : viewMode === 'volume' ? (
                             <StocksVolumeChart
                                 stocks={filteredStocks}
+                                dateRange={appliedDateRange}
                             />
                         ) : (
                             <StocksTable

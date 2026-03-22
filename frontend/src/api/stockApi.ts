@@ -903,19 +903,22 @@ export const stockApi = {
     },
 
     /**
-     * Fetch weekly prices for multiple stocks (for growth chart)
+     * Fetch weekly prices for multiple stocks (for growth and risk/return charts)
      * @param symbols List of stock ticker symbols
-     * @param startYear Starting year for the data
+     * @param startDate Inclusive start date (YYYY-MM-DD)
+     * @param endDate Inclusive end date (YYYY-MM-DD)
      * @param includeBenchmarks Whether to include VNINDEX and VN30 benchmarks
      */
     async getStocksWeeklyPrices(
         symbols: string[],
-        startYear: number,
+        startDate: string,
+        endDate: string,
         includeBenchmarks: boolean = true
     ): Promise<StocksWeeklyPricesResponse> {
         const response = await apiClient.post<StocksWeeklyPricesResponse>('/stocks/weekly-prices', {
             symbols,
-            start_year: startYear,
+            start_date: startDate,
+            end_date: endDate,
             include_benchmarks: includeBenchmarks
         });
         return response.data;
