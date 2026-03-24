@@ -256,3 +256,31 @@ class PortfolioPosition(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "ticker", name="uq_portfolio_position_user_ticker"),
     )
+
+
+class TradingPosition(Base):
+    """User trading position for active account-specific trades."""
+    __tablename__ = "trading_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_label = Column(String(120), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    quantity = Column(Float, nullable=False)
+    average_entry_cost = Column(Float, nullable=False)
+    opened_date = Column(Date, nullable=True)
+    target_price = Column(Float, nullable=True)
+    stop_loss = Column(Float, nullable=True)
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "account_label",
+            "ticker",
+            name="uq_trading_position_user_account_ticker",
+        ),
+        Index("ix_trading_position_user_account", "user_id", "account_label"),
+    )

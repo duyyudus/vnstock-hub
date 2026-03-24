@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useEffectEvent } from 'react';
 import TabNavigation from '../../components/TabNavigation';
 import IndicesTab from './indices/IndicesTab';
 import { ScreenersTab } from './screeners/ScreenersTab';
@@ -11,6 +11,7 @@ import { AuthWidget } from '../auth/AuthWidget';
 import { ThemeSelector } from './components/ThemeSelector';
 import { useAuthUser } from '../auth/useAuthUser';
 import { PortfolioTab } from './portfolio/PortfolioTab';
+import { TradingTab } from './trading/TradingTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
@@ -18,11 +19,13 @@ const DASHBOARD_TABS = [
     { id: 'screeners', label: 'Screeners' },
     { id: 'funds', label: 'Funds' },
     { id: 'portfolio', label: 'Portfolio' },
+    { id: 'trading', label: 'Trading' },
 ];
 
 const DEFAULT_DASHBOARD_TAB = 'indices';
 const DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'vnstock_dashboard_active_tab';
 const DASHBOARD_TAB_IDS = new Set(DASHBOARD_TABS.map((tab) => tab.id));
+const AUTH_REQUIRED_TAB_IDS = new Set(['portfolio', 'trading']);
 
 const getStoredDashboardTab = () => {
     if (typeof window === 'undefined') {
@@ -88,10 +91,10 @@ export const Dashboard: React.FC = () => {
 
     const availableTabs = user
         ? DASHBOARD_TABS
-        : DASHBOARD_TABS.filter((tab) => tab.id !== 'portfolio');
+        : DASHBOARD_TABS.filter((tab) => !AUTH_REQUIRED_TAB_IDS.has(tab.id));
 
     useEffect(() => {
-        if (!user && activeTab === 'portfolio') {
+        if (!user && AUTH_REQUIRED_TAB_IDS.has(activeTab)) {
             setActiveTab(DEFAULT_DASHBOARD_TAB);
         }
     }, [user, activeTab]);
@@ -103,49 +106,6 @@ export const Dashboard: React.FC = () => {
 
         window.localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, activeTab);
     }, [activeTab]);
-
-
-    useEffect(() => {
-        // Expose handleTickerClick to global window for StocksTable to use
-        // This is a workaround to avoid passing props deep or using Context for now
-        const dashboardWindow = window as DashboardWindowCallbacks;
-        dashboardWindow.onTickerClick = (ticker: string, companyName: string) => {
-            handleTickerClick(ticker, companyName);
-        };
-        dashboardWindow.onVolumeClick = (ticker: string, companyName: string) => {
-            handleVolumeClick(ticker, companyName);
-        };
-        dashboardWindow.onPriceClick = (ticker: string, companyName: string) => {
-            handlePriceClick(ticker, companyName);
-        };
-        return () => {
-            delete dashboardWindow.onTickerClick;
-            delete dashboardWindow.onVolumeClick;
-            delete dashboardWindow.onPriceClick;
-        };
-    }, [openPopups, openVolumePopups, openPricePopups, maxZIndex]);
-
-    const handleTickerClick = (ticker: string, companyName: string) => {
-        // Check if already open
-        if (openPopups.find(p => p.ticker === ticker)) {
-            // Focus it instead
-            focusPopup(ticker);
-            return;
-        }
-
-        const newZIndex = maxZIndex + 1;
-        const offset = openPopups.length * 30;
-        const newPopup: OpenPopup = {
-            ticker,
-            companyName,
-            position: { x: 100 + offset, y: 100 + offset },
-            zIndex: newZIndex,
-        };
-
-        setOpenPopups([...openPopups, newPopup]);
-        setMaxZIndex(newZIndex);
-    };
-
     const closePopup = (ticker: string) => {
         setOpenPopups(openPopups.filter(p => p.ticker !== ticker));
     };
@@ -155,27 +115,6 @@ export const Dashboard: React.FC = () => {
         setOpenPopups(openPopups.map(p =>
             p.ticker === ticker ? { ...p, zIndex: newZIndex } : p
         ));
-        setMaxZIndex(newZIndex);
-    };
-
-    const handleVolumeClick = (ticker: string, companyName: string) => {
-        // Check if already open
-        if (openVolumePopups.find(p => p.ticker === ticker)) {
-            // Focus it instead
-            focusVolumePopup(ticker);
-            return;
-        }
-
-        const newZIndex = maxZIndex + 1;
-        const offset = (openPopups.length + openVolumePopups.length) * 30;
-        const newPopup: OpenVolumePopup = {
-            ticker,
-            companyName,
-            position: { x: 150 + offset, y: 150 + offset },
-            zIndex: newZIndex,
-        };
-
-        setOpenVolumePopups([...openVolumePopups, newPopup]);
         setMaxZIndex(newZIndex);
     };
 
@@ -191,7 +130,45 @@ export const Dashboard: React.FC = () => {
         setMaxZIndex(newZIndex);
     };
 
-    const handlePriceClick = (ticker: string, companyName: string) => {
+    const onTickerClick = useEffectEvent((ticker: string, companyName: string) => {
+        if (openPopups.find(p => p.ticker === ticker)) {
+            focusPopup(ticker);
+            return;
+        }
+
+        const newZIndex = maxZIndex + 1;
+        const offset = openPopups.length * 30;
+        const newPopup: OpenPopup = {
+            ticker,
+            companyName,
+            position: { x: 100 + offset, y: 100 + offset },
+            zIndex: newZIndex,
+        };
+
+        setOpenPopups([...openPopups, newPopup]);
+        setMaxZIndex(newZIndex);
+    });
+
+    const onVolumeClick = useEffectEvent((ticker: string, companyName: string) => {
+        if (openVolumePopups.find(p => p.ticker === ticker)) {
+            focusVolumePopup(ticker);
+            return;
+        }
+
+        const newZIndex = maxZIndex + 1;
+        const offset = (openPopups.length + openVolumePopups.length) * 30;
+        const newPopup: OpenVolumePopup = {
+            ticker,
+            companyName,
+            position: { x: 150 + offset, y: 150 + offset },
+            zIndex: newZIndex,
+        };
+
+        setOpenVolumePopups([...openVolumePopups, newPopup]);
+        setMaxZIndex(newZIndex);
+    });
+
+    const onPriceClick = useEffectEvent((ticker: string, companyName: string) => {
         // Check if already open
         if (openPricePopups.find(p => p.ticker === ticker)) {
             // Focus it instead
@@ -210,7 +187,7 @@ export const Dashboard: React.FC = () => {
 
         setOpenPricePopups([...openPricePopups, newPopup]);
         setMaxZIndex(newZIndex);
-    };
+    });
 
     const closePricePopup = (ticker: string) => {
         setOpenPricePopups(openPricePopups.filter(p => p.ticker !== ticker));
@@ -223,6 +200,25 @@ export const Dashboard: React.FC = () => {
         ));
         setMaxZIndex(newZIndex);
     };
+
+    useEffect(() => {
+        // Expose ticker callbacks to the global window for StocksTable to use.
+        const dashboardWindow = window as DashboardWindowCallbacks;
+        dashboardWindow.onTickerClick = (ticker: string, companyName: string) => {
+            onTickerClick(ticker, companyName);
+        };
+        dashboardWindow.onVolumeClick = (ticker: string, companyName: string) => {
+            onVolumeClick(ticker, companyName);
+        };
+        dashboardWindow.onPriceClick = (ticker: string, companyName: string) => {
+            onPriceClick(ticker, companyName);
+        };
+        return () => {
+            delete dashboardWindow.onTickerClick;
+            delete dashboardWindow.onVolumeClick;
+            delete dashboardWindow.onPriceClick;
+        };
+    }, []);
 
     useEffect(() => {
         const fetchIndices = async () => {
@@ -267,6 +263,8 @@ export const Dashboard: React.FC = () => {
                 return <FundsTab />;
             case 'portfolio':
                 return <PortfolioTab />;
+            case 'trading':
+                return <TradingTab />;
             default:
                 return (
                     <div className="flex items-center justify-center h-64">

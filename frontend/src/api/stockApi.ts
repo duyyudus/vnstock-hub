@@ -647,6 +647,61 @@ export interface PortfolioCsvExportResponse {
     filename: string;
 }
 
+export interface TradingPosition {
+    id: number;
+    account_label: string;
+    ticker: string;
+    quantity: number;
+    average_entry_cost: number;
+    opened_date: string | null;
+    target_price: number | null;
+    stop_loss: number | null;
+    notes: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface TradingPositionsResponse {
+    positions: TradingPosition[];
+    count: number;
+}
+
+export interface TradingPositionCreateRequest {
+    account_label: string;
+    ticker: string;
+    quantity: number;
+    average_entry_cost: number;
+    opened_date?: string | null;
+    target_price?: number | null;
+    stop_loss?: number | null;
+    notes?: string | null;
+}
+
+export interface TradingPositionUpdateRequest {
+    account_label?: string;
+    ticker?: string;
+    quantity?: number;
+    average_entry_cost?: number;
+    opened_date?: string | null;
+    target_price?: number | null;
+    stop_loss?: number | null;
+    notes?: string | null;
+}
+
+export interface TradingImportPosition {
+    ticker: string;
+    quantity?: number | null;
+    average_entry_cost?: number | null;
+}
+
+export interface TradingImportResponse {
+    imported_positions: TradingImportPosition[];
+    created_count: number;
+    updated_count: number;
+    skipped_count: number;
+    positions: TradingPosition[];
+}
+
 export interface StockQuotesResponse {
     stocks: Stock[];
     count: number;
@@ -1140,6 +1195,34 @@ export const stockApi = {
 
     async freshImportPortfolioCsv(formData: FormData): Promise<PortfolioFreshImportResponse> {
         const response = await apiClient.post<PortfolioFreshImportResponse>('/portfolio/import/fresh', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    },
+
+    async getTradingPositions(): Promise<TradingPositionsResponse> {
+        const response = await apiClient.get<TradingPositionsResponse>('/trading/positions');
+        return response.data;
+    },
+
+    async createTradingPosition(payload: TradingPositionCreateRequest): Promise<TradingPosition> {
+        const response = await apiClient.post<TradingPosition>('/trading/positions', payload);
+        return response.data;
+    },
+
+    async updateTradingPosition(positionId: number, payload: TradingPositionUpdateRequest): Promise<TradingPosition> {
+        const response = await apiClient.patch<TradingPosition>(`/trading/positions/${positionId}`, payload);
+        return response.data;
+    },
+
+    async deleteTradingPosition(positionId: number): Promise<void> {
+        await apiClient.delete(`/trading/positions/${positionId}`);
+    },
+
+    async importTradingPositions(formData: FormData): Promise<TradingImportResponse> {
+        const response = await apiClient.post<TradingImportResponse>('/trading/import', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
