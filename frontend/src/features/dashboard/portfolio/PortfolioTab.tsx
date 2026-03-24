@@ -931,7 +931,6 @@ export const PortfolioTab: React.FC = () => {
                                         <th>{renderSortHeader('Ticker', 'ticker')}</th>
                                         <th>{renderSortHeader('Quantity', 'quantity')}</th>
                                         <th>{renderSortHeader('Avg Cost', 'averageCost')}</th>
-                                        <th>{renderSortHeader('Purchase Date', 'purchaseDate')}</th>
                                         <th>{renderSortHeader('Current Price', 'currentPrice')}</th>
                                         <th>{renderSortHeader('Market Value', 'marketValue')}</th>
                                         <th>{renderSortHeader('P&L', 'pnl')}</th>
@@ -1017,19 +1016,6 @@ export const PortfolioTab: React.FC = () => {
                                                         position.average_cost !== null
                                                             ? formatNumber(position.average_cost, { maximumFractionDigits: 2 })
                                                             : '--'
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    {isEditing ? (
-                                                        <input
-                                                            type="date"
-                                                            className="input input-bordered input-xs"
-                                                            value={editFormState.purchaseDate}
-                                                            onChange={handleEditInputChange('purchaseDate')}
-                                                            onKeyDown={(event) => handleEditKeyDown(event, position)}
-                                                        />
-                                                    ) : (
-                                                        position.purchase_date || '--'
                                                     )}
                                                 </td>
                                                 <td>{price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}</td>
@@ -1127,15 +1113,6 @@ export const PortfolioTab: React.FC = () => {
                                                 placeholder="Avg"
                                                 value={addFormState.averageCost}
                                                 onChange={handleAddInputChange('averageCost')}
-                                                onKeyDown={handleAddKeyDown}
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="date"
-                                                className="input input-bordered input-xs"
-                                                value={addFormState.purchaseDate}
-                                                onChange={handleAddInputChange('purchaseDate')}
                                                 onKeyDown={handleAddKeyDown}
                                             />
                                         </td>
