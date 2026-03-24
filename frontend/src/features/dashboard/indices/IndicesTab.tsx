@@ -10,7 +10,7 @@ import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
 import { StocksTable } from './StocksTable';
-import type { PortfolioHoldingSummary } from './StocksTable';
+import type { PortfolioHoldingSummary, TradingPositionSummary } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { deriveIndexIndustryScope } from './indexIndustryScope';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -71,7 +71,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [portfolioHoldings, setPortfolioHoldings] = useState<Record<string, PortfolioHoldingSummary>>({});
-    const [openTradingTickers, setOpenTradingTickers] = useState<string[]>([]);
+    const [openTradingPositions, setOpenTradingPositions] = useState<Record<string, TradingPositionSummary>>({});
 
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('performance_table');
@@ -210,7 +210,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     useEffect(() => {
         if (!user) {
-            setOpenTradingTickers([]);
+            setOpenTradingPositions({});
             return;
         }
 
@@ -218,14 +218,24 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         stockApi.getTradingPositions()
             .then((response) => {
                 if (!isMounted) return;
-                const uniqueTickers = Array.from(
-                    new Set(response.positions.map((position) => position.ticker.toUpperCase())),
-                );
-                setOpenTradingTickers(uniqueTickers);
+                const aggregatedPositions = response.positions.reduce<Record<string, TradingPositionSummary>>((accumulator, position) => {
+                    const ticker = position.ticker.toUpperCase();
+                    const quantity = Number(position.quantity);
+                    if (!Number.isFinite(quantity)) {
+                        return accumulator;
+                    }
+
+                    const existing = accumulator[ticker];
+                    accumulator[ticker] = {
+                        quantity: (existing?.quantity ?? 0) + quantity,
+                    };
+                    return accumulator;
+                }, {});
+                setOpenTradingPositions(aggregatedPositions);
             })
             .catch(() => {
                 if (!isMounted) return;
-                setOpenTradingTickers([]);
+                setOpenTradingPositions({});
             });
 
         return () => {
@@ -847,7 +857,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 stocks={filteredStocks}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}
-                                openTradingTickers={openTradingTickers}
+                                openTradingPositions={openTradingPositions}
                                 onBookmarksUpdated={handleBookmarksUpdated}
                             />
                         )}

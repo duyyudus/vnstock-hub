@@ -21,8 +21,8 @@ interface StocksTableProps {
     bookmarkGroups?: BookmarkGroup[];
     /** Current holding details keyed by uppercase ticker */
     portfolioHoldings?: Record<string, PortfolioHoldingSummary>;
-    /** Open trading position tickers keyed as uppercase symbols */
-    openTradingTickers?: string[];
+    /** Open trading position summaries keyed by uppercase ticker */
+    openTradingPositions?: Record<string, TradingPositionSummary>;
     /** Notify parent to refresh bookmark data */
     onBookmarksUpdated?: (groupId?: number) => void;
 }
@@ -30,6 +30,10 @@ interface StocksTableProps {
 export interface PortfolioHoldingSummary {
     marketValue: number;
     allocationPercent: number;
+}
+
+export interface TradingPositionSummary {
+    quantity: number;
 }
 
 type SortKey = keyof Stock | 'foreign_net_value' | 'room_ratio';
@@ -55,7 +59,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     bookmarkGroups = [],
     portfolioHoldings = {},
-    openTradingTickers = [],
+    openTradingPositions = {},
     onBookmarksUpdated,
 }) => {
     const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -97,8 +101,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     }, [portfolioHoldings]);
 
     const openTradingTickerSet = useMemo(() => {
-        return new Set(openTradingTickers);
-    }, [openTradingTickers]);
+        return new Set(Object.keys(openTradingPositions));
+    }, [openTradingPositions]);
 
     useEffect(() => {
         if (!exportNotice) {
@@ -169,15 +173,30 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(value);
     };
 
+    const formatTradingQuantity = (value: number): string => {
+        return new Intl.NumberFormat('en-US', {
+            maximumFractionDigits: 2,
+        }).format(value);
+    };
+
     const formatTickerTooltip = (
         companyLabel: string,
-        holding?: PortfolioHoldingSummary
+        holding?: PortfolioHoldingSummary,
+        tradingPosition?: TradingPositionSummary,
+        tradingValue?: number
     ): string => {
-        if (
-            !holding
-            || !Number.isFinite(holding.marketValue)
-            || !Number.isFinite(holding.allocationPercent)
-        ) {
+        const hasHolding = Boolean(
+            holding
+            && Number.isFinite(holding.marketValue)
+            && Number.isFinite(holding.allocationPercent)
+        );
+        const hasTradingPosition = Boolean(
+            tradingPosition
+            && Number.isFinite(tradingPosition.quantity)
+        );
+        const hasTradingValue = Number.isFinite(tradingValue);
+
+        if (!hasHolding && !hasTradingPosition && !hasTradingValue) {
             return companyLabel;
         }
 
@@ -185,8 +204,16 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         if (companyLabel) {
             parts.push(companyLabel);
         }
-        parts.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
-        parts.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+        if (hasHolding && holding) {
+            parts.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
+            parts.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+        }
+        if (hasTradingPosition && tradingPosition) {
+            parts.push(`Trading size: ${formatTradingQuantity(tradingPosition.quantity)}`);
+        }
+        if (hasTradingValue && tradingValue != null) {
+            parts.push(`Trading value: ${formatHoldingValue(tradingValue)}`);
+        }
         return parts.join('\n');
     };
 
@@ -771,7 +798,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
                             const isInOpenTradingPosition = isLoggedIn && openTradingTickerSet.has(normalizedTicker);
                             const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
-                            const tickerTooltipText = formatTickerTooltip(fullNameWithExchange, portfolioHolding);
+                            const tradingPosition = isInOpenTradingPosition ? openTradingPositions[normalizedTicker] : undefined;
+                            const tradingValue = tradingPosition ? stock.price * tradingPosition.quantity : undefined;
+                            const tickerTooltipText = formatTickerTooltip(fullNameWithExchange, portfolioHolding, tradingPosition, tradingValue);
                             const hasRoomData = stock.current_room != null || stock.total_room != null;
                             const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
                             const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
