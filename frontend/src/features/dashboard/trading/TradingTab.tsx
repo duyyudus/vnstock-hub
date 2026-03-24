@@ -9,25 +9,24 @@ import {
 import { useAuthUser } from '../../auth/useAuthUser';
 
 interface FormState {
-    accountLabel: string;
     ticker: string;
     quantity: string;
     averageEntryCost: string;
-    openedDate: string;
-    targetPrice: string;
-    stopLoss: string;
-    notes: string;
 }
 
+type SortKey =
+    | 'ticker'
+    | 'quantity'
+    | 'averageEntryCost'
+    | 'currentPrice'
+    | 'marketValue'
+    | 'pnl';
+type SortDirection = 'asc' | 'desc';
+
 const buildEmptyFormState = (): FormState => ({
-    accountLabel: '',
     ticker: '',
     quantity: '',
     averageEntryCost: '',
-    openedDate: '',
-    targetPrice: '',
-    stopLoss: '',
-    notes: '',
 });
 
 const getErrorMessage = (error: unknown) => {
@@ -62,6 +61,8 @@ export const TradingTab: React.FC = () => {
     const [editFormError, setEditFormError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [accountFilter, setAccountFilter] = useState('all');
+    const [sortKey, setSortKey] = useState<SortKey | null>(null);
+    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
     const importDialogRef = useRef<HTMLDialogElement>(null);
     const [importBrokers, setImportBrokers] = useState<PortfolioImportBroker[]>([]);
     const [importBrokersLoading, setImportBrokersLoading] = useState(false);
@@ -200,12 +201,90 @@ export const TradingTab: React.FC = () => {
             const haystack = [
                 position.account_label,
                 position.ticker,
-                position.notes ?? '',
             ].join(' ').toUpperCase();
 
             return haystack.includes(query);
         });
     }, [accountFilter, positions, searchQuery]);
+
+    const handleSort = (key: SortKey) => {
+        const isSameColumn = sortKey === key;
+        const nextDirection: SortDirection = isSameColumn
+            ? (sortDirection === 'asc' ? 'desc' : 'asc')
+            : 'asc';
+
+        setSortKey(key);
+        setSortDirection(nextDirection);
+    };
+
+    const sortedFilteredPositions = useMemo(() => {
+        if (!sortKey) {
+            return filteredPositions;
+        }
+
+        const getSortValue = (position: TradingPosition) => {
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
+            const currentPrice = typeof quote?.price === 'number' && Number.isFinite(quote.price) ? quote.price : null;
+            const marketValue = currentPrice !== null ? position.quantity * currentPrice : null;
+            const pnl = currentPrice !== null
+                ? position.quantity * (currentPrice - position.average_entry_cost)
+                : null;
+
+            switch (sortKey) {
+                case 'ticker':
+                    return ticker;
+                case 'quantity':
+                    return position.quantity;
+                case 'averageEntryCost':
+                    return position.average_entry_cost;
+                case 'currentPrice':
+                    return currentPrice;
+                case 'marketValue':
+                    return marketValue;
+                case 'pnl':
+                    return pnl;
+                default:
+                    return null;
+            }
+        };
+
+        const direction = sortDirection === 'asc' ? 1 : -1;
+
+        return [...filteredPositions].sort((left, right) => {
+            const leftValue = getSortValue(left);
+            const rightValue = getSortValue(right);
+
+            if (leftValue === null && rightValue === null) return 0;
+            if (leftValue === null) return 1;
+            if (rightValue === null) return -1;
+
+            if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+                return leftValue.localeCompare(rightValue) * direction;
+            }
+
+            return (Number(leftValue) - Number(rightValue)) * direction;
+        });
+    }, [filteredPositions, quotes, sortDirection, sortKey]);
+
+    const renderSortHeader = (label: string, key: SortKey) => {
+        const isActive = sortKey === key;
+
+        return (
+            <button
+                type="button"
+                className="flex items-center gap-1 text-left"
+                onClick={() => handleSort(key)}
+            >
+                <span>{label}</span>
+                {isActive ? (
+                    <span className="text-[10px] text-base-content/60">
+                        {sortDirection === 'asc' ? '▲' : '▼'}
+                    </span>
+                ) : null}
+            </button>
+        );
+    };
 
     const totalMarketValue = useMemo(() => {
         let total = 0;
@@ -278,7 +357,7 @@ export const TradingTab: React.FC = () => {
         setImportError(null);
         setImportResult(null);
         setImportFiles([]);
-        setImportAccountLabel('');
+        setImportAccountLabel(accountFilter !== 'all' ? accountFilter : '');
         setImportOpenedDate('');
     };
 
@@ -295,32 +374,17 @@ export const TradingTab: React.FC = () => {
         resetImportForm();
     };
 
-    const parseOptionalPositiveNumber = (value: string, fieldLabel: string) => {
-        const trimmed = value.trim();
-        if (!trimmed) {
-            return { value: null, error: null };
-        }
-        const parsed = Number(trimmed);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-            return { value: null, error: `${fieldLabel} must be greater than zero when provided.` };
-        }
-        return { value: parsed, error: null };
-    };
-
     const handleAddSubmit = async () => {
         if (addFormLoading) return;
 
         setAddFormError(null);
-        const accountLabel = addFormState.accountLabel.trim();
+        const accountLabel = accountFilter !== 'all' ? accountFilter : '';
         const ticker = addFormState.ticker.trim().toUpperCase();
         const quantity = Number(addFormState.quantity);
         const averageEntryCost = Number(addFormState.averageEntryCost);
-        const openedDate = addFormState.openedDate.trim();
-        const targetPriceResult = parseOptionalPositiveNumber(addFormState.targetPrice, 'Target price');
-        const stopLossResult = parseOptionalPositiveNumber(addFormState.stopLoss, 'Stop loss');
 
         if (!accountLabel) {
-            setAddFormError('Account label is required.');
+            setAddFormError('Select a specific account filter before adding a position.');
             return;
         }
         if (!ticker) {
@@ -335,14 +399,6 @@ export const TradingTab: React.FC = () => {
             setAddFormError('Average entry cost must be greater than zero.');
             return;
         }
-        if (targetPriceResult.error) {
-            setAddFormError(targetPriceResult.error);
-            return;
-        }
-        if (stopLossResult.error) {
-            setAddFormError(stopLossResult.error);
-            return;
-        }
 
         setAddFormLoading(true);
         try {
@@ -351,10 +407,6 @@ export const TradingTab: React.FC = () => {
                 ticker,
                 quantity,
                 average_entry_cost: averageEntryCost,
-                opened_date: openedDate || null,
-                target_price: targetPriceResult.value,
-                stop_loss: stopLossResult.value,
-                notes: addFormState.notes.trim() || null,
             });
             await fetchPositions();
             resetAddForm();
@@ -369,14 +421,9 @@ export const TradingTab: React.FC = () => {
         setEditingId(position.id);
         setEditFormError(null);
         setEditFormState({
-            accountLabel: position.account_label,
             ticker: position.ticker,
             quantity: String(position.quantity),
             averageEntryCost: String(position.average_entry_cost),
-            openedDate: position.opened_date ? position.opened_date.slice(0, 10) : '',
-            targetPrice: position.target_price !== null ? String(position.target_price) : '',
-            stopLoss: position.stop_loss !== null ? String(position.stop_loss) : '',
-            notes: position.notes ?? '',
         });
     };
 
@@ -384,18 +431,10 @@ export const TradingTab: React.FC = () => {
         if (editFormLoading) return;
 
         setEditFormError(null);
-        const accountLabel = editFormState.accountLabel.trim();
         const ticker = editFormState.ticker.trim().toUpperCase();
         const quantity = Number(editFormState.quantity);
         const averageEntryCost = Number(editFormState.averageEntryCost);
-        const openedDate = editFormState.openedDate.trim();
-        const targetPriceResult = parseOptionalPositiveNumber(editFormState.targetPrice, 'Target price');
-        const stopLossResult = parseOptionalPositiveNumber(editFormState.stopLoss, 'Stop loss');
 
-        if (!accountLabel) {
-            setEditFormError('Account label is required.');
-            return;
-        }
         if (!ticker) {
             setEditFormError('Ticker is required.');
             return;
@@ -408,26 +447,13 @@ export const TradingTab: React.FC = () => {
             setEditFormError('Average entry cost must be greater than zero.');
             return;
         }
-        if (targetPriceResult.error) {
-            setEditFormError(targetPriceResult.error);
-            return;
-        }
-        if (stopLossResult.error) {
-            setEditFormError(stopLossResult.error);
-            return;
-        }
 
         setEditFormLoading(true);
         try {
             await stockApi.updateTradingPosition(position.id, {
-                account_label: accountLabel,
                 ticker,
                 quantity,
                 average_entry_cost: averageEntryCost,
-                opened_date: openedDate || null,
-                target_price: targetPriceResult.value,
-                stop_loss: stopLossResult.value,
-                notes: editFormState.notes.trim() || null,
             });
             await fetchPositions();
             resetEditForm();
@@ -565,7 +591,7 @@ export const TradingTab: React.FC = () => {
                             <div className="relative">
                                 <input
                                     type="text"
-                                    placeholder="Search ticker, account, note..."
+                                    placeholder="Search ticker or account..."
                                     className="input input-sm input-bordered w-56 md:w-72 pl-8"
                                     value={searchQuery}
                                     onChange={(event) => setSearchQuery(event.target.value)}
@@ -632,7 +658,7 @@ export const TradingTab: React.FC = () => {
                                     No trading positions yet. Add your first active trade below.
                                 </div>
                             ) : null}
-                            {positions.length > 0 && filteredPositions.length === 0 ? (
+                            {positions.length > 0 && sortedFilteredPositions.length === 0 ? (
                                 <div className="text-sm text-base-content/60">
                                     No trading positions match the current filters.
                                 </div>
@@ -641,33 +667,21 @@ export const TradingTab: React.FC = () => {
                                 <table className="table table-zebra table-sm w-max min-w-full">
                                     <thead>
                                         <tr>
-                                            <th>Account</th>
-                                            <th>Ticker</th>
-                                            <th>Quantity</th>
-                                            <th>Entry</th>
-                                            <th>Opened</th>
-                                            <th>Target</th>
-                                            <th>Stop</th>
-                                            <th>Current</th>
-                                            <th>Market Value</th>
-                                            <th>P&amp;L</th>
-                                            <th>Notes</th>
+                                            <th>{renderSortHeader('Ticker', 'ticker')}</th>
+                                            <th>{renderSortHeader('Quantity', 'quantity')}</th>
+                                            <th>{renderSortHeader('Entry', 'averageEntryCost')}</th>
+                                            <th>{renderSortHeader('Current', 'currentPrice')}</th>
+                                            <th>{renderSortHeader('Market Value', 'marketValue')}</th>
+                                            <th>{renderSortHeader('P&L', 'pnl')}</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredPositions.map((position) => {
+                                        {sortedFilteredPositions.map((position) => {
                                             const isEditing = editingId === position.id;
                                             const display = isEditing ? editFormState : null;
                                             const quantity = isEditing ? Number(display?.quantity) : position.quantity;
                                             const averageEntryCost = isEditing ? Number(display?.averageEntryCost) : position.average_entry_cost;
-                                            const targetPrice = isEditing
-                                                ? (display?.targetPrice.trim() ? Number(display.targetPrice) : null)
-                                                : position.target_price;
-                                            const stopLoss = isEditing
-                                                ? (display?.stopLoss.trim() ? Number(display.stopLoss) : null)
-                                                : position.stop_loss;
-                                            const notes = isEditing ? display?.notes ?? '' : position.notes ?? '';
                                             const quote = quotes[position.ticker.toUpperCase()];
                                             const companyName = quote?.company_name?.trim() ?? '';
                                             const exchangeName = quote?.exchange?.trim() ?? '';
@@ -695,18 +709,6 @@ export const TradingTab: React.FC = () => {
 
                                             return (
                                                 <tr key={position.id}>
-                                                    <td>
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="text"
-                                                                className="input input-bordered input-xs w-32"
-                                                                value={editFormState.accountLabel}
-                                                                onChange={handleEditInputChange('accountLabel')}
-                                                            />
-                                                        ) : (
-                                                            <span className="font-medium">{position.account_label}</span>
-                                                        )}
-                                                    </td>
                                                     <td className="font-semibold">
                                                         {isEditing ? (
                                                             <input
@@ -752,46 +754,8 @@ export const TradingTab: React.FC = () => {
                                                         )}
                                                     </td>
                                                     <td>
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="date"
-                                                                className="input input-bordered input-xs"
-                                                                value={editFormState.openedDate}
-                                                                onChange={handleEditInputChange('openedDate')}
-                                                            />
-                                                        ) : (
-                                                            position.opened_date || '--'
-                                                        )}
+                                                        {price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}
                                                     </td>
-                                                    <td>
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="number"
-                                                                min="0.01"
-                                                                step="0.01"
-                                                                className="input input-bordered input-xs w-24"
-                                                                value={editFormState.targetPrice}
-                                                                onChange={handleEditInputChange('targetPrice')}
-                                                            />
-                                                        ) : targetPrice !== null ? (
-                                                            formatNumber(targetPrice, { maximumFractionDigits: 2 })
-                                                        ) : '--'}
-                                                    </td>
-                                                    <td>
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="number"
-                                                                min="0.01"
-                                                                step="0.01"
-                                                                className="input input-bordered input-xs w-24"
-                                                                value={editFormState.stopLoss}
-                                                                onChange={handleEditInputChange('stopLoss')}
-                                                            />
-                                                        ) : stopLoss !== null ? (
-                                                            formatNumber(stopLoss, { maximumFractionDigits: 2 })
-                                                        ) : '--'}
-                                                    </td>
-                                                    <td>{price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}</td>
                                                     <td>{marketValue !== null ? formatNumber(marketValue, { maximumFractionDigits: 2 }) : '--'}</td>
                                                     <td className={pnlClassName}>
                                                         {pnl !== null ? (
@@ -800,20 +764,6 @@ export const TradingTab: React.FC = () => {
                                                                 {pnlPercent !== null ? (
                                                                     <span className="text-xs">{formatPercent(pnlPercent)}</span>
                                                                 ) : null}
-                                                            </div>
-                                                        ) : '--'}
-                                                    </td>
-                                                    <td className="max-w-56">
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="text"
-                                                                className="input input-bordered input-xs w-56"
-                                                                value={editFormState.notes}
-                                                                onChange={handleEditInputChange('notes')}
-                                                            />
-                                                        ) : notes ? (
-                                                            <div className="tooltip tooltip-left" data-tip={notes}>
-                                                                <span className="block truncate max-w-56 cursor-help">{notes}</span>
                                                             </div>
                                                         ) : '--'}
                                                     </td>
@@ -870,15 +820,6 @@ export const TradingTab: React.FC = () => {
                                             <td>
                                                 <input
                                                     type="text"
-                                                    className="input input-bordered input-xs w-32"
-                                                    placeholder="Account"
-                                                    value={addFormState.accountLabel}
-                                                    onChange={handleAddInputChange('accountLabel')}
-                                                />
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="text"
                                                     className="input input-bordered input-xs w-24"
                                                     placeholder="Ticker"
                                                     value={addFormState.ticker}
@@ -908,48 +849,12 @@ export const TradingTab: React.FC = () => {
                                                 />
                                             </td>
                                             <td>
-                                                <input
-                                                    type="date"
-                                                    className="input input-bordered input-xs"
-                                                    value={addFormState.openedDate}
-                                                    onChange={handleAddInputChange('openedDate')}
-                                                    aria-label="Opened date (optional)"
-                                                />
+                                                --
                                             </td>
                                             <td>
-                                                <input
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    className="input input-bordered input-xs w-24"
-                                                    placeholder="Target"
-                                                    value={addFormState.targetPrice}
-                                                    onChange={handleAddInputChange('targetPrice')}
-                                                />
+                                                --
                                             </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    className="input input-bordered input-xs w-24"
-                                                    placeholder="Stop"
-                                                    value={addFormState.stopLoss}
-                                                    onChange={handleAddInputChange('stopLoss')}
-                                                />
-                                            </td>
-                                            <td>--</td>
-                                            <td>--</td>
                                             <td className="text-base-content/50">--</td>
-                                            <td>
-                                                <input
-                                                    type="text"
-                                                    className="input input-bordered input-xs w-56"
-                                                    placeholder="Notes"
-                                                    value={addFormState.notes}
-                                                    onChange={handleAddInputChange('notes')}
-                                                />
-                                            </td>
                                             <td>
                                                 <div className="flex flex-col gap-2">
                                                     <button
@@ -1016,9 +921,24 @@ export const TradingTab: React.FC = () => {
                                             type="text"
                                             className="input input-bordered w-full"
                                             placeholder="SSI Swing"
+                                            list={accountOptions.length > 0 ? 'trading-import-account-options' : undefined}
                                             value={importAccountLabel}
                                             onChange={(event) => setImportAccountLabel(event.target.value)}
                                         />
+                                        {accountOptions.length > 0 ? (
+                                            <>
+                                                <datalist id="trading-import-account-options">
+                                                    {accountOptions.map((accountLabel) => (
+                                                        <option key={accountLabel} value={accountLabel} />
+                                                    ))}
+                                                </datalist>
+                                                <div className="label">
+                                                    <span className="label-text-alt text-base-content/60">
+                                                        Choose an existing account label or type a new one.
+                                                    </span>
+                                                </div>
+                                            </>
+                                        ) : null}
                                     </label>
                                     <label className="form-control w-full">
                                         <div className="label">
@@ -1049,7 +969,7 @@ export const TradingTab: React.FC = () => {
                                 </label>
 
                                 <p className="text-xs text-base-content/60">
-                                    Existing trades in the same account keep their target, stop, and notes; only quantity and average entry cost are refreshed.
+                                    Existing trades in the same account are refreshed with the imported quantity and average entry cost.
                                 </p>
                             </>
                         )}

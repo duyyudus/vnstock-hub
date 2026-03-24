@@ -21,6 +21,8 @@ interface StocksTableProps {
     bookmarkGroups?: BookmarkGroup[];
     /** Current holding details keyed by uppercase ticker */
     portfolioHoldings?: Record<string, PortfolioHoldingSummary>;
+    /** Open trading position tickers keyed as uppercase symbols */
+    openTradingTickers?: string[];
     /** Notify parent to refresh bookmark data */
     onBookmarksUpdated?: (groupId?: number) => void;
 }
@@ -53,6 +55,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     bookmarkGroups = [],
     portfolioHoldings = {},
+    openTradingTickers = [],
     onBookmarksUpdated,
 }) => {
     const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -92,6 +95,10 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const portfolioTickerSet = useMemo(() => {
         return new Set(Object.keys(portfolioHoldings));
     }, [portfolioHoldings]);
+
+    const openTradingTickerSet = useMemo(() => {
+        return new Set(openTradingTickers);
+    }, [openTradingTickers]);
 
     useEffect(() => {
         if (!exportNotice) {
@@ -762,6 +769,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const normalizedTicker = stock.ticker.toUpperCase();
                             const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
                             const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
+                            const isInOpenTradingPosition = isLoggedIn && openTradingTickerSet.has(normalizedTicker);
                             const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
                             const tickerTooltipText = formatTickerTooltip(fullNameWithExchange, portfolioHolding);
                             const hasRoomData = stock.current_room != null || stock.total_room != null;
@@ -792,21 +800,34 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                     >
                                         {!isCompanyCollapsed && stock.company_name}
                                     </td>
-                                    <td className="w-16">
-                                        <div
-                                            className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
-                                            data-tip={tickerTooltipText}
-                                        >
-                                            <button
-                                                className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
-                                                    isInPortfolio ? 'text-accent' : 'text-primary'
-                                                }`}
-                                                onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
-                                                onContextMenu={(event) => handleTickerContextMenu(event, stock)}
-                                                aria-label={`View financial details for ${stock.ticker}`}
+                                    <td className="w-20">
+                                        <div className="flex items-center gap-1">
+                                            <div
+                                                className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
+                                                data-tip={tickerTooltipText}
                                             >
-                                                {stock.ticker.slice(0, 3)}
-                                            </button>
+                                                <button
+                                                    className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
+                                                        isInPortfolio ? 'text-accent' : 'text-primary'
+                                                    }`}
+                                                    onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
+                                                    onContextMenu={(event) => handleTickerContextMenu(event, stock)}
+                                                    aria-label={`View financial details for ${stock.ticker}`}
+                                                >
+                                                    {stock.ticker.slice(0, 3)}
+                                                </button>
+                                            </div>
+                                            {isInOpenTradingPosition ? (
+                                                <span
+                                                    className="inline-flex text-warning"
+                                                    title="Open trading position"
+                                                    aria-label={`${stock.ticker} has an open trading position`}
+                                                >
+                                                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v4m0 4h.01M10.29 3.86l-8.18 14A2 2 0 003.82 21h16.36a2 2 0 001.71-3.14l-8.18-14a2 2 0 00-3.42 0z" />
+                                                    </svg>
+                                                </span>
+                                            ) : null}
                                         </div>
                                     </td>
                                     <td className="text-right font-mono text-base-content">

@@ -5,3 +5,9 @@ brokers:
     top_left: A9
     bottom_right: E
     average_cost_multiplier: 1000
+  - id: tcbs
+    name: Techcom Securities
+    sheet: Sheet1
+    top_left: A1
+    bottom_right: A
+    average_cost_multiplier: 1000

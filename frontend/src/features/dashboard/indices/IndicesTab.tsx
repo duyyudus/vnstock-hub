@@ -71,6 +71,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [portfolioHoldings, setPortfolioHoldings] = useState<Record<string, PortfolioHoldingSummary>>({});
+    const [openTradingTickers, setOpenTradingTickers] = useState<string[]>([]);
 
     // --- View State ---
     const [viewMode, setViewMode] = useState<ViewMode>('performance_table');
@@ -201,6 +202,31 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
 
         fetchPortfolioHoldings();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) {
+            setOpenTradingTickers([]);
+            return;
+        }
+
+        let isMounted = true;
+        stockApi.getTradingPositions()
+            .then((response) => {
+                if (!isMounted) return;
+                const uniqueTickers = Array.from(
+                    new Set(response.positions.map((position) => position.ticker.toUpperCase())),
+                );
+                setOpenTradingTickers(uniqueTickers);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+                setOpenTradingTickers([]);
+            });
 
         return () => {
             isMounted = false;
@@ -821,6 +847,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 stocks={filteredStocks}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}
+                                openTradingTickers={openTradingTickers}
                                 onBookmarksUpdated={handleBookmarksUpdated}
                             />
                         )}
