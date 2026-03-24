@@ -30,10 +30,13 @@ interface StocksTableProps {
 export interface PortfolioHoldingSummary {
     marketValue: number;
     allocationPercent: number;
+    costBasis: number | null;
+    pnl: number | null;
 }
 
 export interface TradingPositionSummary {
     quantity: number;
+    costBasis: number | null;
 }
 
 type SortKey = keyof Stock | 'foreign_net_value' | 'room_ratio';
@@ -173,30 +176,53 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(value);
     };
 
-    const formatTradingQuantity = (value: number): string => {
-        return new Intl.NumberFormat('en-US', {
+    const formatSignedValue = (value: number): string => {
+        const formatted = new Intl.NumberFormat('en-US', {
             maximumFractionDigits: 2,
-        }).format(value);
+        }).format(Math.abs(value));
+        const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+        return `${prefix}${formatted}`;
+    };
+
+    const formatSignedPercent = (value: number): string => {
+        const formatted = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(Math.abs(value));
+        const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+        return `${prefix}${formatted}%`;
     };
 
     const formatTickerTooltip = (
         companyLabel: string,
         holding?: PortfolioHoldingSummary,
         tradingPosition?: TradingPositionSummary,
-        tradingValue?: number
+        tradingValue?: number,
+        tradingPnl?: number
     ): string => {
         const hasHolding = Boolean(
             holding
             && Number.isFinite(holding.marketValue)
             && Number.isFinite(holding.allocationPercent)
         );
+        const hasHoldingPnl = Boolean(
+            holding
+            && Number.isFinite(holding.pnl)
+        );
+        const holdingPnlPercent = holding?.costBasis != null && holding.costBasis > 0 && holding.pnl != null
+            ? (holding.pnl / holding.costBasis) * 100
+            : null;
         const hasTradingPosition = Boolean(
             tradingPosition
             && Number.isFinite(tradingPosition.quantity)
         );
         const hasTradingValue = Number.isFinite(tradingValue);
+        const hasTradingPnl = Number.isFinite(tradingPnl);
+        const tradingPnlPercent = tradingPosition?.costBasis != null && tradingPosition.costBasis > 0 && tradingPnl != null
+            ? (tradingPnl / tradingPosition.costBasis) * 100
+            : null;
 
-        if (!hasHolding && !hasTradingPosition && !hasTradingValue) {
+        if (!hasHolding && !hasHoldingPnl && !hasTradingPosition && !hasTradingValue && !hasTradingPnl) {
             return companyLabel;
         }
 
@@ -204,15 +230,27 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         if (companyLabel) {
             parts.push(companyLabel);
         }
+        if (companyLabel && (hasHolding || hasHoldingPnl || hasTradingPosition || hasTradingValue || hasTradingPnl)) {
+            parts.push('');
+        }
         if (hasHolding && holding) {
             parts.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
             parts.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
         }
-        if (hasTradingPosition && tradingPosition) {
-            parts.push(`Trading size: ${formatTradingQuantity(tradingPosition.quantity)}`);
+        if (hasHoldingPnl && holding && holding.pnl != null) {
+            const holdingPnlLabel = holdingPnlPercent != null
+                ? `${formatSignedValue(holding.pnl)} (${formatSignedPercent(holdingPnlPercent)})`
+                : formatSignedValue(holding.pnl);
+            parts.push(`Holding P&L: ${holdingPnlLabel}`);
         }
         if (hasTradingValue && tradingValue != null) {
             parts.push(`Trading value: ${formatHoldingValue(tradingValue)}`);
+        }
+        if (hasTradingPnl && tradingPnl != null) {
+            const tradingPnlLabel = tradingPnlPercent != null
+                ? `${formatSignedValue(tradingPnl)} (${formatSignedPercent(tradingPnlPercent)})`
+                : formatSignedValue(tradingPnl);
+            parts.push(`Trading P&L: ${tradingPnlLabel}`);
         }
         return parts.join('\n');
     };
@@ -800,7 +838,16 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
                             const tradingPosition = isInOpenTradingPosition ? openTradingPositions[normalizedTicker] : undefined;
                             const tradingValue = tradingPosition ? stock.price * tradingPosition.quantity : undefined;
-                            const tickerTooltipText = formatTickerTooltip(fullNameWithExchange, portfolioHolding, tradingPosition, tradingValue);
+                            const tradingPnl = tradingPosition?.costBasis != null && tradingValue != null
+                                ? tradingValue - tradingPosition.costBasis
+                                : undefined;
+                            const tickerTooltipText = formatTickerTooltip(
+                                fullNameWithExchange,
+                                portfolioHolding,
+                                tradingPosition,
+                                tradingValue,
+                                tradingPnl,
+                            );
                             const hasRoomData = stock.current_room != null || stock.total_room != null;
                             const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
                             const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);

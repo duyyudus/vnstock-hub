@@ -165,7 +165,11 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     return accumulator;
                 }, {});
 
-                const holdingsTotals = response.positions.reduce<Record<string, number>>((accumulator, position) => {
+                const holdingsTotals = response.positions.reduce<Record<string, {
+                    marketValue: number;
+                    costBasis: number;
+                    hasMissingCostBasis: boolean;
+                }>>((accumulator, position) => {
                     const ticker = position.ticker.toUpperCase();
                     const price = quotesByTicker[ticker]?.price;
                     if (typeof price !== 'number' || !Number.isFinite(price)) {
@@ -177,20 +181,41 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         return accumulator;
                     }
 
-                    accumulator[ticker] = (accumulator[ticker] ?? 0) + marketValue;
+                    const existing = accumulator[ticker] ?? {
+                        marketValue: 0,
+                        costBasis: 0,
+                        hasMissingCostBasis: false,
+                    };
+                    existing.marketValue += marketValue;
+
+                    const averageCost = typeof position.average_cost === 'number'
+                        && Number.isFinite(position.average_cost)
+                        && position.average_cost > 0
+                        ? position.average_cost
+                        : null;
+
+                    if (averageCost === null) {
+                        existing.hasMissingCostBasis = true;
+                    } else {
+                        existing.costBasis += position.quantity * averageCost;
+                    }
+
+                    accumulator[ticker] = existing;
                     return accumulator;
                 }, {});
 
-                const totalMarketValue = Object.values(holdingsTotals).reduce((sum, value) => sum + value, 0);
+                const totalMarketValue = Object.values(holdingsTotals).reduce((sum, value) => sum + value.marketValue, 0);
                 if (!Number.isFinite(totalMarketValue) || totalMarketValue <= 0) {
                     setPortfolioHoldings({});
                     return;
                 }
 
-                const nextPortfolioHoldings = Object.entries(holdingsTotals).reduce<Record<string, PortfolioHoldingSummary>>((accumulator, [ticker, marketValue]) => {
+                const nextPortfolioHoldings = Object.entries(holdingsTotals).reduce<Record<string, PortfolioHoldingSummary>>((accumulator, [ticker, summary]) => {
                     accumulator[ticker] = {
-                        marketValue,
-                        allocationPercent: (marketValue / totalMarketValue) * 100,
+                        marketValue: summary.marketValue,
+                        allocationPercent: (summary.marketValue / totalMarketValue) * 100,
+                        costBasis: summary.hasMissingCostBasis ? null : summary.costBasis,
+                        pnl: summary.hasMissingCostBasis ? null : summary.marketValue - summary.costBasis,
                     };
                     return accumulator;
                 }, {});
@@ -225,9 +250,19 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         return accumulator;
                     }
 
+                    const averageEntryCost = Number(position.average_entry_cost);
+                    const costBasis = Number.isFinite(averageEntryCost)
+                        ? quantity * averageEntryCost
+                        : null;
                     const existing = accumulator[ticker];
+                    const nextCostBasis = existing
+                        ? (existing.costBasis == null || costBasis == null
+                            ? null
+                            : existing.costBasis + costBasis)
+                        : costBasis;
                     accumulator[ticker] = {
                         quantity: (existing?.quantity ?? 0) + quantity,
+                        costBasis: nextCostBasis,
                     };
                     return accumulator;
                 }, {});
