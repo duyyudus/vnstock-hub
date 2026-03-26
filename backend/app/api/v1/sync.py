@@ -138,7 +138,7 @@ class ScheduledSyncJobCreateRequest(BaseModel):
     interval_value: int
     interval_unit: ScheduledSyncIntervalUnit
     timezone: str = "Asia/Ho_Chi_Minh"
-    max_retries: int = 0
+    max_retries: int = 3
 
 
 class ScheduledSyncJobUpdateRequest(BaseModel):

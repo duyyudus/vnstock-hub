@@ -304,7 +304,7 @@ class ScheduledSyncJob(Base):
     interval_value = Column(Integer, nullable=False)
     interval_unit = Column(String(20), nullable=False)
     timezone = Column(String(64), nullable=False, default="Asia/Ho_Chi_Minh")
-    max_retries = Column(Integer, nullable=False, default=0)
+    max_retries = Column(Integer, nullable=False, default=3)
     next_run_at = Column(DateTime, nullable=False)
     last_run_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

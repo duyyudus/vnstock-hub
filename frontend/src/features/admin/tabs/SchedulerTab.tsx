@@ -19,6 +19,8 @@ import {
 
 const SCHEDULER_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const REFRESH_INTERVAL_MS = 5000;
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, value) => value.toString().padStart(2, '0'));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, value) => value.toString().padStart(2, '0'));
 
 type SchedulerFormState = {
     name: string;
@@ -29,7 +31,8 @@ type SchedulerFormState = {
     dateFrom: string;
     dateTo: string;
     autoRepair: boolean;
-    startsAt: string;
+    startsAtDate: string;
+    startsAtTime: string;
     intervalValue: string;
     intervalUnit: ScheduledSyncIntervalUnit;
     maxRetries: string;
@@ -45,10 +48,11 @@ const DEFAULT_FORM_STATE: SchedulerFormState = {
     dateFrom: '',
     dateTo: '',
     autoRepair: false,
-    startsAt: '',
+    startsAtDate: '',
+    startsAtTime: '03:00',
     intervalValue: '1',
     intervalUnit: 'days',
-    maxRetries: '0',
+    maxRetries: '3',
     enabled: true,
 };
 
@@ -172,6 +176,8 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
     const actionOptions = useMemo(() => ACTION_OPTIONS[form.syncType], [form.syncType]);
     const showDateRange = isDateRangeAction(form.syncType, form.syncAction);
     const showAutoRepair = isAutoRepairAction(form.syncType, form.syncAction);
+    const selectedHour = form.startsAtTime.slice(0, 2) || '03';
+    const selectedMinute = form.startsAtTime.slice(3, 5) || '00';
 
     useEffect(() => {
         if (!actionOptions.some((option) => option.value === form.syncAction)) {
@@ -189,6 +195,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
     }, []);
 
     const handleEdit = useCallback((job: ScheduledSyncJob) => {
+        const startsAtLocal = toDateTimeLocalValue(job.starts_at, SCHEDULER_TIMEZONE);
         setEditingJobId(job.id);
         setSuccess(null);
         setError(null);
@@ -201,7 +208,8 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
             dateFrom: job.date_from ?? '',
             dateTo: job.date_to ?? '',
             autoRepair: job.auto_repair,
-            startsAt: toDateTimeLocalValue(job.starts_at, SCHEDULER_TIMEZONE),
+            startsAtDate: startsAtLocal.slice(0, 10),
+            startsAtTime: startsAtLocal.slice(11, 16),
             intervalValue: String(job.interval_value),
             intervalUnit: job.interval_unit,
             maxRetries: String(job.max_retries),
@@ -216,7 +224,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
             sync_type: form.syncType,
             sync_action: form.syncAction,
             symbols: parseSymbolsInput(form.symbolsText),
-            starts_at: form.startsAt,
+            starts_at: `${form.startsAtDate}T${form.startsAtTime}`,
             interval_value: Number(form.intervalValue),
             interval_unit: form.intervalUnit,
             timezone: SCHEDULER_TIMEZONE,
@@ -365,7 +373,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
                                                 <td>
                                                     <div className="font-medium">{job.name}</div>
                                                     <div className="text-xs text-base-content/60">
-                                                        Retries: {job.max_retries}
+                                                        Retry attempts after failure: {job.max_retries}
                                                     </div>
                                                 </td>
                                                 <td>
@@ -541,13 +549,53 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
                         ) : null}
 
                         <label className="form-control">
-                            <span className="label-text">First run time</span>
+                            <span className="label-text">First run date</span>
                             <input
-                                type="datetime-local"
+                                type="date"
                                 className="input input-bordered"
-                                value={form.startsAt}
-                                onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))}
+                                value={form.startsAtDate}
+                                onChange={(event) => setForm((current) => ({ ...current, startsAtDate: event.target.value }))}
                             />
+                        </label>
+
+                        <label className="form-control">
+                            <span className="label-text">First run time</span>
+                            <div className="grid grid-cols-2 gap-3">
+                                <select
+                                    className="select select-bordered"
+                                    value={selectedHour}
+                                    onChange={(event) => {
+                                        const nextHour = event.target.value;
+                                        setForm((current) => ({
+                                            ...current,
+                                            startsAtTime: `${nextHour}:${current.startsAtTime.slice(3, 5) || '00'}`,
+                                        }));
+                                    }}
+                                >
+                                    {HOUR_OPTIONS.map((hour) => (
+                                        <option key={hour} value={hour}>
+                                            {hour} hour
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    className="select select-bordered"
+                                    value={selectedMinute}
+                                    onChange={(event) => {
+                                        const nextMinute = event.target.value;
+                                        setForm((current) => ({
+                                            ...current,
+                                            startsAtTime: `${current.startsAtTime.slice(0, 2) || '03'}:${nextMinute}`,
+                                        }));
+                                    }}
+                                >
+                                    {MINUTE_OPTIONS.map((minute) => (
+                                        <option key={minute} value={minute}>
+                                            {minute} minute
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </label>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -580,7 +628,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
 
                         <div className="grid grid-cols-2 gap-3">
                             <label className="form-control">
-                                <span className="label-text">Max retries</span>
+                                <span className="label-text">Retry attempts after failure</span>
                                 <input
                                     type="number"
                                     min={0}

@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("interval_value", sa.Integer(), nullable=False),
         sa.Column("interval_unit", sa.String(length=20), nullable=False),
         sa.Column("timezone", sa.String(length=64), nullable=False, server_default="Asia/Ho_Chi_Minh"),
-        sa.Column("max_retries", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("max_retries", sa.Integer(), nullable=False, server_default="3"),
         sa.Column("next_run_at", sa.DateTime(), nullable=False),
         sa.Column("last_run_at", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),

@@ -575,7 +575,7 @@ class ScheduledSyncService:
         except ValueError as exc:
             raise SchedulerValidationError("Invalid interval_unit") from exc
 
-        max_retries_raw = payload.get("max_retries", 0)
+        max_retries_raw = payload.get("max_retries", 3)
         try:
             max_retries = int(max_retries_raw)
         except (TypeError, ValueError) as exc:
