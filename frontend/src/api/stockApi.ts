@@ -773,6 +773,94 @@ export interface HistoryAuditActionResponse extends HistorySyncActionResponse {
     results: HistoryAuditSymbolResult[];
 }
 
+export type ScheduledSyncType = 'history' | 'finance' | 'company';
+export type ScheduledSyncAction = 'sync' | 'audit' | 'repair' | 'full' | 'quick';
+export type ScheduledSyncIntervalUnit = 'minutes' | 'hours' | 'days';
+export type ScheduledSyncRunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface ScheduledSyncJob {
+    id: number;
+    name: string;
+    enabled: boolean;
+    sync_type: ScheduledSyncType;
+    sync_action: ScheduledSyncAction;
+    index_symbol: string | null;
+    symbols: string[];
+    date_from: string | null;
+    date_to: string | null;
+    auto_repair: boolean;
+    starts_at: string;
+    interval_value: number;
+    interval_unit: ScheduledSyncIntervalUnit;
+    timezone: string;
+    max_retries: number;
+    next_run_at: string | null;
+    last_run_at: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface ScheduledSyncJobListResponse {
+    jobs: ScheduledSyncJob[];
+    count: number;
+}
+
+export interface ScheduledSyncJobRun {
+    id: number;
+    job_id: number;
+    job_name: string;
+    sync_type: ScheduledSyncType;
+    sync_action: ScheduledSyncAction;
+    attempt_number: number;
+    status: ScheduledSyncRunStatus;
+    scheduled_for: string;
+    started_at: string | null;
+    finished_at: string | null;
+    error: string | null;
+    summary: Record<string, unknown>;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface ScheduledSyncJobRunListResponse {
+    runs: ScheduledSyncJobRun[];
+    count: number;
+}
+
+export interface ScheduledSyncJobCreateRequest {
+    name: string;
+    enabled?: boolean;
+    sync_type: ScheduledSyncType;
+    sync_action: ScheduledSyncAction;
+    index_symbol?: string;
+    symbols?: string[];
+    date_from?: string;
+    date_to?: string;
+    auto_repair?: boolean;
+    starts_at: string;
+    interval_value: number;
+    interval_unit: ScheduledSyncIntervalUnit;
+    timezone?: string;
+    max_retries?: number;
+}
+
+export interface ScheduledSyncJobUpdateRequest {
+    name?: string;
+    enabled?: boolean;
+    sync_type?: ScheduledSyncType;
+    sync_action?: ScheduledSyncAction;
+    index_symbol?: string | null;
+    symbols?: string[];
+    date_from?: string | null;
+    date_to?: string | null;
+    auto_repair?: boolean;
+    starts_at?: string;
+    interval_value?: number;
+    interval_unit?: ScheduledSyncIntervalUnit;
+    timezone?: string;
+    max_retries?: number;
+}
+
 // Stock API functions
 export const stockApi = {
     /**
@@ -1133,6 +1221,30 @@ export const stockApi = {
             index_symbol: indexSymbol || undefined,
             quick_sync: quickSync,
         });
+        return response.data;
+    },
+
+    async getScheduledSyncJobs(): Promise<ScheduledSyncJobListResponse> {
+        const response = await apiClient.get<ScheduledSyncJobListResponse>('/sync/scheduler/jobs');
+        return response.data;
+    },
+
+    async createScheduledSyncJob(payload: ScheduledSyncJobCreateRequest): Promise<ScheduledSyncJob> {
+        const response = await apiClient.post<ScheduledSyncJob>('/sync/scheduler/jobs', payload);
+        return response.data;
+    },
+
+    async updateScheduledSyncJob(jobId: number, payload: ScheduledSyncJobUpdateRequest): Promise<ScheduledSyncJob> {
+        const response = await apiClient.patch<ScheduledSyncJob>(`/sync/scheduler/jobs/${jobId}`, payload);
+        return response.data;
+    },
+
+    async deleteScheduledSyncJob(jobId: number): Promise<void> {
+        await apiClient.delete(`/sync/scheduler/jobs/${jobId}`);
+    },
+
+    async getScheduledSyncRuns(limit: number = 20): Promise<ScheduledSyncJobRunListResponse> {
+        const response = await apiClient.get<ScheduledSyncJobRunListResponse>(`/sync/scheduler/runs?limit=${limit}`);
         return response.data;
     },
 

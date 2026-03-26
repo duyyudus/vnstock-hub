@@ -22,6 +22,48 @@ export const formatDateTime = (value: string | null | undefined) => {
     return parsed.toLocaleString();
 };
 
+export const formatDateTimeInTimezone = (
+    value: string | null | undefined,
+    timeZone: string,
+) => {
+    if (!value) {
+        return '-';
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return value;
+    }
+    return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone,
+    }).format(parsed);
+};
+
+export const toDateTimeLocalValue = (
+    value: string | null | undefined,
+    timeZone: string,
+) => {
+    if (!value) {
+        return '';
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone,
+    }).formatToParts(parsed);
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${byType.year}-${byType.month}-${byType.day}T${byType.hour}:${byType.minute}`;
+};
+
 export const parseSymbolsInput = (value: string): string[] => {
     return value
         .split(/[\s,]+/)

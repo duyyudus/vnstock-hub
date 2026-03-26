@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core.deps import get_current_admin_user
+from app.db.models import ScheduledSyncJobRun
 from app.main import app
 from app.services.vnstock_service import vnstock_service
+from app.services.vnstock_service.scheduler import ScheduledSyncRunStatus, utc_now
 
 
 @pytest.mark.asyncio
@@ -296,3 +298,145 @@ async def test_run_company_sync_invalid_index_returns_400(client):
 
     assert response.status_code == 400
     assert "Unsupported index symbol" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_jobs_require_admin_auth(client):
+    response = await client.get("/api/v1/sync/scheduler/jobs")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_scheduler_job_with_admin(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.post(
+            "/api/v1/sync/scheduler/jobs",
+            json={
+                "name": "Daily Finance Quick",
+                "enabled": True,
+                "sync_type": "finance",
+                "sync_action": "quick",
+                "symbols": ["VCB", "ACB"],
+                "starts_at": "2026-03-27T09:00:00",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "Asia/Ho_Chi_Minh",
+                "max_retries": 2,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Daily Finance Quick"
+    assert payload["sync_type"] == "finance"
+    assert payload["sync_action"] == "quick"
+    assert payload["symbols"] == ["VCB", "ACB"]
+
+
+@pytest.mark.asyncio
+async def test_update_scheduler_job_validates_history_date_range(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    created_job = await vnstock_service.scheduler.create_job(
+        {
+            "name": "History Sync",
+            "sync_type": "history",
+            "sync_action": "sync",
+            "starts_at": "2026-03-27T09:00:00",
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 0,
+        }
+    )
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.patch(
+            f"/api/v1/sync/scheduler/jobs/{created_job['id']}",
+            json={
+                "sync_action": "repair",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 400
+    assert "date_from and date_to are required" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_list_scheduler_runs_returns_recent_attempts(client, db_session):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    job = await vnstock_service.scheduler.create_job(
+        {
+            "name": "Company Quick",
+            "sync_type": "company",
+            "sync_action": "quick",
+            "starts_at": "2026-03-27T09:00:00",
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 1,
+        }
+    )
+
+    db_session.add(
+        ScheduledSyncJobRun(
+            job_id=job["id"],
+            attempt_number=1,
+            status=ScheduledSyncRunStatus.FAILED.value,
+            scheduled_for=utc_now(),
+            finished_at=utc_now(),
+            error="boom",
+            summary={"message": "boom"},
+        )
+    )
+    await db_session.commit()
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.get("/api/v1/sync/scheduler/runs?limit=10")
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] >= 1
+    assert payload["runs"][0]["job_name"] == "Company Quick"
+
+
+@pytest.mark.asyncio
+async def test_delete_scheduler_job_returns_204(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    job = await vnstock_service.scheduler.create_job(
+        {
+            "name": "Delete Me",
+            "sync_type": "finance",
+            "sync_action": "full",
+            "starts_at": "2026-03-27T09:00:00",
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 0,
+        }
+    )
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.delete(f"/api/v1/sync/scheduler/jobs/{job['id']}")
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 204

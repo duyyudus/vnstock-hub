@@ -284,3 +284,55 @@ class TradingPosition(Base):
         ),
         Index("ix_trading_position_user_account", "user_id", "account_label"),
     )
+
+
+class ScheduledSyncJob(Base):
+    """Persistent scheduler configuration for recurring admin sync jobs."""
+    __tablename__ = "scheduled_sync_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    sync_type = Column(String(20), nullable=False)
+    sync_action = Column(String(20), nullable=False)
+    index_symbol = Column(String(20), nullable=True)
+    symbols = Column(JSON, nullable=False, default=list)
+    date_from = Column(Date, nullable=True)
+    date_to = Column(Date, nullable=True)
+    auto_repair = Column(Boolean, nullable=False, default=False)
+    starts_at = Column(DateTime, nullable=False)
+    interval_value = Column(Integer, nullable=False)
+    interval_unit = Column(String(20), nullable=False)
+    timezone = Column(String(64), nullable=False, default="Asia/Ho_Chi_Minh")
+    max_retries = Column(Integer, nullable=False, default=0)
+    next_run_at = Column(DateTime, nullable=False)
+    last_run_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_scheduled_sync_jobs_enabled_next_run", "enabled", "next_run_at"),
+        Index("ix_scheduled_sync_jobs_sync_type_action", "sync_type", "sync_action"),
+    )
+
+
+class ScheduledSyncJobRun(Base):
+    """Execution log row for each scheduled sync attempt."""
+    __tablename__ = "scheduled_sync_job_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("scheduled_sync_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    attempt_number = Column(Integer, nullable=False, default=1)
+    status = Column(String(20), nullable=False)
+    scheduled_for = Column(DateTime, nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    error = Column(String(1000), nullable=True)
+    summary = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_scheduled_sync_job_runs_status_scheduled_for", "status", "scheduled_for"),
+        Index("ix_scheduled_sync_job_runs_job_scheduled_for", "job_id", "scheduled_for"),
+    )

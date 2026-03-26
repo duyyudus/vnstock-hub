@@ -18,6 +18,7 @@ from .history import HistoryService
 from .history_sync import HistorySyncService
 from .finance_sync import FinanceDataSyncService
 from .company_sync import CompanyDataSyncService
+from .scheduler import ScheduledSyncService
 from .finance import FinanceService
 from .company import CompanyService
 from .funds import FundsService
@@ -62,6 +63,13 @@ class VnstockService:
         )
         self.finance_data_sync = FinanceDataSyncService(finance=self.finance)
         self.company_data_sync = CompanyDataSyncService(company=self.company)
+        self.scheduler = ScheduledSyncService(
+            run_history_sync=self.run_history_sync,
+            run_history_audit_sync=self.run_history_audit_sync,
+            run_history_repair_sync=self.run_history_repair_sync,
+            run_finance_sync=self.run_finance_sync,
+            run_company_sync=self.run_company_sync,
+        )
         self.indices = IndicesService()
         self.funds = FundsService()
         self.stocks = StocksService(metadata=self.metadata, history=self.history)
@@ -75,9 +83,11 @@ class VnstockService:
         await self.history_sync.start_background_tasks()
         await self.finance_data_sync.start_background_tasks()
         await self.company_data_sync.start_background_tasks()
+        await self.scheduler.start_background_tasks()
 
     async def stop_background_tasks(self) -> None:
         """Stop long-running background workers."""
+        await self.scheduler.stop_background_tasks()
         await self.company_data_sync.stop_background_tasks()
         await self.finance_data_sync.stop_background_tasks()
         await self.history_sync.stop_background_tasks()

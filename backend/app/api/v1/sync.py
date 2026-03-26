@@ -10,6 +10,14 @@ from pydantic import BaseModel, Field
 from app.core.deps import get_current_admin_user
 from app.services.sync_status import sync_status
 from app.services.vnstock_service import vnstock_service
+from app.services.vnstock_service.scheduler import (
+    ScheduledSyncAction,
+    ScheduledSyncIntervalUnit,
+    ScheduledSyncRunStatus,
+    ScheduledSyncType,
+    SchedulerNotFoundError,
+    SchedulerValidationError,
+)
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -114,6 +122,89 @@ class HistoryAuditActionResponse(HistorySyncActionResponse):
     total_missing_dates: int = 0
     total_repaired_dates: int = 0
     results: List[HistoryAuditSymbolResultResponse] = Field(default_factory=list)
+
+
+class ScheduledSyncJobCreateRequest(BaseModel):
+    name: str
+    enabled: bool = True
+    sync_type: ScheduledSyncType
+    sync_action: ScheduledSyncAction
+    index_symbol: Optional[str] = None
+    symbols: List[str] = Field(default_factory=list)
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    auto_repair: bool = False
+    starts_at: str
+    interval_value: int
+    interval_unit: ScheduledSyncIntervalUnit
+    timezone: str = "Asia/Ho_Chi_Minh"
+    max_retries: int = 0
+
+
+class ScheduledSyncJobUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    sync_type: Optional[ScheduledSyncType] = None
+    sync_action: Optional[ScheduledSyncAction] = None
+    index_symbol: Optional[str] = None
+    symbols: Optional[List[str]] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    auto_repair: Optional[bool] = None
+    starts_at: Optional[str] = None
+    interval_value: Optional[int] = None
+    interval_unit: Optional[ScheduledSyncIntervalUnit] = None
+    timezone: Optional[str] = None
+    max_retries: Optional[int] = None
+
+
+class ScheduledSyncJobResponse(BaseModel):
+    id: int
+    name: str
+    enabled: bool
+    sync_type: ScheduledSyncType
+    sync_action: ScheduledSyncAction
+    index_symbol: Optional[str] = None
+    symbols: List[str] = Field(default_factory=list)
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    auto_repair: bool = False
+    starts_at: str
+    interval_value: int
+    interval_unit: ScheduledSyncIntervalUnit
+    timezone: str
+    max_retries: int
+    next_run_at: Optional[str] = None
+    last_run_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ScheduledSyncJobListResponse(BaseModel):
+    jobs: List[ScheduledSyncJobResponse] = Field(default_factory=list)
+    count: int
+
+
+class ScheduledSyncJobRunResponse(BaseModel):
+    id: int
+    job_id: int
+    job_name: str
+    sync_type: ScheduledSyncType
+    sync_action: ScheduledSyncAction
+    attempt_number: int
+    status: ScheduledSyncRunStatus
+    scheduled_for: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    error: Optional[str] = None
+    summary: dict = Field(default_factory=dict)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ScheduledSyncJobRunListResponse(BaseModel):
+    runs: List[ScheduledSyncJobRunResponse] = Field(default_factory=list)
+    count: int
 
 
 @router.get("/status", response_model=SyncStatusResponse)
@@ -334,3 +425,73 @@ async def run_company_sync(
             detail=str(e),
         )
     return HistorySyncActionResponse(**result)
+
+
+@router.get("/scheduler/jobs", response_model=ScheduledSyncJobListResponse)
+async def list_scheduled_sync_jobs(
+    _current_admin=Depends(get_current_admin_user),
+):
+    jobs = await vnstock_service.scheduler.list_jobs()
+    return ScheduledSyncJobListResponse(jobs=jobs, count=len(jobs))
+
+
+@router.post("/scheduler/jobs", response_model=ScheduledSyncJobResponse)
+async def create_scheduled_sync_job(
+    payload: ScheduledSyncJobCreateRequest,
+    _current_admin=Depends(get_current_admin_user),
+):
+    try:
+        job = await vnstock_service.scheduler.create_job(payload.model_dump(mode="json"))
+    except SchedulerValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    return ScheduledSyncJobResponse(**job)
+
+
+@router.patch("/scheduler/jobs/{job_id}", response_model=ScheduledSyncJobResponse)
+async def update_scheduled_sync_job(
+    job_id: int,
+    payload: ScheduledSyncJobUpdateRequest,
+    _current_admin=Depends(get_current_admin_user),
+):
+    try:
+        job = await vnstock_service.scheduler.update_job(
+            job_id,
+            payload.model_dump(exclude_unset=True, mode="json"),
+        )
+    except SchedulerNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except SchedulerValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    return ScheduledSyncJobResponse(**job)
+
+
+@router.delete("/scheduler/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scheduled_sync_job(
+    job_id: int,
+    _current_admin=Depends(get_current_admin_user),
+):
+    try:
+        await vnstock_service.scheduler.delete_job(job_id)
+    except SchedulerNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@router.get("/scheduler/runs", response_model=ScheduledSyncJobRunListResponse)
+async def list_scheduled_sync_runs(
+    limit: int = 50,
+    _current_admin=Depends(get_current_admin_user),
+):
+    runs = await vnstock_service.scheduler.list_runs(limit=limit)
+    return ScheduledSyncJobRunListResponse(runs=runs, count=len(runs))
