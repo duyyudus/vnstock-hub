@@ -205,7 +205,7 @@ def _build_providers(provider_settings: List[dict]) -> List[LLMProvider]:
 
 def merge_image_positions(
     positions: List[ImagePositionItem],
-) -> tuple[List[ImagePositionItem], int]:
+) -> tuple[List[ImagePositionItem], List[str]]:
     normalized: dict[str, ImagePositionItem] = {}
     conflicted: set[str] = set()
 
@@ -255,7 +255,7 @@ def merge_image_positions(
 
     result = list(normalized.values())
     result.sort(key=lambda item: item.ticker)
-    return result, len(conflicted)
+    return result, sorted(conflicted)
 
 
 async def extract_positions_from_rows(

@@ -98,6 +98,75 @@ export const TradingTab: React.FC = () => {
         };
     }, [formatNumber]);
 
+    const renderImportResultSummary = () => {
+        if (!importResult) {
+            return null;
+        }
+
+        return (
+            <div className="rounded-xl bg-success px-4 py-3 text-sm text-success-content shadow-sm">
+                <div className="space-y-3 w-full">
+                    <div className="space-y-1">
+                        <div>
+                            Imported {importResult.imported_positions.length} ticker
+                            {importResult.imported_positions.length === 1 ? '' : 's'} from screenshots.
+                        </div>
+                        <div>
+                            Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
+                        </div>
+                    </div>
+                    {importResult.import_outcomes.length > 0 ? (
+                        <div className="overflow-x-auto">
+                            <table className="table table-xs w-full text-success-content">
+                                <thead>
+                                    <tr>
+                                        <th className="text-success-content/80">Ticker</th>
+                                        <th className="text-success-content/80">Status</th>
+                                        <th className="text-success-content/80">Qty</th>
+                                        <th className="text-success-content/80">Entry</th>
+                                        <th className="text-success-content/80">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {importResult.import_outcomes.map((outcome) => {
+                                        const statusClassName = outcome.status === 'created'
+                                            ? 'badge-success'
+                                            : outcome.status === 'updated'
+                                                ? 'badge-info'
+                                                : 'badge-warning';
+                                        return (
+                                            <tr key={`${outcome.ticker}-${outcome.status}-${outcome.reason ?? 'none'}`}>
+                                                <td className="font-semibold">{outcome.ticker}</td>
+                                                <td>
+                                                    <span className={`badge badge-sm ${statusClassName}`}>
+                                                        {outcome.status}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {typeof outcome.quantity === 'number'
+                                                        ? formatNumber(outcome.quantity, { maximumFractionDigits: 2 })
+                                                        : '--'}
+                                                </td>
+                                                <td>
+                                                    {typeof outcome.average_entry_cost === 'number'
+                                                        ? formatNumber(outcome.average_entry_cost, { maximumFractionDigits: 2 })
+                                                        : '--'}
+                                                </td>
+                                                <td className="text-success-content/85">
+                                                    {outcome.reason ?? '--'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : null}
+                </div>
+            </div>
+        );
+    };
+
     const accountOptions = useMemo(() => {
         return Array.from(new Set(positions.map((position) => position.account_label)))
             .sort((left, right) => left.localeCompare(right));
@@ -635,19 +704,7 @@ export const TradingTab: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {importResult ? (
-                                <div className="alert alert-success text-sm">
-                                    <div className="space-y-1">
-                                        <div>
-                                            Imported {importResult.imported_positions.length} ticker
-                                            {importResult.imported_positions.length === 1 ? '' : 's'} from screenshots.
-                                        </div>
-                                        <div>
-                                            Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : null}
+                            {renderImportResultSummary()}
                             {importError ? (
                                 <div className="alert alert-error text-sm">
                                     <span>{importError}</span>
@@ -974,19 +1031,7 @@ export const TradingTab: React.FC = () => {
                             </>
                         )}
 
-                        {importResult ? (
-                            <div className="alert alert-success text-sm">
-                                <div className="space-y-1">
-                                    <div>
-                                        Imported {importResult.imported_positions.length} ticker
-                                        {importResult.imported_positions.length === 1 ? '' : 's'}.
-                                    </div>
-                                    <div>
-                                        Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
-                                    </div>
-                                </div>
-                            </div>
-                        ) : null}
+                        {renderImportResultSummary()}
 
                         {importError ? (
                             <div className="alert alert-error text-sm">

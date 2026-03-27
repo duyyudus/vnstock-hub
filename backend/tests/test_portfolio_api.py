@@ -410,15 +410,40 @@ async def test_portfolio_import_upserts_positions(client: AsyncClient, auth_head
     from app.services.portfolio_import import import_service
 
     async def fake_extract_positions_from_rows(rows, providers, timeout_seconds):
+        assert providers == [
+            {
+                "name": "table",
+                "base_url": "http://table.example.com",
+                "api_key": "table-key",
+                "model": "table-cheap",
+            }
+        ]
         return [
             import_service.PositionItem(ticker="TCB", quantity=100),
             import_service.PositionItem(ticker="VCB", quantity=50),
         ]
 
     monkeypatch.setattr(portfolio_api, "extract_positions_from_rows", fake_extract_positions_from_rows)
-    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
-        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
-    ]))
+    monkeypatch.setattr(
+        config.settings,
+        "llm_providers",
+        json.dumps(
+            [
+                {"name": "vision", "base_url": "http://vision.example.com", "api_key": "vision-key", "model": "vision-default"},
+                {"name": "table", "base_url": "http://table.example.com", "api_key": "table-key", "model": "table-default"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "llm_task_config",
+        json.dumps(
+            {
+                "position_table_extraction": [{"provider": "table", "model": "table-cheap"}],
+                "position_image_extraction": [{"provider": "vision", "model": "vision-pro"}],
+            }
+        ),
+    )
 
     rows = [["" for _ in range(5)] for _ in range(8)]
     rows.append(["TCB", "buy", "100", "2024-01-01", ""])
@@ -441,3 +466,55 @@ async def test_portfolio_import_upserts_positions(client: AsyncClient, auth_head
     list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_portfolio_image_import_uses_position_image_task_config(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import portfolio as portfolio_api
+    from app.services.llm.llm_client import ImagePositionItem
+
+    async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        assert providers == [
+            {
+                "name": "vision",
+                "base_url": "http://vision.example.com",
+                "api_key": "vision-key",
+                "model": "vision-pro",
+            }
+        ]
+        return [ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100)]
+
+    monkeypatch.setattr(portfolio_api, "extract_positions_from_image", fake_extract_positions_from_image)
+    monkeypatch.setattr(
+        config.settings,
+        "llm_providers",
+        json.dumps(
+            [
+                {"name": "vision", "base_url": "http://vision.example.com", "api_key": "vision-key", "model": "vision-default"},
+                {"name": "table", "base_url": "http://table.example.com", "api_key": "table-key", "model": "table-default"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "llm_task_config",
+        json.dumps(
+            {
+                "position_image_extraction": [{"provider": "vision", "model": "vision-pro"}],
+                "position_table_extraction": [{"provider": "table", "model": "table-cheap"}],
+            }
+        ),
+    )
+
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files={"file": ("position.png", b"fake-image", "image/png")},
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 1
+    assert data["imported_positions"][0]["ticker"] == "SSI"
+    assert data["imported_positions"][0]["average_cost"] == 25500

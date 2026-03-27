@@ -3,6 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import json
 from pathlib import Path
+from pydantic import BaseModel, Field
+
+
+class LLMTaskProviderSelection(BaseModel):
+    provider: str = Field(..., min_length=1)
+    model: str | None = None
 
 
 class Settings(BaseSettings):
@@ -29,6 +35,7 @@ class Settings(BaseSettings):
 
     # LLM providers (OpenAI-compatible) in JSON list format
     llm_providers: str = "[]"
+    llm_task_config: str = "{}"
     llm_request_timeout_seconds: int = 30
 
     # Non-environmental config (YAML)
@@ -63,6 +70,64 @@ class Settings(BaseSettings):
         if not self.llm_providers:
             return []
         return json.loads(self.llm_providers)
+
+    @property
+    def llm_task_config_map(self) -> dict[str, list[LLMTaskProviderSelection]]:
+        """Parse task-specific LLM routing from JSON string."""
+        if not self.llm_task_config:
+            return {}
+
+        raw_config = json.loads(self.llm_task_config)
+        if not isinstance(raw_config, dict):
+            raise ValueError("LLM task config must be a JSON object")
+
+        parsed: dict[str, list[LLMTaskProviderSelection]] = {}
+        for task_key, selections in raw_config.items():
+            normalized_task_key = str(task_key).strip()
+            if not normalized_task_key:
+                raise ValueError("LLM task config contains an empty task key")
+            if not isinstance(selections, list):
+                raise ValueError(f"LLM task config for '{normalized_task_key}' must be a list")
+            parsed[normalized_task_key] = [
+                LLMTaskProviderSelection.model_validate(selection)
+                for selection in selections
+            ]
+        return parsed
+
+    def resolve_llm_providers(self, task_key: str) -> List[dict]:
+        """Resolve task-specific provider/model chain with legacy fallback."""
+        providers = self.llm_providers_list
+        task_config = self.llm_task_config_map
+        resolved_task_key = str(task_key).strip()
+
+        selections = task_config.get(resolved_task_key)
+        if selections is None:
+            selections = task_config.get("default")
+        if not selections:
+            return providers
+
+        providers_by_name: dict[str, dict] = {}
+        for provider in providers:
+            provider_name = str(provider.get("name") or "").strip()
+            if not provider_name:
+                raise ValueError("Each LLM provider must include a non-empty name")
+            if provider_name in providers_by_name:
+                raise ValueError(f"Duplicate LLM provider name '{provider_name}'")
+            providers_by_name[provider_name] = dict(provider)
+
+        resolved: list[dict] = []
+        for selection in selections:
+            base_provider = providers_by_name.get(selection.provider)
+            if base_provider is None:
+                raise ValueError(
+                    f"LLM task config for '{resolved_task_key or 'default'}' references unknown provider "
+                    f"'{selection.provider}'"
+                )
+            provider_payload = dict(base_provider)
+            if selection.model is not None:
+                provider_payload["model"] = selection.model
+            resolved.append(provider_payload)
+        return resolved
 
     @property
     def sync_admin_emails_list(self) -> List[str]:

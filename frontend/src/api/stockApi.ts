@@ -954,8 +954,17 @@ export interface TradingImportPosition {
     average_entry_cost?: number | null;
 }
 
+export interface TradingImportOutcome {
+    ticker: string;
+    quantity?: number | null;
+    average_entry_cost?: number | null;
+    status: 'created' | 'updated' | 'skipped';
+    reason?: string | null;
+}
+
 export interface TradingImportResponse {
     imported_positions: TradingImportPosition[];
+    import_outcomes: TradingImportOutcome[];
     created_count: number;
     updated_count: number;
     skipped_count: number;

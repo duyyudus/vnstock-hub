@@ -1,6 +1,6 @@
 """Trading position endpoints for authenticated users."""
 from datetime import date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ from app.core.deps import get_current_user
 from app.core.logging_config import get_portfolio_import_logger
 from app.db.database import get_db
 from app.db.models import TradingPosition
+from app.services.llm import POSITION_IMAGE_EXTRACTION_TASK
 from app.services.portfolio_import import (
     extract_positions_from_image,
     get_broker,
@@ -70,8 +71,17 @@ class TradingImportPosition(BaseModel):
     average_entry_cost: Optional[float] = None
 
 
+class TradingImportOutcome(BaseModel):
+    ticker: str
+    quantity: Optional[float] = None
+    average_entry_cost: Optional[float] = None
+    status: Literal["created", "updated", "skipped"]
+    reason: Optional[str] = None
+
+
 class TradingImportResponse(BaseModel):
     imported_positions: List[TradingImportPosition]
+    import_outcomes: List[TradingImportOutcome]
     created_count: int
     updated_count: int
     skipped_count: int
@@ -95,7 +105,7 @@ def _normalize_notes(notes: str | None) -> str | None:
 
 def _require_llm_providers() -> List[dict]:
     try:
-        providers = settings.llm_providers_list
+        providers = settings.resolve_llm_providers(POSITION_IMAGE_EXTRACTION_TASK)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,6 +250,7 @@ async def import_trading_positions(
 
     providers = _require_llm_providers()
     imported_positions: List[TradingImportPosition] = []
+    import_outcomes: List[TradingImportOutcome] = []
     created_count = 0
     updated_count = 0
     skipped_count = 0
@@ -287,27 +298,38 @@ async def import_trading_positions(
         )
         for position in aggregated_positions
     ]
-    merged_positions, conflict_count = merge_image_positions(scaled_positions)
-    if conflict_count:
-        skipped_count += conflict_count
-    if not merged_positions:
+    merged_positions, conflicted_tickers = merge_image_positions(scaled_positions)
+    if conflicted_tickers:
+        skipped_count += len(conflicted_tickers)
+        for ticker in conflicted_tickers:
+            import_outcomes.append(
+                TradingImportOutcome(
+                    ticker=ticker,
+                    status="skipped",
+                    reason="Conflicting values for this ticker across screenshots",
+                )
+            )
+
+    if not merged_positions and not conflicted_tickers:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="LLM did not return any positions",
         )
 
-    tickers = [position.ticker.strip().upper() for position in merged_positions]
-    existing_result = await db.execute(
-        select(TradingPosition).where(
-            TradingPosition.user_id == current_user.id,
-            func.lower(TradingPosition.account_label) == normalized_account_label.lower(),
-            TradingPosition.ticker.in_(tickers),
+    existing_positions = {}
+    if merged_positions:
+        tickers = [position.ticker.strip().upper() for position in merged_positions]
+        existing_result = await db.execute(
+            select(TradingPosition).where(
+                TradingPosition.user_id == current_user.id,
+                func.lower(TradingPosition.account_label) == normalized_account_label.lower(),
+                TradingPosition.ticker.in_(tickers),
+            )
         )
-    )
-    existing_positions = {
-        position.ticker.upper(): position
-        for position in existing_result.scalars().all()
-    }
+        existing_positions = {
+            position.ticker.upper(): position
+            for position in existing_result.scalars().all()
+        }
 
     for position in merged_positions:
         ticker = position.ticker.strip().upper()
@@ -330,11 +352,29 @@ async def import_trading_positions(
             existing.average_entry_cost = average_entry_cost
             if quantity is not None and quantity > 0:
                 existing.quantity = quantity
+            import_outcomes.append(
+                TradingImportOutcome(
+                    ticker=ticker,
+                    quantity=quantity,
+                    average_entry_cost=average_entry_cost,
+                    status="updated",
+                    reason="Matched an existing trade in this account",
+                )
+            )
             updated_count += 1
             continue
 
         if quantity is None or quantity <= 0:
             skipped_count += 1
+            import_outcomes.append(
+                TradingImportOutcome(
+                    ticker=ticker,
+                    quantity=quantity,
+                    average_entry_cost=average_entry_cost,
+                    status="skipped",
+                    reason="Quantity is required to create a new trade",
+                )
+            )
             continue
 
         db.add(TradingPosition(
@@ -348,6 +388,15 @@ async def import_trading_positions(
             stop_loss=None,
             notes=None,
         ))
+        import_outcomes.append(
+            TradingImportOutcome(
+                ticker=ticker,
+                quantity=quantity,
+                average_entry_cost=average_entry_cost,
+                status="created",
+                reason="Created a new trade in this account",
+            )
+        )
         created_count += 1
 
     await db.commit()
@@ -362,6 +411,7 @@ async def import_trading_positions(
     )
     return TradingImportResponse(
         imported_positions=imported_positions,
+        import_outcomes=import_outcomes,
         created_count=created_count,
         updated_count=updated_count,
         skipped_count=skipped_count,

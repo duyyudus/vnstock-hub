@@ -4,6 +4,11 @@ import httpx
 import pytest
 
 from app.core import config
+from app.services.llm import (
+    NEWS_ARTICLE_CLASSIFICATION_TASK,
+    NEWS_ARTICLE_SUMMARY_TASK,
+    NEWS_BLOCKED_LABEL_COMPILATION_TASK,
+)
 from app.services.news import semantics
 
 
@@ -11,9 +16,11 @@ from app.services.news import semantics
 def reset_news_semantics_provider_state():
     semantics._provider_failure_until.clear()
     semantics._provider_last_success_at.clear()
+    config.settings.llm_task_config = "{}"
     yield
     semantics._provider_failure_until.clear()
     semantics._provider_last_success_at.clear()
+    config.settings.llm_task_config = "{}"
 
 
 class _FakeResponse:
@@ -56,6 +63,7 @@ async def test_call_json_llm_uses_successful_fallback_after_provider_failure(mon
             ]
         ),
     )
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
 
     calls: list[str] = []
 
@@ -82,12 +90,12 @@ async def test_call_json_llm_uses_successful_fallback_after_provider_failure(mon
 
     monkeypatch.setattr(semantics.httpx, "AsyncClient", FakeAsyncClient)
 
-    first_payload = await semantics._call_json_llm("system", "user")
+    first_payload = await semantics._call_json_llm(NEWS_BLOCKED_LABEL_COMPILATION_TASK, "system", "user")
     assert first_payload == {"labels": ["macro"]}
     assert calls == ["Bearer bad-key", "Bearer good-key"]
 
     calls.clear()
-    second_payload = await semantics._call_json_llm("system", "user")
+    second_payload = await semantics._call_json_llm(NEWS_BLOCKED_LABEL_COMPILATION_TASK, "system", "user")
     assert second_payload == {"labels": ["macro"]}
     assert calls == ["Bearer good-key"]
 
@@ -114,6 +122,7 @@ async def test_call_json_llm_falls_back_when_primary_returns_empty_choices(monke
             ]
         ),
     )
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
 
     calls: list[str] = []
 
@@ -140,12 +149,12 @@ async def test_call_json_llm_falls_back_when_primary_returns_empty_choices(monke
 
     monkeypatch.setattr(semantics.httpx, "AsyncClient", FakeAsyncClient)
 
-    first_payload = await semantics._call_json_llm("system", "user")
+    first_payload = await semantics._call_json_llm(NEWS_BLOCKED_LABEL_COMPILATION_TASK, "system", "user")
     assert first_payload == {"topics": ["banking"]}
     assert calls == ["Bearer primary-key", "Bearer fallback-key"]
 
     calls.clear()
-    second_payload = await semantics._call_json_llm("system", "user")
+    second_payload = await semantics._call_json_llm(NEWS_BLOCKED_LABEL_COMPILATION_TASK, "system", "user")
     assert second_payload == {"topics": ["banking"]}
     assert calls == ["Bearer fallback-key"]
 
@@ -154,7 +163,8 @@ async def test_call_json_llm_falls_back_when_primary_returns_empty_choices(monke
 async def test_summarize_article_requests_original_language(monkeypatch):
     captured: dict[str, str] = {}
 
-    async def _fake_call_json_llm(system_prompt: str, user_prompt: str):
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
         captured["system_prompt"] = system_prompt
         captured["user_prompt"] = user_prompt
         return {"summary": "Tom tat tieng Viet"}
@@ -169,5 +179,53 @@ async def test_summarize_article_requests_original_language(monkeypatch):
     )
 
     assert summary == "Tom tat tieng Viet"
+    assert captured["task_key"] == NEWS_ARTICLE_SUMMARY_TASK
     assert "original language" in captured["user_prompt"]
     assert "Language hint: vi." in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_classify_article_uses_classification_task_key(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return {
+            "topics": ["banking"],
+            "tickers": ["VCB"],
+            "sectors": ["banking"],
+            "importance": "high",
+            "sentiment": "positive",
+        }
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.classify_article(
+        "VCB tang truong loi nhuan",
+        "Tin ngan",
+        "Noi dung chi tiet",
+    )
+
+    assert payload["topics"] == ["banking"]
+    assert payload["tickers"] == ["VCB"]
+    assert captured["task_key"] == NEWS_ARTICLE_CLASSIFICATION_TASK
+
+
+@pytest.mark.asyncio
+async def test_compile_blocked_labels_uses_blocked_label_task_key(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return {"labels": ["banking", "real_estate"]}
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    labels = await semantics.compile_blocked_labels("banking, real estate")
+
+    assert labels == ["banking", "real_estate"]
+    assert captured["task_key"] == NEWS_BLOCKED_LABEL_COMPILATION_TASK

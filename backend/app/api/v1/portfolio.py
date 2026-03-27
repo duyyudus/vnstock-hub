@@ -16,6 +16,10 @@ from app.core.config import settings
 from app.core.logging_config import get_portfolio_import_logger
 from app.db.database import get_db
 from app.db.models import PortfolioPosition
+from app.services.llm import (
+    POSITION_IMAGE_EXTRACTION_TASK,
+    POSITION_TABLE_EXTRACTION_TASK,
+)
 from app.services.portfolio_import import (
     CropSettings,
     extract_positions_from_image,
@@ -494,27 +498,27 @@ async def import_portfolio_positions(
         crop_settings.bottom_right,
     )
 
-    try:
-        providers = settings.llm_providers_list
-    except Exception as exc:
-        import_logger.error("portfolio_import_llm_config_error user_id=%s error=%s", current_user.id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="LLM providers configuration is invalid",
-        ) from exc
-    if not providers:
-        import_logger.warning("portfolio_import_llm_missing user_id=%s", current_user.id)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="LLM providers are not configured",
-        )
-
     created_count = 0
     updated_count = 0
     skipped_count = 0
     imported_positions: List[PortfolioImportPosition] = []
 
     if is_image:
+        try:
+            providers = settings.resolve_llm_providers(POSITION_IMAGE_EXTRACTION_TASK)
+        except Exception as exc:
+            import_logger.error("portfolio_import_llm_config_error user_id=%s error=%s", current_user.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM providers configuration is invalid",
+            ) from exc
+        if not providers:
+            import_logger.warning("portfolio_import_llm_missing user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM providers are not configured",
+            )
+
         aggregated_positions = []
         for upload in files:
             try:
@@ -559,9 +563,9 @@ async def import_portfolio_positions(
             )
             for position in aggregated_positions
         ]
-        merged_positions, conflict_count = merge_image_positions(scaled_positions)
-        if conflict_count:
-            skipped_count += conflict_count
+        merged_positions, conflicted_tickers = merge_image_positions(scaled_positions)
+        if conflicted_tickers:
+            skipped_count += len(conflicted_tickers)
 
         if not merged_positions:
             import_logger.warning("portfolio_import_llm_empty user_id=%s", current_user.id)
@@ -639,6 +643,21 @@ async def import_portfolio_positions(
             len(rows),
             len(rows[0]) if rows else 0,
         )
+
+        try:
+            providers = settings.resolve_llm_providers(POSITION_TABLE_EXTRACTION_TASK)
+        except Exception as exc:
+            import_logger.error("portfolio_import_llm_config_error user_id=%s error=%s", current_user.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM providers configuration is invalid",
+            ) from exc
+        if not providers:
+            import_logger.warning("portfolio_import_llm_missing user_id=%s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM providers are not configured",
+            )
 
         try:
             extracted_positions = await extract_positions_from_rows(

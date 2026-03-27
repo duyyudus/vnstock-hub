@@ -9,6 +9,11 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.services.llm import (
+    NEWS_ARTICLE_CLASSIFICATION_TASK,
+    NEWS_ARTICLE_SUMMARY_TASK,
+    NEWS_BLOCKED_LABEL_COMPILATION_TASK,
+)
 from app.services.llm.llm_client import _build_chat_url, _extract_json_payload
 
 
@@ -124,8 +129,12 @@ def _mark_provider_failure(provider_key: str, *, cooldown_seconds: float) -> Non
     _provider_failure_until[provider_key] = time.monotonic() + cooldown_seconds
 
 
-async def _call_json_llm(system_prompt: str, user_prompt: str) -> dict[str, Any] | None:
-    providers = settings.llm_providers_list
+async def _call_json_llm(task_key: str, system_prompt: str, user_prompt: str) -> dict[str, Any] | None:
+    try:
+        providers = settings.resolve_llm_providers(task_key)
+    except Exception as exc:
+        logger.warning("news_llm_config_error task=%s error=%s", task_key, exc)
+        return None
     if not providers:
         return None
 
@@ -250,6 +259,7 @@ async def classify_article(title: str, excerpt: str | None, content_text: str | 
         "Use concise normalized labels."
     )
     llm_payload = await _call_json_llm(
+        NEWS_ARTICLE_CLASSIFICATION_TASK,
         "You are a strict JSON classifier for financial news.",
         f"{prompt}\n\nArticle:\n{body[:6000]}",
     )
@@ -298,6 +308,7 @@ async def summarize_article(
         f"{language_instruction}"
     )
     llm_payload = await _call_json_llm(
+        NEWS_ARTICLE_SUMMARY_TASK,
         "You summarize financial news articles and return JSON only.",
         f"{prompt}\n\nArticle:\n{body[:6000]}",
     )
@@ -322,6 +333,7 @@ async def compile_blocked_labels(blocked_topics_text: str | None) -> list[str]:
         "with one key: {\"labels\": string[]}. Use concise normalized topic labels."
     )
     llm_payload = await _call_json_llm(
+        NEWS_BLOCKED_LABEL_COMPILATION_TASK,
         "You extract normalized blocked-topic labels and return JSON only.",
         f"{prompt}\n\nPreference text:\n{raw_text}",
     )

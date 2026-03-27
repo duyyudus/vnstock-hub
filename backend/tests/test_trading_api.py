@@ -225,15 +225,35 @@ async def test_trading_import_upserts_positions_from_images(client: AsyncClient,
     from app.services.llm.llm_client import ImagePositionItem
 
     async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        assert providers == [
+            {
+                "name": "vision",
+                "base_url": "http://vision.example.com",
+                "api_key": "vision-key",
+                "model": "vision-pro",
+            }
+        ]
         return [
             ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100),
             ImagePositionItem(ticker="VCI", average_cost=38.2, quantity=40),
         ]
 
     monkeypatch.setattr(trading_api, "extract_positions_from_image", fake_extract_positions_from_image)
-    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
-        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
-    ]))
+    monkeypatch.setattr(
+        config.settings,
+        "llm_providers",
+        json.dumps(
+            [
+                {"name": "vision", "base_url": "http://vision.example.com", "api_key": "vision-key", "model": "vision-default"},
+                {"name": "cheap", "base_url": "http://cheap.example.com", "api_key": "cheap-key", "model": "cheap-default"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        config.settings,
+        "llm_task_config",
+        json.dumps({"position_image_extraction": [{"provider": "vision", "model": "vision-pro"}]}),
+    )
 
     existing = await client.post(
         "/api/v1/trading/positions",
@@ -269,6 +289,22 @@ async def test_trading_import_upserts_positions_from_images(client: AsyncClient,
     assert data["created_count"] == 1
     assert data["updated_count"] == 1
     assert len(data["imported_positions"]) == 2
+    assert data["import_outcomes"] == [
+        {
+            "ticker": "SSI",
+            "quantity": 100.0,
+            "average_entry_cost": 25500.0,
+            "status": "updated",
+            "reason": "Matched an existing trade in this account",
+        },
+        {
+            "ticker": "VCI",
+            "quantity": 40.0,
+            "average_entry_cost": 38200.0,
+            "status": "created",
+            "reason": "Created a new trade in this account",
+        },
+    ]
 
     list_response = await client.get("/api/v1/trading/positions", headers=auth_headers)
     assert list_response.status_code == 200
@@ -298,6 +334,7 @@ async def test_trading_import_allows_missing_opened_date_for_new_positions(clien
     monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
         {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
     ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
 
     response = await client.post(
         "/api/v1/trading/import",
@@ -331,6 +368,7 @@ async def test_trading_import_skips_missing_quantity_for_new_positions(client: A
     monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
         {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
     ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
 
     response = await client.post(
         "/api/v1/trading/import",
@@ -346,7 +384,62 @@ async def test_trading_import_skips_missing_quantity_for_new_positions(client: A
     assert data["created_count"] == 0
     assert data["updated_count"] == 0
     assert data["skipped_count"] == 1
+    assert data["import_outcomes"] == [
+        {
+            "ticker": "FPT",
+            "quantity": None,
+            "average_entry_cost": 120500.0,
+            "status": "skipped",
+            "reason": "Quantity is required to create a new trade",
+        }
+    ]
 
     list_response = await client.get("/api/v1/trading/positions", headers=auth_headers)
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_trading_import_reports_conflicting_ticker_values(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import trading as trading_api
+    from app.services.llm.llm_client import ImagePositionItem
+
+    async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        if file.filename == "position-1.png":
+            return [ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100)]
+        return [ImagePositionItem(ticker="SSI", average_cost=26.1, quantity=100)]
+
+    monkeypatch.setattr(trading_api, "extract_positions_from_image", fake_extract_positions_from_image)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
+
+    response = await client.post(
+        "/api/v1/trading/import",
+        files=[
+            ("file", ("position-1.png", b"fake-image-1", "image/png")),
+            ("file", ("position-2.png", b"fake-image-2", "image/png")),
+        ],
+        data={
+            "broker_id": "vpbanks",
+            "account_label": "Conflict Account",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 0
+    assert data["updated_count"] == 0
+    assert data["skipped_count"] == 1
+    assert data["imported_positions"] == []
+    assert data["import_outcomes"] == [
+        {
+            "ticker": "SSI",
+            "quantity": None,
+            "average_entry_cost": None,
+            "status": "skipped",
+            "reason": "Conflicting values for this ticker across screenshots",
+        }
+    ]

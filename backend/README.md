@@ -80,9 +80,12 @@ SYNC_RATE_LIMIT_FIXED_WAIT_SECONDS=30
 SYNC_RATE_LIMIT_MAX_WAIT_SECONDS=1200
 SYNC_ADMIN_EMAILS=["admin@example.com"]
 
-LLM_PROVIDERS=[]
+LLM_PROVIDERS='[]'
+LLM_TASK_CONFIG='{}'
 LLM_REQUEST_TIMEOUT_SECONDS=30
 ```
+
+`LLM_PROVIDERS` is the shared provider catalog. `LLM_TASK_CONFIG` optionally maps task names such as `position_image_extraction`, `position_table_extraction`, `news_article_summary`, `news_article_classification`, and `news_blocked_label_compilation` to ordered provider/model fallback chains. If a task is missing, the backend uses `default`; if `default` is also missing, it falls back to the legacy `LLM_PROVIDERS` list order.
 
 ### `settings.yaml`
 
