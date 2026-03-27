@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON, Boolean, ForeignKey
+from sqlalchemy import Column, String, Integer, Float, BigInteger, Date, DateTime, UniqueConstraint, Index, JSON, Boolean, ForeignKey, Text
 from datetime import datetime
 from app.db.database import Base
 
@@ -335,4 +335,199 @@ class ScheduledSyncJobRun(Base):
     __table_args__ = (
         Index("ix_scheduled_sync_job_runs_status_scheduled_for", "status", "scheduled_for"),
         Index("ix_scheduled_sync_job_runs_job_scheduled_for", "job_id", "scheduled_for"),
+    )
+
+
+class NewsSite(Base):
+    """Normalized site/domain metadata for RSS and crawl news sources."""
+    __tablename__ = "news_sites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String(255), nullable=False)
+    homepage_url = Column(String(1000), nullable=False)
+    display_name = Column(String(255), nullable=True)
+    is_public = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("domain", "homepage_url", name="uq_news_site_domain_homepage"),
+        Index("ix_news_sites_domain", "domain"),
+        Index("ix_news_sites_public", "is_public"),
+    )
+
+
+class NewsSiteFeed(Base):
+    """Discovered or manually entered RSS/Atom feed for a site."""
+    __tablename__ = "news_site_feeds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("news_sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    feed_url = Column(String(1000), nullable=False)
+    title = Column(String(255), nullable=True)
+    kind = Column(String(20), nullable=False, default="rss")
+    discovery_method = Column(String(20), nullable=False, default="manual")
+    validation_status = Column(String(20), nullable=False, default="pending")
+    validation_error = Column(String(1000), nullable=True)
+    is_public = Column(Boolean, nullable=False, default=False)
+    poll_interval_minutes = Column(Integer, nullable=False, default=30)
+    last_polled_at = Column(DateTime, nullable=True)
+    next_poll_at = Column(DateTime, nullable=True)
+    last_success_at = Column(DateTime, nullable=True)
+    last_failure_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("feed_url", name="uq_news_site_feeds_feed_url"),
+        Index("ix_news_site_feeds_status_next_poll", "validation_status", "next_poll_at"),
+    )
+
+
+class NewsCrawlSource(Base):
+    """Static HTML crawl source configuration for a site/page."""
+    __tablename__ = "news_crawl_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("news_sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    listing_url = Column(String(1000), nullable=False)
+    article_link_selector = Column(String(255), nullable=False)
+    content_selector = Column(String(255), nullable=False)
+    excerpt_selector = Column(String(255), nullable=True)
+    pagination_config = Column(JSON, nullable=True)
+    validation_status = Column(String(20), nullable=False, default="pending")
+    validation_error = Column(String(1000), nullable=True)
+    is_public = Column(Boolean, nullable=False, default=False)
+    poll_interval_minutes = Column(Integer, nullable=False, default=30)
+    last_polled_at = Column(DateTime, nullable=True)
+    next_poll_at = Column(DateTime, nullable=True)
+    last_success_at = Column(DateTime, nullable=True)
+    last_failure_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("listing_url", "article_link_selector", name="uq_news_crawl_source_listing_selector"),
+        Index("ix_news_crawl_sources_status_next_poll", "validation_status", "next_poll_at"),
+    )
+
+
+class NewsSourceSubscription(Base):
+    """User subscription to a private RSS feed or crawl source."""
+    __tablename__ = "news_source_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_feed_id = Column(Integer, ForeignKey("news_site_feeds.id", ondelete="CASCADE"), nullable=True, index=True)
+    crawl_source_id = Column(Integer, ForeignKey("news_crawl_sources.id", ondelete="CASCADE"), nullable=True, index=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "site_feed_id", name="uq_news_subscription_user_feed"),
+        UniqueConstraint("user_id", "crawl_source_id", name="uq_news_subscription_user_crawl"),
+        Index("ix_news_source_subscriptions_user_enabled", "user_id", "enabled"),
+    )
+
+
+class NewsArticle(Base):
+    """Canonical article content deduped across feeds and sources."""
+    __tablename__ = "news_articles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    canonical_url = Column(String(1000), nullable=False)
+    title = Column(String(500), nullable=False)
+    excerpt = Column(Text, nullable=True)
+    llm_summary = Column(Text, nullable=True)
+    content_text = Column(Text, nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    language = Column(String(20), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    image_url = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("canonical_url", name="uq_news_articles_canonical_url"),
+        Index("ix_news_articles_published_at", "published_at"),
+        Index("ix_news_articles_content_hash", "content_hash"),
+    )
+
+
+class NewsArticleSource(Base):
+    """Mapping from canonical article to its origin feeds or crawl sources."""
+    __tablename__ = "news_article_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    article_id = Column(Integer, ForeignKey("news_articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_feed_id = Column(Integer, ForeignKey("news_site_feeds.id", ondelete="CASCADE"), nullable=True, index=True)
+    crawl_source_id = Column(Integer, ForeignKey("news_crawl_sources.id", ondelete="CASCADE"), nullable=True, index=True)
+    article_url = Column(String(1000), nullable=False)
+    discovered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("article_id", "site_feed_id", name="uq_news_article_source_article_feed"),
+        UniqueConstraint("article_id", "crawl_source_id", name="uq_news_article_source_article_crawl"),
+    )
+
+
+class NewsArticleSemantic(Base):
+    """Stored semantic labels for a news article."""
+    __tablename__ = "news_article_semantics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    article_id = Column(Integer, ForeignKey("news_articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    topics = Column(JSON, nullable=False, default=list)
+    tickers = Column(JSON, nullable=False, default=list)
+    sectors = Column(JSON, nullable=False, default=list)
+    importance = Column(String(20), nullable=True)
+    sentiment = Column(String(20), nullable=True)
+    raw_payload = Column(JSON, nullable=False, default=dict)
+    classified_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("article_id", name="uq_news_article_semantics_article_id"),
+        Index("ix_news_article_semantics_importance", "importance"),
+        Index("ix_news_article_semantics_sentiment", "sentiment"),
+    )
+
+
+class NewsUserPreference(Base):
+    """Per-user topic-block profile for personalized feed filtering."""
+    __tablename__ = "news_user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blocked_topics_text = Column(Text, nullable=True)
+    blocked_labels = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_news_user_preferences_user_id"),
+    )
+
+
+class NewsIngestionRun(Base):
+    """Execution log for a feed or crawl source ingestion attempt."""
+    __tablename__ = "news_ingestion_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False)
+    site_feed_id = Column(Integer, ForeignKey("news_site_feeds.id", ondelete="CASCADE"), nullable=True, index=True)
+    crawl_source_id = Column(Integer, ForeignKey("news_crawl_sources.id", ondelete="CASCADE"), nullable=True, index=True)
+    status = Column(String(20), nullable=False)
+    fetched_count = Column(Integer, nullable=False, default=0)
+    stored_count = Column(Integer, nullable=False, default=0)
+    filtered_count = Column(Integer, nullable=False, default=0)
+    error = Column(String(1000), nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_news_ingestion_runs_status_started_at", "status", "started_at"),
     )

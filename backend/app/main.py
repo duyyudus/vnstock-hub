@@ -29,9 +29,11 @@ from app.api.v1.bookmarks import router as bookmarks_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.trading import router as trading_router
 from app.api.v1.info import router as info_router
+from app.api.v1.news import router as news_router
 from app.db.database import engine, Base
 import app.db.models  # Ensure models are registered
 from app.services.vnstock_service import vnstock_service
+from app.services.news import news_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,8 +51,18 @@ async def lifespan(app: FastAPI):
         await vnstock_service.start_background_tasks()
     except Exception as e:
         logger.error(f"Error starting background workers: {e}")
+
+    try:
+        await news_service.start_background_tasks()
+    except Exception as e:
+        logger.error(f"Error starting news workers: {e}")
         
     yield
+
+    try:
+        await news_service.stop_background_tasks()
+    except Exception as e:
+        logger.error(f"Error stopping news workers: {e}")
 
     try:
         await vnstock_service.stop_background_tasks()
@@ -92,6 +104,7 @@ app.include_router(bookmarks_router, prefix=settings.api_v1_prefix)
 app.include_router(portfolio_router, prefix=settings.api_v1_prefix)
 app.include_router(trading_router, prefix=settings.api_v1_prefix)
 app.include_router(info_router, prefix=settings.api_v1_prefix)
+app.include_router(news_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")

@@ -12,11 +12,13 @@ import { ThemeSelector } from './components/ThemeSelector';
 import { useAuthUser } from '../auth/useAuthUser';
 import { PortfolioTab } from './portfolio/PortfolioTab';
 import { TradingTab } from './trading/TradingTab';
+import { NewsTab } from './news/NewsTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
     { id: 'indices', label: 'Indices' },
     { id: 'screeners', label: 'Screeners' },
+    { id: 'news', label: 'News' },
     { id: 'funds', label: 'Funds' },
     { id: 'portfolio', label: 'Portfolio' },
     { id: 'trading', label: 'Trading' },
@@ -259,6 +261,8 @@ export const Dashboard: React.FC = () => {
                 return <IndicesTab indices={indices} />;
             case 'screeners':
                 return <ScreenersTab indices={indices} />;
+            case 'news':
+                return <NewsTab />;
             case 'funds':
                 return <FundsTab />;
             case 'portfolio':

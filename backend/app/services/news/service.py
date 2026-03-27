@@ -1,0 +1,1504 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import httpx
+from sqlalchemy import and_, delete, or_, select
+import yaml
+
+from app.core.config import settings
+from app.db.database import async_session
+from app.db.models import (
+    NewsArticle,
+    NewsArticleSemantic,
+    NewsArticleSource,
+    NewsCrawlSource,
+    NewsIngestionRun,
+    NewsSite,
+    NewsSiteFeed,
+    NewsSourceSubscription,
+    NewsUserPreference,
+)
+
+from .discovery import (
+    discover_crawl_listings,
+    discover_rss_feeds,
+    extract_article_payload,
+    extract_domain,
+    extract_links_with_selector,
+    fetch_text,
+    normalize_url,
+    parse_feed_entries,
+    validate_crawl_source,
+    validate_feed,
+)
+from .semantics import classify_article, compile_blocked_labels, matches_blocked_labels, summarize_article
+
+
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+UTC = timezone.utc
+NEWS_STALE_RUN_MINUTES = 30
+CONTENT_REPAIR_MARKERS = (
+    "từ khóa:",
+    "đọc thêm",
+    "bài viết mới nhất",
+    "đọc nhiều nhất",
+    "askonomy",
+    "trợ lý thông tin kinh tế",
+)
+ALWAYS_REFRESH_DETAIL_DOMAINS = {"vneconomy.vn"}
+LEGACY_FEED_TITLE_WORD_THRESHOLD = 8
+LEGACY_FEED_TITLE_LENGTH_THRESHOLD = 60
+
+
+def utc_now() -> datetime:
+    return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def utc_naive_to_local_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    aware = value.replace(tzinfo=UTC).astimezone(VN_TZ)
+    return aware.isoformat(timespec="seconds")
+
+
+class NewsIngestionService:
+    def __init__(self) -> None:
+        self._loop_task: asyncio.Task | None = None
+        self._startup_lock = asyncio.Lock()
+        self._client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+
+    async def start_background_tasks(self) -> None:
+        async with self._startup_lock:
+            if self._client.is_closed:
+                self._client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+            await self.reconcile_stale_runs()
+            await self.ensure_public_sources()
+            if not settings.news_ingestion_enabled:
+                return
+            if self._loop_task and not self._loop_task.done():
+                return
+            self._loop_task = asyncio.create_task(self._run_loop())
+
+    async def stop_background_tasks(self) -> None:
+        if self._loop_task and not self._loop_task.done():
+            self._loop_task.cancel()
+            await asyncio.gather(self._loop_task, return_exceptions=True)
+        self._loop_task = None
+        await self._client.aclose()
+
+    async def ensure_public_sources(self) -> None:
+        config_path = Path(settings.news_sources_yaml_path)
+        if not config_path.exists():
+            return
+
+        with config_path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+        public_sources = payload.get("public_sources") or []
+        async with async_session() as session:
+            for site_payload in public_sources:
+                homepage_url = normalize_url(str(site_payload.get("homepage_url") or "").strip())
+                if not homepage_url:
+                    continue
+                display_name = str(site_payload.get("display_name") or "").strip() or None
+                site = await self._get_or_create_site(
+                    session,
+                    homepage_url=homepage_url,
+                    display_name=display_name,
+                    is_public=True,
+                )
+                for feed_payload in site_payload.get("feeds") or []:
+                    feed_url = normalize_url(str(feed_payload.get("feed_url") or "").strip())
+                    if not feed_url:
+                        continue
+                    await self._get_or_create_feed(
+                        session,
+                        site_id=site.id,
+                        feed_url=feed_url,
+                        title=str(feed_payload.get("title") or "").strip() or display_name,
+                        kind=str(feed_payload.get("kind") or "rss"),
+                        discovery_method="seed",
+                        validation_status="valid",
+                        is_public=True,
+                        poll_interval_minutes=int(
+                            feed_payload.get("poll_interval_minutes") or self.get_default_poll_interval_minutes()
+                        ),
+                    )
+            await session.commit()
+
+    async def normalize_legacy_rss_titles(self) -> int:
+        async with async_session() as session:
+            rows = (
+                await session.execute(
+                    select(NewsSiteFeed, NewsSite)
+                    .join(NewsSite, NewsSite.id == NewsSiteFeed.site_id)
+                    .order_by(NewsSiteFeed.id.asc())
+                )
+            ).all()
+            changed = False
+            changed_count = 0
+            for feed, site in rows:
+                if not self._should_normalize_legacy_feed_title(feed.title, site):
+                    continue
+                feed.title = site.domain
+                changed = True
+                changed_count += 1
+            if changed:
+                await session.commit()
+            return changed_count
+
+    def get_default_poll_interval_minutes(self) -> int:
+        payload = self._load_app_settings_yaml()
+        news_settings = payload.get("news")
+        if isinstance(news_settings, dict):
+            value = news_settings.get("default_poll_interval_minutes")
+            try:
+                if value is not None:
+                    return max(5, int(value))
+            except (TypeError, ValueError):
+                pass
+        return int(settings.news_default_poll_interval_minutes)
+
+    def get_admin_config(self) -> dict[str, Any]:
+        return {
+            "default_poll_interval_minutes": self.get_default_poll_interval_minutes(),
+        }
+
+    def update_admin_config(self, *, default_poll_interval_minutes: int | None = None) -> dict[str, Any]:
+        payload = self._load_app_settings_yaml()
+        news_settings = payload.get("news")
+        if not isinstance(news_settings, dict):
+            news_settings = {}
+        if default_poll_interval_minutes is not None:
+            news_settings["default_poll_interval_minutes"] = max(5, int(default_poll_interval_minutes))
+        payload["news"] = news_settings
+        self._write_app_settings_yaml(payload)
+        return self.get_admin_config()
+
+    async def apply_default_poll_interval_to_existing_sources(self) -> int:
+        default_interval = self.get_default_poll_interval_minutes()
+        now = utc_now()
+        changed_count = 0
+
+        async with async_session() as session:
+            feeds = (await session.execute(select(NewsSiteFeed))).scalars().all()
+            for feed in feeds:
+                if int(feed.poll_interval_minutes or 0) == default_interval:
+                    continue
+                feed.poll_interval_minutes = default_interval
+                feed.next_poll_at = now
+                changed_count += 1
+
+            crawl_sources = (await session.execute(select(NewsCrawlSource))).scalars().all()
+            for source in crawl_sources:
+                if int(source.poll_interval_minutes or 0) == default_interval:
+                    continue
+                source.poll_interval_minutes = default_interval
+                source.next_poll_at = now
+                changed_count += 1
+
+            if changed_count:
+                await session.commit()
+
+        return changed_count
+
+    async def discover_rss_feeds(self, homepage_url: str) -> list[dict[str, Any]]:
+        return await discover_rss_feeds(self._client, homepage_url)
+
+    async def discover_crawl_listings(self, homepage_url: str) -> list[dict[str, Any]]:
+        return await discover_crawl_listings(self._client, homepage_url)
+
+    async def validate_rss_feed(self, feed_url: str, site_url: str | None = None) -> dict[str, Any]:
+        return await validate_feed(self._client, feed_url, site_url=site_url)
+
+    async def validate_crawl_source(
+        self,
+        *,
+        listing_url: str,
+        article_link_selector: str,
+        content_selector: str,
+        excerpt_selector: str | None = None,
+    ) -> dict[str, Any]:
+        return await validate_crawl_source(
+            self._client,
+            listing_url=listing_url,
+            article_link_selector=article_link_selector,
+            content_selector=content_selector,
+            excerpt_selector=excerpt_selector,
+        )
+
+    async def create_rss_source(
+        self,
+        *,
+        user_id: int,
+        feed_url: str,
+        site_url: str | None = None,
+        poll_interval_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        validated = await self.validate_rss_feed(feed_url, site_url=site_url)
+        homepage_url = normalize_url(site_url or validated.get("site_url") or feed_url)
+        async with async_session() as session:
+            site = await self._get_or_create_site(
+                session,
+                homepage_url=homepage_url,
+                display_name=extract_domain(homepage_url),
+                is_public=False,
+            )
+            feed = await self._get_or_create_feed(
+                session,
+                site_id=site.id,
+                feed_url=validated["feed_url"],
+                title=validated.get("feed_title") or extract_domain(homepage_url),
+                kind=validated.get("kind") or "rss",
+                discovery_method="manual",
+                validation_status="valid",
+                is_public=False,
+                poll_interval_minutes=poll_interval_minutes or self.get_default_poll_interval_minutes(),
+            )
+            await self._upsert_subscription(session, user_id=user_id, site_feed_id=feed.id, crawl_source_id=None)
+            await session.commit()
+            return await self._serialize_feed_source(session, feed.id, user_id=user_id)
+
+    async def create_crawl_source(
+        self,
+        *,
+        user_id: int,
+        listing_url: str,
+        article_link_selector: str,
+        content_selector: str,
+        excerpt_selector: str | None = None,
+        pagination_config: dict[str, Any] | None = None,
+        poll_interval_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        await self.validate_crawl_source(
+            listing_url=listing_url,
+            article_link_selector=article_link_selector,
+            content_selector=content_selector,
+            excerpt_selector=excerpt_selector,
+        )
+        normalized_listing_url = normalize_url(listing_url)
+        homepage_url = f"{httpx.URL(normalized_listing_url).scheme}://{httpx.URL(normalized_listing_url).host}"
+        async with async_session() as session:
+            site = await self._get_or_create_site(
+                session,
+                homepage_url=homepage_url,
+                display_name=extract_domain(homepage_url),
+                is_public=False,
+            )
+            source = await self._get_or_create_crawl_source(
+                session,
+                site_id=site.id,
+                listing_url=normalized_listing_url,
+                article_link_selector=article_link_selector,
+                content_selector=content_selector,
+                excerpt_selector=excerpt_selector,
+                pagination_config=pagination_config,
+                validation_status="valid",
+                is_public=False,
+                poll_interval_minutes=poll_interval_minutes or self.get_default_poll_interval_minutes(),
+            )
+            await self._upsert_subscription(session, user_id=user_id, site_feed_id=None, crawl_source_id=source.id)
+            await session.commit()
+            return await self._serialize_crawl_source(session, source.id, user_id=user_id)
+
+    async def list_user_sources(self, user_id: int) -> list[dict[str, Any]]:
+        async with async_session() as session:
+            feed_rows = (
+                await session.execute(
+                    select(NewsSourceSubscription)
+                    .where(
+                        NewsSourceSubscription.user_id == user_id,
+                        NewsSourceSubscription.site_feed_id.is_not(None),
+                    )
+                    .order_by(NewsSourceSubscription.id.asc())
+                )
+            ).scalars().all()
+            crawl_rows = (
+                await session.execute(
+                    select(NewsSourceSubscription)
+                    .where(
+                        NewsSourceSubscription.user_id == user_id,
+                        NewsSourceSubscription.crawl_source_id.is_not(None),
+                    )
+                    .order_by(NewsSourceSubscription.id.asc())
+                )
+            ).scalars().all()
+            items: list[dict[str, Any]] = []
+            for row in feed_rows:
+                items.append(await self._serialize_feed_source(session, int(row.site_feed_id), user_id=user_id))
+            for row in crawl_rows:
+                items.append(await self._serialize_crawl_source(session, int(row.crawl_source_id), user_id=user_id))
+            return items
+
+    async def get_admin_status(self) -> dict[str, Any]:
+        await self.reconcile_stale_runs()
+        async with async_session() as session:
+            site_rows = (await session.execute(select(NewsSite).order_by(NewsSite.id.asc()))).scalars().all()
+            feed_rows = (await session.execute(select(NewsSiteFeed).order_by(NewsSiteFeed.id.asc()))).scalars().all()
+            crawl_rows = (await session.execute(select(NewsCrawlSource).order_by(NewsCrawlSource.id.asc()))).scalars().all()
+            article_rows = (await session.execute(select(NewsArticle))).scalars().all()
+            run_rows = (
+                await session.execute(
+                    select(NewsIngestionRun).order_by(NewsIngestionRun.started_at.desc(), NewsIngestionRun.id.desc()).limit(20)
+                )
+            ).scalars().all()
+            successful_runs = sum(1 for row in run_rows if row.status == "succeeded")
+            failed_runs = sum(1 for row in run_rows if row.status == "failed")
+            active_run_rows = (
+                await session.execute(
+                    select(NewsIngestionRun).where(
+                        NewsIngestionRun.status == "running",
+                        NewsIngestionRun.finished_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+
+            feed_items = [await self._serialize_feed_source_admin(session, row) for row in feed_rows]
+            crawl_items = [await self._serialize_crawl_source_admin(session, row) for row in crawl_rows]
+            runs = [await self._serialize_run_admin(session, row) for row in run_rows]
+
+            return {
+                "worker_running": bool(self._loop_task and not self._loop_task.done()),
+                "site_count": len(site_rows),
+                "rss_source_count": len(feed_items),
+                "crawl_source_count": len(crawl_items),
+                "article_count": len(article_rows),
+                "run_count": len(runs),
+                "active_run_count": len(active_run_rows),
+                "successful_run_count": successful_runs,
+                "failed_run_count": failed_runs,
+                "rss_sources": feed_items,
+                "crawl_sources": crawl_items,
+                "recent_runs": runs,
+            }
+
+    async def reconcile_stale_runs(self) -> int:
+        stale_before = utc_now() - timedelta(minutes=NEWS_STALE_RUN_MINUTES)
+        async with async_session() as session:
+            stale_runs = (
+                await session.execute(
+                    select(NewsIngestionRun).where(
+                        NewsIngestionRun.status == "running",
+                        NewsIngestionRun.finished_at.is_(None),
+                        NewsIngestionRun.started_at < stale_before,
+                    )
+                )
+            ).scalars().all()
+            if not stale_runs:
+                return 0
+
+            finished_at = utc_now()
+            for run in stale_runs:
+                run.status = "failed"
+                if not run.error:
+                    run.error = "Marked failed after stale running state exceeded monitoring threshold."
+                run.finished_at = finished_at
+
+            await session.commit()
+            return len(stale_runs)
+
+    async def trigger_admin_run(
+        self,
+        *,
+        source_type: str | None = None,
+        source_id: int | None = None,
+        public_only: bool = False,
+    ) -> dict[str, Any]:
+        if source_type and source_id is None:
+            raise ValueError("source_id is required when source_type is provided")
+
+        if source_type == "rss" and source_id is not None:
+            await self._ingest_feed(source_id)
+            return {"triggered": 1, "message": "RSS source ingested."}
+        if source_type == "crawl" and source_id is not None:
+            await self._ingest_crawl_source(source_id)
+            return {"triggered": 1, "message": "Crawl source ingested."}
+
+        async with async_session() as session:
+            feed_stmt = select(NewsSiteFeed).where(NewsSiteFeed.validation_status == "valid")
+            crawl_stmt = select(NewsCrawlSource).where(NewsCrawlSource.validation_status == "valid")
+            if public_only:
+                feed_stmt = feed_stmt.where(NewsSiteFeed.is_public.is_(True))
+                crawl_stmt = crawl_stmt.where(NewsCrawlSource.is_public.is_(True))
+            feed_ids = [row.id for row in (await session.execute(feed_stmt.order_by(NewsSiteFeed.id.asc()))).scalars().all()]
+            crawl_ids = [row.id for row in (await session.execute(crawl_stmt.order_by(NewsCrawlSource.id.asc()))).scalars().all()]
+
+        for feed_id in feed_ids:
+            await self._ingest_feed(feed_id)
+        for crawl_id in crawl_ids:
+            await self._ingest_crawl_source(crawl_id)
+
+        triggered = len(feed_ids) + len(crawl_ids)
+        scope = "public" if public_only else "all"
+        return {"triggered": triggered, "message": f"Triggered ingestion for {triggered} {scope} sources."}
+
+    async def update_source(
+        self,
+        *,
+        user_id: int,
+        source_type: str,
+        source_id: int,
+        enabled: bool | None = None,
+        title: str | None = None,
+        poll_interval_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        async with async_session() as session:
+            if source_type == "rss":
+                subscription = await self._get_subscription(session, user_id=user_id, site_feed_id=source_id)
+                if enabled is not None:
+                    subscription.enabled = enabled
+                if title is not None:
+                    feed = await session.get(NewsSiteFeed, source_id)
+                    if feed is None:
+                        raise ValueError("News source not found")
+                    feed.title = title.strip() or feed.title
+                if poll_interval_minutes is not None:
+                    feed = await session.get(NewsSiteFeed, source_id)
+                    if feed is None:
+                        raise ValueError("News source not found")
+                    feed.poll_interval_minutes = poll_interval_minutes
+                    feed.next_poll_at = utc_now()
+                await session.commit()
+                return await self._serialize_feed_source(session, source_id, user_id=user_id)
+
+            if source_type == "crawl":
+                subscription = await self._get_subscription(session, user_id=user_id, crawl_source_id=source_id)
+                if enabled is not None:
+                    subscription.enabled = enabled
+                if title is not None:
+                    source = await session.get(NewsCrawlSource, source_id)
+                    if source is None:
+                        raise ValueError("News source not found")
+                    site = await session.get(NewsSite, source.site_id)
+                    if site is not None and title.strip():
+                        site.display_name = title.strip()
+                if poll_interval_minutes is not None:
+                    source = await session.get(NewsCrawlSource, source_id)
+                    if source is None:
+                        raise ValueError("News source not found")
+                    source.poll_interval_minutes = poll_interval_minutes
+                    source.next_poll_at = utc_now()
+                await session.commit()
+                return await self._serialize_crawl_source(session, source_id, user_id=user_id)
+
+            raise ValueError("Unsupported source type")
+
+    async def delete_source(self, *, user_id: int, source_type: str, source_id: int) -> None:
+        async with async_session() as session:
+            if source_type == "rss":
+                subscription = await self._get_subscription(session, user_id=user_id, site_feed_id=source_id)
+            elif source_type == "crawl":
+                subscription = await self._get_subscription(session, user_id=user_id, crawl_source_id=source_id)
+            else:
+                raise ValueError("Unsupported source type")
+            await session.delete(subscription)
+            await session.commit()
+
+    async def get_user_preferences(self, user_id: int) -> dict[str, Any]:
+        async with async_session() as session:
+            preference = await self._get_or_create_preference(session, user_id)
+            await session.commit()
+            return self._serialize_preference(preference)
+
+    async def update_user_preferences(self, user_id: int, blocked_topics_text: str | None) -> dict[str, Any]:
+        blocked_labels = await compile_blocked_labels(blocked_topics_text)
+        async with async_session() as session:
+            preference = await self._get_or_create_preference(session, user_id)
+            preference.blocked_topics_text = blocked_topics_text.strip() if blocked_topics_text else None
+            preference.blocked_labels = blocked_labels
+            await session.commit()
+            await session.refresh(preference)
+            return self._serialize_preference(preference)
+
+    async def get_feed(
+        self,
+        *,
+        user_id: int | None,
+        source: str | None = None,
+        ticker: str | None = None,
+        topic: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        safe_limit = min(50, max(1, limit))
+        cursor_dt, cursor_id = self._parse_cursor(cursor)
+        async with async_session() as session:
+            blocked_labels = await self._load_blocked_labels(session, user_id)
+            stmt = select(NewsArticle).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
+            if date_from:
+                stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at >= date_from)
+            if date_to:
+                stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at <= date_to)
+            if cursor_dt is not None and cursor_id is not None:
+                stmt = stmt.where(
+                    or_(
+                        NewsArticle.published_at < cursor_dt,
+                        and_(NewsArticle.published_at == cursor_dt, NewsArticle.id < cursor_id),
+                    )
+                )
+            articles = (await session.execute(stmt.limit(max(100, safe_limit * 5)))).scalars().all()
+            semantic_map = await self._load_semantics_map(session, [article.id for article in articles])
+
+            items: list[dict[str, Any]] = []
+            for article in articles:
+                sources = await self._load_article_sources(session, article.id, user_id=user_id)
+                if not sources:
+                    continue
+                semantics = semantic_map.get(article.id)
+                topics = [str(item) for item in (semantics.topics if semantics else [])]
+                tickers = [str(item) for item in (semantics.tickers if semantics else [])]
+                if source and not any(source.lower() == str(item.get("domain") or "").lower() for item in sources):
+                    continue
+                if ticker and ticker.upper() not in {item.upper() for item in tickers}:
+                    continue
+                if topic and topic.lower() not in {item.lower() for item in topics}:
+                    continue
+                if matches_blocked_labels(
+                    blocked_labels,
+                    article_topics=topics,
+                    article_tickers=tickers,
+                    title=article.title,
+                    excerpt=article.excerpt,
+                    content_text=article.content_text,
+                ):
+                    continue
+                items.append(
+                    self._serialize_feed_item(
+                        article,
+                        sources=sources,
+                        semantics=semantics,
+                    )
+                )
+                if len(items) >= safe_limit:
+                    break
+            next_cursor = None
+            if items:
+                last = items[-1]
+                if last["published_at"]:
+                    next_cursor = f"{last['published_at']}|{last['id']}"
+            return {"items": items, "count": len(items), "next_cursor": next_cursor}
+
+    async def get_article_detail(self, article_id: int, *, user_id: int | None) -> dict[str, Any] | None:
+        async with async_session() as session:
+            article = await session.get(NewsArticle, article_id)
+            if article is None:
+                return None
+            sources = await self._load_article_sources(session, article_id, user_id=user_id)
+            if not sources:
+                return None
+            repaired = await self._repair_article_content_if_needed(session, article)
+            if repaired:
+                await self._upsert_article_semantics(session, article)
+                article.llm_summary = None
+                await session.commit()
+                await session.refresh(article)
+            semantic_map = await self._load_semantics_map(session, [article_id])
+            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id), include_content=True)
+
+    async def refresh_article_content(self, article_id: int, *, user_id: int | None) -> dict[str, Any] | None:
+        async with async_session() as session:
+            article = await session.get(NewsArticle, article_id)
+            if article is None:
+                return None
+            sources = await self._load_article_sources(session, article_id, user_id=user_id)
+            if not sources:
+                return None
+            repaired = await self._repair_article_content_if_needed(session, article, force_refresh=True)
+            await self._upsert_article_semantics(session, article)
+            if repaired:
+                article.llm_summary = None
+                await session.commit()
+                await session.refresh(article)
+            if not repaired and not article.content_text:
+                raise ValueError("Unable to refresh article content")
+            semantic_map = await self._load_semantics_map(session, [article_id])
+            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id), include_content=True)
+
+    async def generate_article_summary(
+        self,
+        article_id: int,
+        *,
+        user_id: int | None,
+        force_refresh: bool = False,
+    ) -> dict[str, Any] | None:
+        async with async_session() as session:
+            article = await session.get(NewsArticle, article_id)
+            if article is None:
+                return None
+            sources = await self._load_article_sources(session, article_id, user_id=user_id)
+            if not sources:
+                return None
+            if force_refresh or not article.llm_summary:
+                summary = await summarize_article(
+                    article.title,
+                    article.excerpt,
+                    article.content_text,
+                    language=article.language,
+                )
+                if not summary:
+                    raise ValueError("Unable to generate LLM summary for this article")
+                article.llm_summary = summary
+                await session.commit()
+                await session.refresh(article)
+            semantic_map = await self._load_semantics_map(session, [article_id])
+            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id))
+
+    async def _run_loop(self) -> None:
+        while True:
+            try:
+                await self._poll_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+            await asyncio.sleep(max(5.0, float(settings.news_poll_interval_seconds)))
+
+    async def _poll_once(self) -> None:
+        async with async_session() as session:
+            due_feeds = (
+                await session.execute(
+                    select(NewsSiteFeed)
+                    .outerjoin(
+                        NewsSourceSubscription,
+                        and_(
+                            NewsSourceSubscription.site_feed_id == NewsSiteFeed.id,
+                            NewsSourceSubscription.enabled.is_(True),
+                        ),
+                    )
+                    .where(
+                        NewsSiteFeed.validation_status == "valid",
+                        or_(NewsSiteFeed.is_public.is_(True), NewsSourceSubscription.id.is_not(None)),
+                        or_(NewsSiteFeed.next_poll_at.is_(None), NewsSiteFeed.next_poll_at <= utc_now()),
+                    )
+                    .order_by(NewsSiteFeed.next_poll_at.asc().nullsfirst(), NewsSiteFeed.id.asc())
+                    .limit(max(1, int(settings.news_ingestion_batch_size)))
+                )
+            ).scalars().unique().all()
+            due_crawls = (
+                await session.execute(
+                    select(NewsCrawlSource)
+                    .outerjoin(
+                        NewsSourceSubscription,
+                        and_(
+                            NewsSourceSubscription.crawl_source_id == NewsCrawlSource.id,
+                            NewsSourceSubscription.enabled.is_(True),
+                        ),
+                    )
+                    .where(
+                        NewsCrawlSource.validation_status == "valid",
+                        or_(NewsCrawlSource.is_public.is_(True), NewsSourceSubscription.id.is_not(None)),
+                        or_(NewsCrawlSource.next_poll_at.is_(None), NewsCrawlSource.next_poll_at <= utc_now()),
+                    )
+                    .order_by(NewsCrawlSource.next_poll_at.asc().nullsfirst(), NewsCrawlSource.id.asc())
+                    .limit(max(1, int(settings.news_ingestion_batch_size)))
+                )
+            ).scalars().unique().all()
+
+        for feed in due_feeds:
+            await self._ingest_feed(feed.id)
+        for source in due_crawls:
+            await self._ingest_crawl_source(source.id)
+
+    async def _ingest_feed(self, feed_id: int) -> None:
+        async with async_session() as session:
+            feed = await session.get(NewsSiteFeed, feed_id)
+            if feed is None:
+                return
+            run = NewsIngestionRun(source_type="rss", site_feed_id=feed.id, status="running", started_at=utc_now())
+            session.add(run)
+            await session.commit()
+            await session.refresh(run)
+
+            try:
+                feed_text = await fetch_text(self._client, feed.feed_url)
+                entries = parse_feed_entries(feed_text)
+                stored_count = 0
+                for entry in entries[:25]:
+                    stored_count += await self._store_article_candidate(
+                        session,
+                        source_type="rss",
+                        site_feed_id=feed.id,
+                        crawl_source_id=None,
+                        article_url=entry.link,
+                        title=entry.title,
+                        excerpt=entry.summary,
+                        published_at=entry.published_at,
+                    )
+                now = utc_now()
+                feed.last_polled_at = now
+                feed.last_success_at = now
+                feed.last_failure_at = None
+                feed.validation_error = None
+                feed.next_poll_at = now + timedelta(minutes=feed.poll_interval_minutes)
+                run.status = "succeeded"
+                run.fetched_count = len(entries[:25])
+                run.stored_count = stored_count
+                run.finished_at = now
+                await session.commit()
+            except Exception as exc:
+                now = utc_now()
+                feed.last_polled_at = now
+                feed.last_failure_at = now
+                feed.validation_error = str(exc)[:1000]
+                feed.next_poll_at = now + timedelta(minutes=feed.poll_interval_minutes)
+                run.status = "failed"
+                run.error = str(exc)[:1000]
+                run.finished_at = now
+                await session.commit()
+
+    async def _ingest_crawl_source(self, source_id: int) -> None:
+        async with async_session() as session:
+            source = await session.get(NewsCrawlSource, source_id)
+            if source is None:
+                return
+            run = NewsIngestionRun(source_type="crawl", crawl_source_id=source.id, status="running", started_at=utc_now())
+            session.add(run)
+            await session.commit()
+            await session.refresh(run)
+
+            try:
+                listing_html = await fetch_text(self._client, source.listing_url)
+                article_urls = extract_links_with_selector(source.listing_url, listing_html, source.article_link_selector)
+                stored_count = 0
+                for article_url in article_urls[:20]:
+                    html_text = await fetch_text(self._client, article_url)
+                    payload = extract_article_payload(
+                        article_url,
+                        html_text,
+                        content_selector=source.content_selector,
+                        excerpt_selector=source.excerpt_selector,
+                    )
+                    stored_count += await self._store_article_candidate(
+                        session,
+                        source_type="crawl",
+                        site_feed_id=None,
+                        crawl_source_id=source.id,
+                        article_url=payload["canonical_url"],
+                        title=payload["title"],
+                        excerpt=payload["excerpt"],
+                        published_at=payload["published_at"],
+                        content_text=payload["content_text"],
+                        language=payload["language"],
+                        image_url=payload["image_url"],
+                    )
+                now = utc_now()
+                source.last_polled_at = now
+                source.last_success_at = now
+                source.last_failure_at = None
+                source.validation_error = None
+                source.next_poll_at = now + timedelta(minutes=source.poll_interval_minutes)
+                run.status = "succeeded"
+                run.fetched_count = len(article_urls[:20])
+                run.stored_count = stored_count
+                run.finished_at = now
+                await session.commit()
+            except Exception as exc:
+                now = utc_now()
+                source.last_polled_at = now
+                source.last_failure_at = now
+                source.validation_error = str(exc)[:1000]
+                source.next_poll_at = now + timedelta(minutes=source.poll_interval_minutes)
+                run.status = "failed"
+                run.error = str(exc)[:1000]
+                run.finished_at = now
+                await session.commit()
+
+    async def _store_article_candidate(
+        self,
+        session,
+        *,
+        source_type: str,
+        site_feed_id: int | None,
+        crawl_source_id: int | None,
+        article_url: str,
+        title: str,
+        excerpt: str | None,
+        published_at: datetime | None,
+        content_text: str | None = None,
+        language: str | None = None,
+        image_url: str | None = None,
+    ) -> int:
+        normalized_url = normalize_url(article_url)
+        article_payload = {
+            "canonical_url": normalized_url,
+            "title": title.strip(),
+            "excerpt": excerpt.strip() if excerpt else None,
+            "content_text": content_text,
+            "published_at": published_at,
+            "language": language,
+            "image_url": image_url,
+        }
+        if content_text is None:
+            try:
+                html_text = await fetch_text(self._client, normalized_url)
+                extracted = extract_article_payload(normalized_url, html_text)
+                article_payload.update({key: value for key, value in extracted.items() if value is not None})
+            except Exception:
+                pass
+        article_hash = self._content_hash(
+            article_payload.get("title"),
+            article_payload.get("excerpt"),
+            article_payload.get("content_text"),
+        )
+        article_payload["content_hash"] = article_hash
+
+        article = (
+            await session.execute(select(NewsArticle).where(NewsArticle.canonical_url == article_payload["canonical_url"]))
+        ).scalar_one_or_none()
+        if article is None and article_hash:
+            article = (
+                await session.execute(select(NewsArticle).where(NewsArticle.content_hash == article_hash))
+            ).scalar_one_or_none()
+
+        should_classify = False
+        if article is None:
+            article = NewsArticle(**article_payload)
+            session.add(article)
+            await session.flush()
+            should_classify = True
+        else:
+            previous_hash = article.content_hash
+            for key, value in article_payload.items():
+                if value is not None:
+                    setattr(article, key, value)
+            should_classify = previous_hash != article.content_hash
+
+        mapping = await self._get_or_create_article_source(
+            session,
+            article_id=article.id,
+            site_feed_id=site_feed_id,
+            crawl_source_id=crawl_source_id,
+            article_url=normalized_url,
+        )
+        if mapping and should_classify:
+            await self._upsert_article_semantics(session, article)
+
+        await session.flush()
+        return 1
+
+    async def _get_or_create_site(
+        self,
+        session,
+        *,
+        homepage_url: str,
+        display_name: str | None,
+        is_public: bool,
+    ) -> NewsSite:
+        domain = extract_domain(homepage_url)
+        site = (
+            await session.execute(
+                select(NewsSite).where(NewsSite.domain == domain, NewsSite.homepage_url == homepage_url)
+            )
+        ).scalar_one_or_none()
+        if site is None:
+            site = NewsSite(
+                domain=domain,
+                homepage_url=homepage_url,
+                display_name=display_name,
+                is_public=is_public,
+            )
+            session.add(site)
+            await session.flush()
+        else:
+            site.is_public = site.is_public or is_public
+            if display_name and not site.display_name:
+                site.display_name = display_name
+        return site
+
+    async def _get_or_create_feed(
+        self,
+        session,
+        *,
+        site_id: int,
+        feed_url: str,
+        title: str | None,
+        kind: str,
+        discovery_method: str,
+        validation_status: str,
+        is_public: bool,
+        poll_interval_minutes: int,
+    ) -> NewsSiteFeed:
+        feed = (
+            await session.execute(select(NewsSiteFeed).where(NewsSiteFeed.feed_url == feed_url))
+        ).scalar_one_or_none()
+        if feed is None:
+            feed = NewsSiteFeed(
+                site_id=site_id,
+                feed_url=feed_url,
+                title=title,
+                kind=kind,
+                discovery_method=discovery_method,
+                validation_status=validation_status,
+                is_public=is_public,
+                poll_interval_minutes=poll_interval_minutes,
+                next_poll_at=utc_now(),
+            )
+            session.add(feed)
+            await session.flush()
+        else:
+            feed.site_id = site_id
+            feed.title = title or feed.title
+            feed.kind = kind or feed.kind
+            feed.discovery_method = discovery_method or feed.discovery_method
+            feed.validation_status = validation_status or feed.validation_status
+            feed.is_public = feed.is_public or is_public
+            feed.poll_interval_minutes = poll_interval_minutes or feed.poll_interval_minutes
+            if feed.next_poll_at is None:
+                feed.next_poll_at = utc_now()
+        return feed
+
+    async def _get_or_create_crawl_source(
+        self,
+        session,
+        *,
+        site_id: int,
+        listing_url: str,
+        article_link_selector: str,
+        content_selector: str,
+        excerpt_selector: str | None,
+        pagination_config: dict[str, Any] | None,
+        validation_status: str,
+        is_public: bool,
+        poll_interval_minutes: int,
+    ) -> NewsCrawlSource:
+        source = (
+            await session.execute(
+                select(NewsCrawlSource).where(
+                    NewsCrawlSource.listing_url == listing_url,
+                    NewsCrawlSource.article_link_selector == article_link_selector,
+                )
+            )
+        ).scalar_one_or_none()
+        if source is None:
+            source = NewsCrawlSource(
+                site_id=site_id,
+                listing_url=listing_url,
+                article_link_selector=article_link_selector,
+                content_selector=content_selector,
+                excerpt_selector=excerpt_selector,
+                pagination_config=pagination_config,
+                validation_status=validation_status,
+                is_public=is_public,
+                poll_interval_minutes=poll_interval_minutes,
+                next_poll_at=utc_now(),
+            )
+            session.add(source)
+            await session.flush()
+        else:
+            source.site_id = site_id
+            source.content_selector = content_selector
+            source.excerpt_selector = excerpt_selector
+            source.pagination_config = pagination_config
+            source.validation_status = validation_status
+            source.is_public = source.is_public or is_public
+            source.poll_interval_minutes = poll_interval_minutes or source.poll_interval_minutes
+            if source.next_poll_at is None:
+                source.next_poll_at = utc_now()
+        return source
+
+    async def _upsert_subscription(
+        self,
+        session,
+        *,
+        user_id: int,
+        site_feed_id: int | None,
+        crawl_source_id: int | None,
+    ) -> NewsSourceSubscription:
+        subscription = await self._get_existing_subscription(
+            session,
+            user_id=user_id,
+            site_feed_id=site_feed_id,
+            crawl_source_id=crawl_source_id,
+        )
+        if subscription is None:
+            subscription = NewsSourceSubscription(
+                user_id=user_id,
+                site_feed_id=site_feed_id,
+                crawl_source_id=crawl_source_id,
+                enabled=True,
+            )
+            session.add(subscription)
+            await session.flush()
+        else:
+            subscription.enabled = True
+        return subscription
+
+    async def _get_existing_subscription(
+        self,
+        session,
+        *,
+        user_id: int,
+        site_feed_id: int | None,
+        crawl_source_id: int | None,
+    ) -> NewsSourceSubscription | None:
+        stmt = select(NewsSourceSubscription).where(NewsSourceSubscription.user_id == user_id)
+        if site_feed_id is not None:
+            stmt = stmt.where(NewsSourceSubscription.site_feed_id == site_feed_id)
+        if crawl_source_id is not None:
+            stmt = stmt.where(NewsSourceSubscription.crawl_source_id == crawl_source_id)
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def _get_subscription(
+        self,
+        session,
+        *,
+        user_id: int,
+        site_feed_id: int | None = None,
+        crawl_source_id: int | None = None,
+    ) -> NewsSourceSubscription:
+        subscription = await self._get_existing_subscription(
+            session,
+            user_id=user_id,
+            site_feed_id=site_feed_id,
+            crawl_source_id=crawl_source_id,
+        )
+        if subscription is None:
+            raise ValueError("News source not found")
+        return subscription
+
+    async def _get_or_create_article_source(
+        self,
+        session,
+        *,
+        article_id: int,
+        site_feed_id: int | None,
+        crawl_source_id: int | None,
+        article_url: str,
+    ) -> NewsArticleSource:
+        stmt = select(NewsArticleSource).where(NewsArticleSource.article_id == article_id)
+        if site_feed_id is not None:
+            stmt = stmt.where(NewsArticleSource.site_feed_id == site_feed_id)
+        if crawl_source_id is not None:
+            stmt = stmt.where(NewsArticleSource.crawl_source_id == crawl_source_id)
+        mapping = (await session.execute(stmt)).scalar_one_or_none()
+        if mapping is None:
+            mapping = NewsArticleSource(
+                article_id=article_id,
+                site_feed_id=site_feed_id,
+                crawl_source_id=crawl_source_id,
+                article_url=article_url,
+            )
+            session.add(mapping)
+            await session.flush()
+        return mapping
+
+    async def _get_or_create_preference(self, session, user_id: int) -> NewsUserPreference:
+        preference = (
+            await session.execute(select(NewsUserPreference).where(NewsUserPreference.user_id == user_id))
+        ).scalar_one_or_none()
+        if preference is None:
+            preference = NewsUserPreference(user_id=user_id, blocked_labels=[])
+            session.add(preference)
+            await session.flush()
+        return preference
+
+    async def _load_blocked_labels(self, session, user_id: int | None) -> list[str]:
+        if user_id is None:
+            return []
+        preference = (
+            await session.execute(select(NewsUserPreference).where(NewsUserPreference.user_id == user_id))
+        ).scalar_one_or_none()
+        return [str(item) for item in (preference.blocked_labels if preference else [])]
+
+    async def _load_semantics_map(self, session, article_ids: list[int]) -> dict[int, NewsArticleSemantic]:
+        if not article_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(NewsArticleSemantic).where(NewsArticleSemantic.article_id.in_(article_ids))
+            )
+        ).scalars().all()
+        return {row.article_id: row for row in rows}
+
+    async def _load_article_sources(self, session, article_id: int, *, user_id: int | None) -> list[dict[str, Any]]:
+        sources: list[dict[str, Any]] = []
+
+        feed_stmt = (
+            select(NewsArticleSource, NewsSiteFeed, NewsSite)
+            .join(NewsSiteFeed, NewsSiteFeed.id == NewsArticleSource.site_feed_id)
+            .join(NewsSite, NewsSite.id == NewsSiteFeed.site_id)
+            .where(NewsArticleSource.article_id == article_id)
+        )
+        if user_id is None:
+            feed_stmt = feed_stmt.where(NewsSiteFeed.is_public.is_(True))
+        else:
+            feed_stmt = (
+                feed_stmt.outerjoin(
+                    NewsSourceSubscription,
+                    and_(
+                        NewsSourceSubscription.site_feed_id == NewsSiteFeed.id,
+                        NewsSourceSubscription.user_id == user_id,
+                        NewsSourceSubscription.enabled.is_(True),
+                    ),
+                )
+                .where(or_(NewsSiteFeed.is_public.is_(True), NewsSourceSubscription.id.is_not(None)))
+            )
+        feed_rows = (await session.execute(feed_stmt)).all()
+        for mapping, feed, site in feed_rows:
+            sources.append(
+                {
+                    "source_type": "rss",
+                    "source_id": feed.id,
+                    "label": site.domain if site else extract_domain(mapping.article_url),
+                    "domain": site.domain if site else extract_domain(mapping.article_url),
+                    "article_url": mapping.article_url,
+                    "is_public": bool(feed.is_public),
+                }
+            )
+
+        crawl_stmt = (
+            select(NewsArticleSource, NewsCrawlSource, NewsSite)
+            .join(NewsCrawlSource, NewsCrawlSource.id == NewsArticleSource.crawl_source_id)
+            .join(NewsSite, NewsSite.id == NewsCrawlSource.site_id)
+            .where(NewsArticleSource.article_id == article_id)
+        )
+        if user_id is None:
+            crawl_stmt = crawl_stmt.where(NewsCrawlSource.is_public.is_(True))
+        else:
+            crawl_stmt = (
+                crawl_stmt.outerjoin(
+                    NewsSourceSubscription,
+                    and_(
+                        NewsSourceSubscription.crawl_source_id == NewsCrawlSource.id,
+                        NewsSourceSubscription.user_id == user_id,
+                        NewsSourceSubscription.enabled.is_(True),
+                    ),
+                )
+                .where(or_(NewsCrawlSource.is_public.is_(True), NewsSourceSubscription.id.is_not(None)))
+            )
+        crawl_rows = (await session.execute(crawl_stmt)).all()
+        for mapping, source, site in crawl_rows:
+            sources.append(
+                {
+                    "source_type": "crawl",
+                    "source_id": source.id,
+                    "label": site.domain if site else extract_domain(mapping.article_url),
+                    "domain": site.domain if site else extract_domain(mapping.article_url),
+                    "article_url": mapping.article_url,
+                    "is_public": bool(source.is_public),
+                }
+            )
+        return sources
+
+    async def _serialize_feed_source_admin(self, session, feed: NewsSiteFeed) -> dict[str, Any]:
+        site = await session.get(NewsSite, feed.site_id)
+        subscription_count = len(
+            (
+                await session.execute(
+                    select(NewsSourceSubscription).where(NewsSourceSubscription.site_feed_id == feed.id)
+                )
+            ).scalars().all()
+        )
+        article_count = len(
+            (
+                await session.execute(
+                    select(NewsArticleSource).where(NewsArticleSource.site_feed_id == feed.id)
+                )
+            ).scalars().all()
+        )
+        return {
+            "kind": "rss",
+            "id": feed.id,
+            "site_id": site.id if site else None,
+            "site_name": site.display_name if site else None,
+            "site_url": site.homepage_url if site else None,
+            "domain": site.domain if site else None,
+            "feed_url": feed.feed_url,
+            "title": feed.title,
+            "discovery_method": feed.discovery_method,
+            "validation_status": feed.validation_status,
+            "validation_error": feed.validation_error,
+            "poll_interval_minutes": feed.poll_interval_minutes,
+            "last_polled_at": utc_naive_to_local_iso(feed.last_polled_at),
+            "next_poll_at": utc_naive_to_local_iso(feed.next_poll_at),
+            "last_success_at": utc_naive_to_local_iso(feed.last_success_at),
+            "last_failure_at": utc_naive_to_local_iso(feed.last_failure_at),
+            "is_public": feed.is_public,
+            "subscription_count": subscription_count,
+            "article_count": article_count,
+        }
+
+    async def _serialize_crawl_source_admin(self, session, source: NewsCrawlSource) -> dict[str, Any]:
+        site = await session.get(NewsSite, source.site_id)
+        subscription_count = len(
+            (
+                await session.execute(
+                    select(NewsSourceSubscription).where(NewsSourceSubscription.crawl_source_id == source.id)
+                )
+            ).scalars().all()
+        )
+        article_count = len(
+            (
+                await session.execute(
+                    select(NewsArticleSource).where(NewsArticleSource.crawl_source_id == source.id)
+                )
+            ).scalars().all()
+        )
+        return {
+            "kind": "crawl",
+            "id": source.id,
+            "site_id": site.id if site else None,
+            "site_name": site.display_name if site else None,
+            "site_url": site.homepage_url if site else None,
+            "domain": site.domain if site else None,
+            "listing_url": source.listing_url,
+            "article_link_selector": source.article_link_selector,
+            "content_selector": source.content_selector,
+            "excerpt_selector": source.excerpt_selector,
+            "pagination_config": source.pagination_config,
+            "validation_status": source.validation_status,
+            "validation_error": source.validation_error,
+            "poll_interval_minutes": source.poll_interval_minutes,
+            "last_polled_at": utc_naive_to_local_iso(source.last_polled_at),
+            "next_poll_at": utc_naive_to_local_iso(source.next_poll_at),
+            "last_success_at": utc_naive_to_local_iso(source.last_success_at),
+            "last_failure_at": utc_naive_to_local_iso(source.last_failure_at),
+            "is_public": source.is_public,
+            "subscription_count": subscription_count,
+            "article_count": article_count,
+        }
+
+    async def _serialize_run_admin(self, session, run: NewsIngestionRun) -> dict[str, Any]:
+        source_label = None
+        if run.site_feed_id is not None:
+            feed = await session.get(NewsSiteFeed, run.site_feed_id)
+            if feed is not None:
+                source_label = feed.title or feed.feed_url
+        elif run.crawl_source_id is not None:
+            source = await session.get(NewsCrawlSource, run.crawl_source_id)
+            if source is not None:
+                source_label = source.listing_url
+        return {
+            "id": run.id,
+            "source_type": run.source_type,
+            "site_feed_id": run.site_feed_id,
+            "crawl_source_id": run.crawl_source_id,
+            "source_label": source_label,
+            "status": run.status,
+            "fetched_count": run.fetched_count,
+            "stored_count": run.stored_count,
+            "filtered_count": run.filtered_count,
+            "error": run.error,
+            "started_at": utc_naive_to_local_iso(run.started_at),
+            "finished_at": utc_naive_to_local_iso(run.finished_at),
+        }
+
+    async def _serialize_feed_source(self, session, feed_id: int, *, user_id: int) -> dict[str, Any]:
+        feed = await session.get(NewsSiteFeed, feed_id)
+        if feed is None:
+            raise ValueError("News source not found")
+        site = await session.get(NewsSite, feed.site_id)
+        subscription = await self._get_subscription(session, user_id=user_id, site_feed_id=feed.id)
+        return {
+            "source_type": "rss",
+            "id": feed.id,
+            "site_id": site.id if site else None,
+            "site_name": site.display_name if site else None,
+            "site_url": site.homepage_url if site else None,
+            "domain": site.domain if site else None,
+            "feed_url": feed.feed_url,
+            "title": feed.title,
+            "kind": feed.kind,
+            "discovery_method": feed.discovery_method,
+            "validation_status": feed.validation_status,
+            "validation_error": feed.validation_error,
+            "enabled": subscription.enabled,
+            "poll_interval_minutes": feed.poll_interval_minutes,
+            "is_public": feed.is_public,
+            "last_success_at": utc_naive_to_local_iso(feed.last_success_at),
+            "last_failure_at": utc_naive_to_local_iso(feed.last_failure_at),
+            "created_at": utc_naive_to_local_iso(feed.created_at),
+            "updated_at": utc_naive_to_local_iso(feed.updated_at),
+        }
+
+    async def _serialize_crawl_source(self, session, source_id: int, *, user_id: int) -> dict[str, Any]:
+        source = await session.get(NewsCrawlSource, source_id)
+        if source is None:
+            raise ValueError("News source not found")
+        site = await session.get(NewsSite, source.site_id)
+        subscription = await self._get_subscription(session, user_id=user_id, crawl_source_id=source.id)
+        return {
+            "source_type": "crawl",
+            "id": source.id,
+            "site_id": site.id if site else None,
+            "site_name": site.display_name if site else None,
+            "site_url": site.homepage_url if site else None,
+            "domain": site.domain if site else None,
+            "listing_url": source.listing_url,
+            "article_link_selector": source.article_link_selector,
+            "content_selector": source.content_selector,
+            "excerpt_selector": source.excerpt_selector,
+            "pagination_config": source.pagination_config,
+            "validation_status": source.validation_status,
+            "validation_error": source.validation_error,
+            "enabled": subscription.enabled,
+            "poll_interval_minutes": source.poll_interval_minutes,
+            "is_public": source.is_public,
+            "last_success_at": utc_naive_to_local_iso(source.last_success_at),
+            "last_failure_at": utc_naive_to_local_iso(source.last_failure_at),
+            "created_at": utc_naive_to_local_iso(source.created_at),
+            "updated_at": utc_naive_to_local_iso(source.updated_at),
+        }
+
+    def _serialize_preference(self, preference: NewsUserPreference) -> dict[str, Any]:
+        return {
+            "blocked_topics_text": preference.blocked_topics_text,
+            "blocked_labels": [str(item) for item in (preference.blocked_labels or [])],
+            "updated_at": utc_naive_to_local_iso(preference.updated_at),
+        }
+
+    def _serialize_feed_item(
+        self,
+        article: NewsArticle,
+        *,
+        sources: list[dict[str, Any]],
+        semantics: NewsArticleSemantic | None,
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        payload = {
+            "id": article.id,
+            "title": article.title,
+            "excerpt": article.llm_summary or article.excerpt,
+            "original_excerpt": article.excerpt,
+            "llm_summary": article.llm_summary,
+            "published_at": article.published_at.isoformat() if article.published_at else None,
+            "canonical_url": article.canonical_url,
+            "image_url": article.image_url,
+            "language": article.language,
+            "source_labels": [item["label"] for item in sources],
+            "sources": sources,
+            "topics": [str(item) for item in (semantics.topics if semantics else [])],
+            "tickers": [str(item) for item in (semantics.tickers if semantics else [])],
+            "sectors": [str(item) for item in (semantics.sectors if semantics else [])],
+            "importance": semantics.importance if semantics else None,
+            "sentiment": semantics.sentiment if semantics else None,
+        }
+        if include_content:
+            payload["content_text"] = article.content_text
+        return payload
+
+    def _parse_cursor(self, cursor: str | None) -> tuple[datetime | None, int | None]:
+        if not cursor:
+            return None, None
+        try:
+            raw_dt, raw_id = cursor.split("|", 1)
+            return datetime.fromisoformat(raw_dt), int(raw_id)
+        except Exception:
+            return None, None
+
+    def _content_hash(self, title: str | None, excerpt: str | None, content_text: str | None) -> str | None:
+        text = "\n".join(part for part in [title or "", excerpt or "", content_text or ""] if part).strip()
+        if not text:
+            return None
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _load_app_settings_yaml(self) -> dict[str, Any]:
+        path = Path(settings.settings_yaml_path)
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _write_app_settings_yaml(self, payload: dict[str, Any]) -> None:
+        path = Path(settings.settings_yaml_path)
+        with path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, sort_keys=False, allow_unicode=True)
+
+    def _should_normalize_legacy_feed_title(self, title: str | None, site: NewsSite | None) -> bool:
+        if site is None:
+            return False
+        if not title or not title.strip():
+            return True
+
+        cleaned_title = title.strip()
+        lowered_title = cleaned_title.casefold()
+        domain = (site.domain or "").casefold()
+        display_name = (site.display_name or "").casefold()
+
+        if domain and domain in lowered_title:
+            return False
+        if display_name and display_name in lowered_title:
+            return False
+        if any(token in lowered_title for token in ("rss", "feed", "atom")):
+            return False
+
+        word_count = len(re.findall(r"\w+", cleaned_title, flags=re.UNICODE))
+        return word_count >= LEGACY_FEED_TITLE_WORD_THRESHOLD or len(cleaned_title) >= LEGACY_FEED_TITLE_LENGTH_THRESHOLD
+
+    def _should_repair_article_content(
+        self,
+        article: NewsArticle,
+    ) -> bool:
+        content_text = article.content_text
+        if not content_text:
+            return True
+        if extract_domain(article.canonical_url) in ALWAYS_REFRESH_DETAIL_DOMAINS:
+            return True
+        lowered = content_text.lower()
+        if any(marker in lowered for marker in CONTENT_REPAIR_MARKERS):
+            return True
+
+        title_words = {
+            token
+            for token in re.findall(r"\w+", (article.title or "").lower(), flags=re.UNICODE)
+            if len(token) >= 4
+        }
+        content_words = {
+            token
+            for token in re.findall(r"\w+", lowered, flags=re.UNICODE)
+            if len(token) >= 4
+        }
+        if title_words and len(title_words & content_words) <= 1 and len(content_text) < 2000:
+            return True
+        return False
+
+    async def _repair_article_content_if_needed(self, session, article: NewsArticle, *, force_refresh: bool = False) -> bool:
+        if not force_refresh and not self._should_repair_article_content(article):
+            return False
+        try:
+            html_text = await fetch_text(self._client, article.canonical_url)
+            payload = extract_article_payload(article.canonical_url, html_text)
+        except Exception:
+            return False
+
+        content_text = payload.get("content_text")
+        if not content_text:
+            return False
+        if content_text == article.content_text and payload.get("excerpt") == article.excerpt:
+            return force_refresh
+
+        article.excerpt = payload.get("excerpt") or article.excerpt
+        article.content_text = content_text
+        article.image_url = payload.get("image_url") or article.image_url
+        article.language = payload.get("language") or article.language
+        article.published_at = payload.get("published_at") or article.published_at
+        article.content_hash = self._content_hash(article.title, article.excerpt, article.content_text)
+        await session.commit()
+        await session.refresh(article)
+        return True
+
+    async def _upsert_article_semantics(self, session, article: NewsArticle) -> None:
+        semantics = await classify_article(article.title, article.excerpt, article.content_text)
+        semantic_row = (
+            await session.execute(select(NewsArticleSemantic).where(NewsArticleSemantic.article_id == article.id))
+        ).scalar_one_or_none()
+        if semantic_row is None:
+            semantic_row = NewsArticleSemantic(article_id=article.id)
+            session.add(semantic_row)
+        semantic_row.topics = semantics["topics"]
+        semantic_row.tickers = semantics["tickers"]
+        semantic_row.sectors = semantics["sectors"]
+        semantic_row.importance = semantics["importance"]
+        semantic_row.sentiment = semantics["sentiment"]
+        semantic_row.raw_payload = semantics["raw_payload"]
+        semantic_row.classified_at = utc_now()
+        await session.flush()

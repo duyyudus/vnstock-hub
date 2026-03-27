@@ -1,21 +1,25 @@
 # VNStock Hub
 
-VNStock Hub is a full-stack application for tracking and analyzing Vietnamese stock market data, mutual fund performance, and personal portfolios.
+VNStock Hub is a full-stack application for tracking and analyzing Vietnamese stock market data, mutual fund performance, personal portfolios, and curated market news.
 
 ## What the App Includes
 
 - Market dashboard for indices, industries, and ticker-level data.
+- Screeners for exploring index constituents and symbol-level metrics.
 - Fund analytics with performance, allocation, and risk-return visualizations.
+- News dashboard with public/default sources, private RSS or crawl sources, blocked-topic filtering, and on-demand LLM summaries.
 - User accounts with JWT authentication.
 - Bookmark groups for favorite stocks.
 - Portfolio tracking with CRUD, CSV workflows, and LLM-assisted import.
-- Admin control panel for running and monitoring background sync jobs.
+- Trading views with position tracking and P&L details for signed-in users.
+- Admin control panel for running and monitoring sync jobs, scheduler settings, and news ingestion.
 
 ## Repository Layout
 
 ```text
 vnstock-hub/
 ├── backend/     # FastAPI API service + async DB + sync workers
+├── docs/        # subsystem and implementation notes
 ├── frontend/    # React dashboard (Vite + TypeScript)
 ├── run-server   # helper script to start backend
 ├── run-ui       # helper script to start frontend
@@ -32,8 +36,13 @@ vnstock-hub/
   - stocks, funds, finance, company, history
   - sync workers for price, finance, and company data
   - rate-limit aware workflows and status reporting
+- Dedicated news subsystem in `app/services/news`:
+  - public source seeding from `backend/news_sources.yaml`
+  - RSS discovery, crawl-source validation, and background ingestion
+  - semantic classification, per-user topic blocking, and stored summaries
 - Additional domains:
-  - auth (`/auth`), bookmarks (`/bookmarks`), portfolio (`/portfolio`), sync admin (`/sync`)
+  - auth (`/auth`), bookmarks (`/bookmarks`), portfolio (`/portfolio`), trading (`/trading`), app info (`/info`), sync admin (`/sync`), news (`/news`)
+- App startup initializes both market sync workers and the news ingestion worker.
 
 ### Frontend (`frontend/`)
 
@@ -41,9 +50,12 @@ vnstock-hub/
 - Feature-based structure (`src/features`).
 - Dashboard tabs:
   - Indices (table/growth/comparison/risk-return views)
+  - Screeners (filterable symbol exploration)
+  - News (public feed, private source setup, semantic filtering, summaries)
   - Funds (performance + holdings + heatmaps)
   - Portfolio (authenticated users)
-- Admin page at `/admin` for sync operations.
+  - Trading (authenticated users)
+- Admin page at `/admin` for sync operations, scheduler controls, settings, and news monitoring.
 - Central API client in `src/api/stockApi.ts`.
 
 ## Quick Start
@@ -80,10 +92,20 @@ Or from repository root:
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
 API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
+SETTINGS_YAML_PATH=./settings.yaml
+NEWS_SOURCES_YAML_PATH=./news_sources.yaml
 VNSTOCK_API_KEY=
 JWT_SECRET_KEY=change-me
+LLM_PROVIDERS=[]
+LLM_REQUEST_TIMEOUT_SECONDS=30
 SYNC_ADMIN_EMAILS=["admin@example.com"]
+NEWS_INGESTION_ENABLED=true
+NEWS_POLL_INTERVAL_SECONDS=120
+NEWS_DEFAULT_POLL_INTERVAL_MINUTES=30
+NEWS_INGESTION_BATCH_SIZE=5
 ```
+
+`LLM_PROVIDERS` is shared by portfolio import and the news semantic/summarization flows. `NEWS_SOURCES_YAML_PATH` points to the seeded public news source pack loaded by the backend worker.
 
 ### Frontend (`frontend/.env`)
 
@@ -105,6 +127,14 @@ Frontend currently uses linting as the main static check:
 ```bash
 cd frontend
 npm run lint
+npm run build
+```
+
+Focused backend coverage for the new news subsystem lives in:
+
+```bash
+cd backend
+uv run pytest tests/test_news_api.py tests/test_news_service.py tests/test_news_semantics.py
 ```
 
 ## API Docs
@@ -149,5 +179,6 @@ uv run mkdocs build -f mkdocs.yml
 
 ## Module Docs
 
+- News subsystem v1: `docs/news_subsystem.md`
 - Backend details: `backend/README.md`
 - Frontend details: `frontend/README.md`

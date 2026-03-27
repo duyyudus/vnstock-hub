@@ -7,6 +7,30 @@ def test_stock_index_model_exists():
     assert StockIndex is not None
 
 
+def test_news_models_exist():
+    from app.db.models import (
+        NewsArticle,
+        NewsArticleSemantic,
+        NewsArticleSource,
+        NewsCrawlSource,
+        NewsIngestionRun,
+        NewsSite,
+        NewsSiteFeed,
+        NewsSourceSubscription,
+        NewsUserPreference,
+    )
+
+    assert NewsSite.__tablename__ == "news_sites"
+    assert NewsSiteFeed.__tablename__ == "news_site_feeds"
+    assert NewsCrawlSource.__tablename__ == "news_crawl_sources"
+    assert NewsSourceSubscription.__tablename__ == "news_source_subscriptions"
+    assert NewsArticle.__tablename__ == "news_articles"
+    assert NewsArticleSource.__tablename__ == "news_article_sources"
+    assert NewsArticleSemantic.__tablename__ == "news_article_semantics"
+    assert NewsUserPreference.__tablename__ == "news_user_preferences"
+    assert NewsIngestionRun.__tablename__ == "news_ingestion_runs"
+
+
 def test_daily_history_and_history_sync_models_expose_renamed_schema():
     from app.db.models import StockDailyHistory, StockHistorySyncState
 

@@ -12,12 +12,13 @@ import { getErrorMessage, parseSymbolsInput } from './adminUtils';
 import { CompanySyncTab } from './tabs/CompanySyncTab';
 import { FinanceSyncTab } from './tabs/FinanceSyncTab';
 import { HistorySyncTab } from './tabs/HistorySyncTab';
+import { NewsMonitoringTab } from './tabs/NewsMonitoringTab';
 import { SchedulerTab } from './tabs/SchedulerTab';
 import { SettingsTab } from './tabs/SettingsTab';
 
 const REFRESH_INTERVAL_MS = 5000;
 
-type AdminTab = 'settings' | 'price' | 'finance' | 'company' | 'scheduler';
+type AdminTab = 'settings' | 'price' | 'finance' | 'company' | 'scheduler' | 'news';
 type TransientJobType = 'price' | 'finance' | 'company';
 
 export const AdminPage: React.FC = () => {
@@ -397,6 +398,13 @@ export const AdminPage: React.FC = () => {
                     >
                         Scheduler
                     </button>
+                    <button
+                        role="tab"
+                        className={`tab ${activeTab === 'news' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('news')}
+                    >
+                        News
+                    </button>
                 </div>
 
                 {activeTab === 'settings' ? <SettingsTab /> : null}
@@ -489,6 +497,8 @@ export const AdminPage: React.FC = () => {
                 {activeTab === 'scheduler' ? (
                     <SchedulerTab indexOptions={indexOptions} />
                 ) : null}
+
+                {activeTab === 'news' ? <NewsMonitoringTab /> : null}
             </main>
         </div>
     );

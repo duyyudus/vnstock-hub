@@ -258,6 +258,32 @@ const buildStockRangeParams = (options?: StockListRangeParams): URLSearchParams 
     return params;
 };
 
+const buildNewsQueryParams = (options?: NewsFeedQuery): URLSearchParams => {
+    const params = new URLSearchParams();
+    if (options?.source) {
+        params.set('source', options.source);
+    }
+    if (options?.topic) {
+        params.set('topic', options.topic);
+    }
+    if (options?.ticker) {
+        params.set('ticker', options.ticker);
+    }
+    if (options?.from) {
+        params.set('from', options.from);
+    }
+    if (options?.to) {
+        params.set('to', options.to);
+    }
+    if (options?.cursor) {
+        params.set('cursor', options.cursor);
+    }
+    if (typeof options?.limit === 'number') {
+        params.set('limit', String(options.limit));
+    }
+    return params;
+};
+
 // App info
 export interface AppInfoResponse {
     backend_version: string;
@@ -584,6 +610,240 @@ export interface UpdateUserSettingsRequest {
     finance_export_category?: string | null;
 }
 
+export type NewsSourceKind = 'rss' | 'crawl';
+export type NewsDiscoveryMethod = 'homepage' | 'manual' | 'default_pack' | 'sitemap';
+export type NewsValidationStatus = 'pending' | 'valid' | 'invalid';
+
+export interface NewsSite {
+    id: number;
+    domain: string;
+    homepage_url: string;
+    display_name: string | null;
+    is_public: boolean;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface NewsSourceSummary {
+    id: number;
+    kind: NewsSourceKind;
+    title: string | null;
+    enabled: boolean;
+    validation_status: NewsValidationStatus;
+    last_validated_at: string | null;
+    last_error: string | null;
+    poll_interval_minutes: number;
+    site_name: string | null;
+    site_url: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface NewsRssSource extends NewsSourceSummary {
+    kind: 'rss';
+    feed_url: string;
+    discovery_method: NewsDiscoveryMethod;
+}
+
+export interface NewsCrawlSource extends NewsSourceSummary {
+    kind: 'crawl';
+    listing_url: string;
+    article_link_selector: string;
+    content_selector: string;
+    excerpt_selector: string | null;
+    pagination_selector: string | null;
+}
+
+export interface NewsSourceSubscription {
+    id: number;
+    user_id: number;
+    source_kind: NewsSourceKind;
+    source_id: number;
+    enabled: boolean;
+    source_title: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface NewsFeedItem {
+    id: number;
+    title: string;
+    excerpt: string | null;
+    original_excerpt?: string | null;
+    llm_summary: string | null;
+    canonical_url: string;
+    published_at: string | null;
+    language: string | null;
+    image_url: string | null;
+    source_labels: string[];
+    topics: string[];
+    tickers: string[];
+    sectors: string[];
+    importance: string | null;
+    sentiment: string | null;
+    source_title: string | null;
+    source_kind: NewsSourceKind | null;
+    is_filtered_for_user: boolean;
+}
+
+export interface NewsArticleDetail extends NewsFeedItem {
+    content_text: string | null;
+    source_urls: string[];
+}
+
+export interface NewsArticleSummaryResponse {
+    id: number;
+    excerpt: string | null;
+    llm_summary: string | null;
+}
+
+export interface NewsFeedResponse {
+    items: NewsFeedItem[];
+    count: number;
+    next_cursor: string | null;
+    is_personalized: boolean;
+}
+
+export interface NewsSourcesResponse {
+    sites: NewsSite[];
+    rss_sources: NewsRssSource[];
+    crawl_sources: NewsCrawlSource[];
+    subscriptions: NewsSourceSubscription[];
+}
+
+export interface NewsRssDiscoveryCandidate {
+    feed_url: string;
+    title: string | null;
+    site_url: string | null;
+    discovery_method: NewsDiscoveryMethod;
+    kind: 'rss' | 'atom';
+    validation_status: NewsValidationStatus;
+    category_hint: string | null;
+}
+
+export interface NewsCrawlDiscoveryCandidate {
+    listing_url: string;
+    title: string | null;
+    site_url: string | null;
+    discovery_method: NewsDiscoveryMethod;
+    category_hint: string | null;
+}
+
+export interface NewsRssDiscoveryResponse {
+    homepage_url: string;
+    site_title: string | null;
+    candidates: NewsRssDiscoveryCandidate[];
+    crawl_candidates: NewsCrawlDiscoveryCandidate[];
+}
+
+export interface NewsValidationResponse {
+    valid: boolean;
+    message: string;
+    sample_title: string | null;
+    sample_excerpt: string | null;
+    candidate_count: number | null;
+    suggestions: string[];
+}
+
+export interface NewsRssDiscoveryRequest {
+    homepage_url: string;
+}
+
+export interface NewsRssSourceCreateRequest {
+    feed_url: string;
+    site_url?: string | null;
+    homepage_url?: string | null;
+    title?: string | null;
+    enabled?: boolean;
+    poll_interval_minutes?: number;
+    discovery_method?: NewsDiscoveryMethod;
+}
+
+export interface NewsCrawlSourceCreateRequest {
+    listing_url: string;
+    article_link_selector: string;
+    content_selector: string;
+    excerpt_selector?: string | null;
+    pagination_selector?: string | null;
+    title?: string | null;
+    site_url?: string | null;
+    enabled?: boolean;
+    poll_interval_minutes?: number;
+}
+
+export interface NewsSourceUpdateRequest {
+    title?: string | null;
+    enabled?: boolean;
+    poll_interval_minutes?: number;
+}
+
+export interface NewsFeedQuery {
+    source?: string;
+    topic?: string;
+    ticker?: string;
+    from?: string;
+    to?: string;
+    cursor?: string;
+    limit?: number;
+}
+
+export interface NewsUserPreferences {
+    blocked_topics_text: string;
+    blocked_labels: string[];
+    updated_at: string | null;
+}
+
+export interface NewsUserPreferencesUpdateRequest {
+    blocked_topics_text: string;
+}
+
+export interface NewsMonitoringOverviewResponse {
+    total_sources?: number;
+    enabled_sources?: number;
+    valid_sources?: number;
+    invalid_sources?: number;
+    public_sources?: number;
+    private_sources?: number;
+    articles_total?: number;
+    articles_last_24h?: number;
+    active_runs?: number;
+    queue_size?: number;
+    last_run_at?: string | null;
+    last_run_status?: string | null;
+    last_run_error?: string | null;
+    updated_at?: string | null;
+}
+
+export interface NewsMonitoringRun {
+    id: number;
+    source_type: NewsSourceKind;
+    source_label: string | null;
+    status: string;
+    fetched_count: number;
+    stored_count: number;
+    filtered_count: number;
+    error: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+}
+
+export interface NewsMonitoringRunsResponse {
+    runs: NewsMonitoringRun[];
+    count: number;
+}
+
+export interface NewsMonitoringActionResponse {
+    started: boolean;
+    message: string;
+    queued_count?: number;
+    refreshed_count?: number;
+    timestamp?: string | null;
+}
+
+export interface NewsAdminConfig {
+    default_poll_interval_minutes: number;
+}
+
 // Portfolio types
 export interface PortfolioPosition {
     id: number;
@@ -888,6 +1148,131 @@ export const stockApi = {
 
     async updateUserSettings(payload: UpdateUserSettingsRequest): Promise<UserSettingsResponse> {
         const response = await apiClient.patch<UserSettingsResponse>('/auth/settings', payload);
+        return response.data;
+    },
+
+    async getNewsFeed(options?: NewsFeedQuery): Promise<NewsFeedResponse> {
+        const params = buildNewsQueryParams(options);
+        const query = params.toString();
+        const response = await apiClient.get<NewsFeedResponse>(`/news/feed${query ? `?${query}` : ''}`);
+        return response.data;
+    },
+
+    async getNewsArticle(articleId: number | string): Promise<NewsArticleDetail> {
+        const response = await apiClient.get<NewsArticleDetail>(`/news/articles/${articleId}`);
+        return response.data;
+    },
+
+    async refreshNewsArticleContent(articleId: number | string): Promise<NewsArticleDetail> {
+        const response = await apiClient.post<NewsArticleDetail>(`/news/articles/${articleId}/refresh-content`);
+        return response.data;
+    },
+
+    async summarizeNewsArticle(articleId: number | string, options?: { forceRefresh?: boolean }): Promise<NewsArticleSummaryResponse> {
+        const params = new URLSearchParams();
+        if (options?.forceRefresh) {
+            params.set('force_refresh', 'true');
+        }
+        const query = params.toString();
+        const response = await apiClient.post<NewsArticleSummaryResponse>(`/news/articles/${articleId}/summary${query ? `?${query}` : ''}`);
+        return response.data;
+    },
+
+    async discoverNewsRss(payload: NewsRssDiscoveryRequest): Promise<NewsRssDiscoveryResponse> {
+        const response = await apiClient.post<NewsRssDiscoveryResponse>('/news/rss/discover', payload);
+        return response.data;
+    },
+
+    async validateNewsRss(payload: NewsRssSourceCreateRequest): Promise<NewsValidationResponse> {
+        const response = await apiClient.post<NewsValidationResponse>('/news/rss/validate', payload);
+        return response.data;
+    },
+
+    async validateNewsCrawl(payload: NewsCrawlSourceCreateRequest): Promise<NewsValidationResponse> {
+        const response = await apiClient.post<NewsValidationResponse>('/news/crawl/validate', payload);
+        return response.data;
+    },
+
+    async getNewsSources(): Promise<NewsSourcesResponse> {
+        const response = await apiClient.get<NewsSourcesResponse>('/news/sources');
+        return response.data;
+    },
+
+    async createNewsRssSource(payload: NewsRssSourceCreateRequest): Promise<NewsRssSource> {
+        const response = await apiClient.post<NewsRssSource>('/news/sources/rss', payload);
+        return response.data;
+    },
+
+    async createNewsCrawlSource(payload: NewsCrawlSourceCreateRequest): Promise<NewsCrawlSource> {
+        const response = await apiClient.post<NewsCrawlSource>('/news/sources/crawl', payload);
+        return response.data;
+    },
+
+    async updateNewsSource(
+        sourceType: NewsSourceKind,
+        sourceId: number,
+        payload: NewsSourceUpdateRequest,
+    ): Promise<NewsSourceSummary> {
+        const response = await apiClient.patch<NewsSourceSummary>(`/news/sources/${sourceType}/${sourceId}`, payload);
+        return response.data;
+    },
+
+    async deleteNewsSource(sourceType: NewsSourceKind, sourceId: number): Promise<void> {
+        await apiClient.delete(`/news/sources/${sourceType}/${sourceId}`);
+    },
+
+    async getNewsPreferences(): Promise<NewsUserPreferences> {
+        const response = await apiClient.get<NewsUserPreferences>('/news/preferences');
+        return response.data;
+    },
+
+    async updateNewsPreferences(payload: NewsUserPreferencesUpdateRequest): Promise<NewsUserPreferences> {
+        const response = await apiClient.patch<NewsUserPreferences>('/news/preferences', payload);
+        return response.data;
+    },
+
+    async getNewsMonitoringOverview(): Promise<NewsMonitoringOverviewResponse> {
+        const response = await apiClient.get<NewsMonitoringOverviewResponse>('/news/admin/overview');
+        return response.data;
+    },
+
+    async getNewsMonitoringSources(): Promise<NewsSourcesResponse> {
+        const response = await apiClient.get<NewsSourcesResponse>('/news/admin/sources');
+        return response.data;
+    },
+
+    async getNewsMonitoringRuns(limit: number = 12): Promise<NewsMonitoringRunsResponse> {
+        const response = await apiClient.get<NewsMonitoringRunsResponse>(`/news/admin/runs?limit=${limit}`);
+        return response.data;
+    },
+
+    async getNewsAdminConfig(): Promise<NewsAdminConfig> {
+        const response = await apiClient.get<NewsAdminConfig>('/news/admin/config');
+        return response.data;
+    },
+
+    async updateNewsAdminConfig(payload: NewsAdminConfig): Promise<NewsAdminConfig> {
+        const response = await apiClient.patch<NewsAdminConfig>('/news/admin/config', payload);
+        return response.data;
+    },
+
+    async triggerNewsIngestion(): Promise<NewsMonitoringActionResponse> {
+        const response = await apiClient.post<NewsMonitoringActionResponse>('/news/admin/ingest');
+        return response.data;
+    },
+
+    async refreshNewsMonitoring(): Promise<NewsMonitoringActionResponse> {
+        const response = await apiClient.post<NewsMonitoringActionResponse>('/news/admin/refresh');
+        return response.data;
+    },
+
+    async repairNewsRssTitles(): Promise<NewsMonitoringActionResponse> {
+        const response = await apiClient.post<NewsMonitoringActionResponse>('/news/admin/repair-rss-titles');
+        return response.data;
+    },
+
+    async applyNewsDefaultPollIntervalToExistingSources(): Promise<NewsMonitoringActionResponse> {
+        const response = await apiClient.post<NewsMonitoringActionResponse>('/news/admin/apply-default-poll-interval');
         return response.data;
     },
 

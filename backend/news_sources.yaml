@@ -1,0 +1,16 @@
+public_sources:
+  - homepage_url: "https://cafef.vn"
+    display_name: "CafeF"
+    feeds:
+      - feed_url: "https://cafef.vn/thi-truong-chung-khoan.rss"
+        title: "CafeF - Thi truong chung khoan"
+        kind: "rss"
+        poll_interval_minutes: 30
+      - feed_url: "https://cafef.vn/doanh-nghiep.rss"
+        title: "CafeF - Doanh nghiep"
+        kind: "rss"
+        poll_interval_minutes: 30
+      - feed_url: "https://cafef.vn/tai-chinh-ngan-hang.rss"
+        title: "CafeF - Tai chinh ngan hang"
+        kind: "rss"
+        poll_interval_minutes: 30
