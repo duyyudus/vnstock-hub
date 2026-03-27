@@ -809,6 +809,62 @@ async def test_refresh_article_content_returns_updated_detail(db_session, monkey
 
 
 @pytest.mark.asyncio
+async def test_get_article_detail_prefers_display_topics_from_raw_payload(db_session):
+    site = NewsSite(
+        domain="cafef.vn",
+        homepage_url="https://cafef.vn",
+        display_name="CafeF",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://cafef.vn/rss",
+        title="CafeF RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    article = NewsArticle(
+        canonical_url="https://cafef.vn/example-topic-display.chn",
+        title="BID duoc mua manh",
+        excerpt="Tom tat",
+        content_text="Noi dung bai viet",
+        published_at=datetime(2026, 3, 27, 10, 0, 0),
+        language="vi",
+        content_hash="topic-display-hash",
+    )
+    db_session.add(article)
+    await db_session.flush()
+    db_session.add(NewsArticleSource(article_id=article.id, site_feed_id=feed.id, article_url=article.canonical_url))
+    db_session.add(
+        NewsArticleSemantic(
+            article_id=article.id,
+            topics=["phat_hanh_co_phieu_rieng_le", "tang_von_dieu_le_ngan_hang"],
+            tickers=["BID"],
+            sectors=["banking"],
+            importance="high",
+            sentiment="positive",
+            raw_payload={
+                "topics": ["phát hành cổ phiếu riêng lẻ", "tăng vốn điều lệ ngân hàng"],
+                "display_topics": ["phát hành cổ phiếu riêng lẻ", "tăng vốn điều lệ ngân hàng"],
+            },
+        )
+    )
+    await db_session.commit()
+
+    payload = await news_service.get_article_detail(article.id, user_id=None)
+
+    assert payload["topics"] == ["phát hành cổ phiếu riêng lẻ", "tăng vốn điều lệ ngân hàng"]
+
+
+@pytest.mark.asyncio
 async def test_get_article_detail_uses_site_domain_as_source_label(db_session):
     site = NewsSite(
         domain="cafef.vn",

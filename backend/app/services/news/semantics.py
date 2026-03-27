@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from typing import Any
+import unicodedata
 
 import httpx
 
@@ -20,7 +21,9 @@ from app.services.llm.llm_client import _build_chat_url, _extract_json_payload
 logger = logging.getLogger("vnstock_hub.news")
 PROVIDER_FAILURE_COOLDOWN_SECONDS = 300.0
 PROVIDER_CONFIGURATION_COOLDOWN_SECONDS = 1800.0
-ARTICLE_SUMMARY_MAX_CHARS = 600
+ARTICLE_SUMMARY_TARGET_MIN_WORDS = 70
+ARTICLE_SUMMARY_TARGET_MAX_WORDS = 90
+ARTICLE_SUMMARY_SOFT_MAX_WORDS = 120
 _provider_failure_until: dict[str, float] = {}
 _provider_last_success_at: dict[str, float] = {}
 PLACEHOLDER_PROVIDER_VALUES = {
@@ -65,12 +68,16 @@ HIGH_IMPORTANCE_KEYWORDS = (
     "default",
     "regulation",
 )
-TICKER_PATTERN = re.compile(r"\b[A-Z]{3,5}\b")
 BLOCKED_SPLIT_PATTERN = re.compile(r"[\n,;|]+")
 
 
+def _ascii_fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.replace("đ", "d").replace("Đ", "D"))
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
 def _normalize_label(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]+", "_", value.strip().lower())
+    cleaned = re.sub(r"[^a-z0-9]+", "_", _ascii_fold(value).strip().lower())
     return cleaned.strip("_")
 
 
@@ -81,6 +88,29 @@ def _normalize_labels(values: list[str]) -> list[str]:
         if cleaned and cleaned not in normalized:
             normalized.append(cleaned)
     return normalized
+
+
+def _normalize_display_label(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _display_labels(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = _normalize_display_label(str(value))
+        if not cleaned:
+            continue
+        dedupe_key = _normalize_label(cleaned) or cleaned.casefold()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_summary_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _provider_key(provider: dict[str, Any]) -> str:
@@ -209,16 +239,6 @@ def _heuristic_topics(text: str) -> list[str]:
     ]
     return _normalize_labels(topics)
 
-
-def _heuristic_tickers(text: str) -> list[str]:
-    candidates = {
-        ticker
-        for ticker in TICKER_PATTERN.findall(text)
-        if ticker not in {"THE", "AND", "FOR", "WITH", "FROM", "THIS", "THAT"}
-    }
-    return sorted(candidates)
-
-
 def _heuristic_sentiment(text: str) -> str:
     lowered = text.lower()
     if any(keyword in lowered for keyword in NEGATIVE_KEYWORDS):
@@ -240,13 +260,12 @@ def _heuristic_importance(text: str) -> str:
 async def classify_article(title: str, excerpt: str | None, content_text: str | None) -> dict[str, Any]:
     body = "\n\n".join(part for part in [title, excerpt or "", content_text or ""] if part).strip()
     heuristic_topics = _heuristic_topics(body)
-    heuristic_tickers = _heuristic_tickers(body)
     heuristic_sectors = _normalize_labels(
         [SECTOR_MAP[topic] for topic in heuristic_topics if topic in SECTOR_MAP]
     )
     heuristic_payload = {
         "topics": heuristic_topics,
-        "tickers": heuristic_tickers,
+        "tickers": [],
         "sectors": heuristic_sectors,
         "importance": _heuristic_importance(body),
         "sentiment": _heuristic_sentiment(body),
@@ -256,7 +275,10 @@ async def classify_article(title: str, excerpt: str | None, content_text: str | 
         "Classify the article into strict JSON with keys: "
         "{\"topics\": string[], \"tickers\": string[], \"sectors\": string[], "
         "\"importance\": \"low|medium|high\", \"sentiment\": \"negative|neutral|positive\"}. "
-        "Use concise normalized labels."
+        "Use concise normalized labels. "
+        "For tickers, include only real listed stock symbols explicitly supported by the article context. "
+        "Do not guess. Do not return generic uppercase words, country abbreviations, organization acronyms, product names, policy terms, or currencies such as USD. "
+        "If no clear stock ticker is present, return an empty tickers array."
     )
     llm_payload = await _call_json_llm(
         NEWS_ARTICLE_CLASSIFICATION_TASK,
@@ -266,19 +288,22 @@ async def classify_article(title: str, excerpt: str | None, content_text: str | 
     if not llm_payload:
         return {**heuristic_payload, "raw_payload": heuristic_payload}
 
-    topics = _normalize_labels([str(item) for item in llm_payload.get("topics", [])])
+    display_topics = _display_labels([str(item) for item in llm_payload.get("topics", [])])
+    topics = _normalize_labels(display_topics)
     tickers = sorted({str(item).strip().upper() for item in llm_payload.get("tickers", []) if str(item).strip()})
     sectors = _normalize_labels([str(item) for item in llm_payload.get("sectors", [])])
     importance = str(llm_payload.get("importance") or heuristic_payload["importance"]).strip().lower()
     sentiment = str(llm_payload.get("sentiment") or heuristic_payload["sentiment"]).strip().lower()
+    raw_payload = dict(llm_payload)
+    raw_payload["display_topics"] = display_topics or heuristic_topics
 
     merged = {
         "topics": topics or heuristic_topics,
-        "tickers": tickers or heuristic_tickers,
+        "tickers": tickers,
         "sectors": sectors or heuristic_sectors,
         "importance": importance if importance in {"low", "medium", "high"} else heuristic_payload["importance"],
         "sentiment": sentiment if sentiment in {"negative", "neutral", "positive"} else heuristic_payload["sentiment"],
-        "raw_payload": llm_payload,
+        "raw_payload": raw_payload,
     }
     return merged
 
@@ -302,9 +327,11 @@ async def summarize_article(
     prompt = (
         "Summarize this financial news article into strict JSON with one key: "
         "{\"summary\": string}. Keep it factual, concise, and suitable for a feed card. "
-        f"Use 2-4 sentences and stay under {ARTICLE_SUMMARY_MAX_CHARS} characters. "
+        f"Target {ARTICLE_SUMMARY_TARGET_MIN_WORDS}-{ARTICLE_SUMMARY_TARGET_MAX_WORDS} words, "
+        "usually in 3-5 short complete sentences. "
         "Cover more of the article's key points than a typical short excerpt, including the main event, "
         "the most important context, and any notable company, market, or policy impact when present. "
+        f"If the summary runs a little long, prefer complete sentences over abrupt cutoffs, but keep it under {ARTICLE_SUMMARY_SOFT_MAX_WORDS} words when possible. "
         f"{language_instruction}"
     )
     llm_payload = await _call_json_llm(
@@ -315,10 +342,10 @@ async def summarize_article(
     if not llm_payload:
         return None
 
-    summary = re.sub(r"\s+", " ", str(llm_payload.get("summary") or "")).strip()
+    summary = _normalize_summary_text(str(llm_payload.get("summary") or ""))
     if not summary:
         return None
-    return summary[:ARTICLE_SUMMARY_MAX_CHARS].rstrip()
+    return summary
 
 
 async def compile_blocked_labels(blocked_topics_text: str | None) -> list[str]:

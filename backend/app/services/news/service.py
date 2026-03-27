@@ -39,7 +39,7 @@ from .discovery import (
     validate_crawl_source,
     validate_feed,
 )
-from .semantics import classify_article, compile_blocked_labels, matches_blocked_labels, summarize_article
+from .semantics import _display_labels, classify_article, compile_blocked_labels, matches_blocked_labels, summarize_article
 
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -76,6 +76,19 @@ def _matches_topic_filter(topic_filter: str | None, topics: list[str]) -> bool:
     if not normalized_filter:
         return True
     return any(normalized_filter in str(item).strip().lower() for item in topics if item)
+
+
+def _display_topics(semantics: NewsArticleSemantic | None) -> list[str]:
+    if semantics is None:
+        return []
+    raw_payload = semantics.raw_payload if isinstance(semantics.raw_payload, dict) else {}
+    for key in ("display_topics", "topics"):
+        raw_topics = raw_payload.get(key)
+        if isinstance(raw_topics, list):
+            display_topics = _display_labels([str(item) for item in raw_topics])
+            if display_topics:
+                return display_topics
+    return [str(item) for item in (semantics.topics or [])]
 
 
 class NewsIngestionService:
@@ -567,17 +580,18 @@ class NewsIngestionService:
                 if not sources:
                     continue
                 semantics = semantic_map.get(article.id)
-                topics = [str(item) for item in (semantics.topics if semantics else [])]
+                normalized_topics = [str(item) for item in (semantics.topics if semantics else [])]
+                display_topics = _display_topics(semantics)
                 tickers = [str(item) for item in (semantics.tickers if semantics else [])]
                 if source_filter and not any(source_filter == str(item.get("domain") or "").lower() for item in sources):
                     continue
                 if ticker_filter and not any(ticker_filter == item.upper() for item in tickers):
                     continue
-                if not _matches_topic_filter(topic_filter, topics):
+                if not _matches_topic_filter(topic_filter, display_topics):
                     continue
                 if matches_blocked_labels(
                     blocked_labels,
-                    article_topics=topics,
+                    article_topics=normalized_topics,
                     article_tickers=tickers,
                     title=article.title,
                     excerpt=article.excerpt,
@@ -1402,7 +1416,7 @@ class NewsIngestionService:
             "language": article.language,
             "source_labels": [item["label"] for item in sources],
             "sources": sources,
-            "topics": [str(item) for item in (semantics.topics if semantics else [])],
+            "topics": _display_topics(semantics),
             "tickers": [str(item) for item in (semantics.tickers if semantics else [])],
             "sectors": [str(item) for item in (semantics.sectors if semantics else [])],
             "importance": semantics.importance if semantics else None,
