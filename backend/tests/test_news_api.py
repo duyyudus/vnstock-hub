@@ -213,6 +213,123 @@ async def test_news_feed_source_filter_matches_site_domain(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_news_feed_topic_filter_supports_partial_case_insensitive_phrase_matches(client, db_session):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example News",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    banking_article = NewsArticle(
+        canonical_url="https://example.com/articles/banking",
+        title="Banking article",
+        excerpt="Banking excerpt",
+        content_text="Banking content.",
+        published_at=datetime(2026, 3, 26, 12, 0, 0),
+        language="en",
+        content_hash="topic-hash-1",
+    )
+    phrase_article = NewsArticle(
+        canonical_url="https://example.com/articles/interest-rates",
+        title="Interest rates article",
+        excerpt="Interest rates excerpt",
+        content_text="Interest rates content.",
+        published_at=datetime(2026, 3, 26, 11, 0, 0),
+        language="en",
+        content_hash="topic-hash-2",
+    )
+    split_article = NewsArticle(
+        canonical_url="https://example.com/articles/split-words",
+        title="Split topic words article",
+        excerpt="Split words excerpt",
+        content_text="Split words content.",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="topic-hash-3",
+    )
+    db_session.add_all([banking_article, phrase_article, split_article])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=banking_article.id, site_feed_id=feed.id, article_url=banking_article.canonical_url),
+            NewsArticleSource(article_id=phrase_article.id, site_feed_id=feed.id, article_url=phrase_article.canonical_url),
+            NewsArticleSource(article_id=split_article.id, site_feed_id=feed.id, article_url=split_article.canonical_url),
+        ]
+    )
+    db_session.add_all(
+        [
+            NewsArticleSemantic(
+                article_id=banking_article.id,
+                topics=["banking"],
+                tickers=["ABC"],
+                sectors=["financials"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload={},
+            ),
+            NewsArticleSemantic(
+                article_id=phrase_article.id,
+                topics=["global interest rates"],
+                tickers=["DEF"],
+                sectors=["macro"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload={},
+            ),
+            NewsArticleSemantic(
+                article_id=split_article.id,
+                topics=["interest", "rates"],
+                tickers=["GHI"],
+                sectors=["macro"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload={},
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    partial_response = await client.get("/api/v1/news/feed?topic=bank")
+    assert partial_response.status_code == 200
+    partial_payload = partial_response.json()
+    assert partial_payload["count"] == 1
+    assert partial_payload["items"][0]["canonical_url"] == "https://example.com/articles/banking"
+
+    case_response = await client.get("/api/v1/news/feed?topic=Bank")
+    assert case_response.status_code == 200
+    case_payload = case_response.json()
+    assert case_payload["count"] == 1
+    assert case_payload["items"][0]["canonical_url"] == "https://example.com/articles/banking"
+
+    phrase_response = await client.get("/api/v1/news/feed?topic=interest%20rates")
+    assert phrase_response.status_code == 200
+    phrase_payload = phrase_response.json()
+    assert phrase_payload["count"] == 1
+    assert phrase_payload["items"][0]["canonical_url"] == "https://example.com/articles/interest-rates"
+
+    unrelated_response = await client.get("/api/v1/news/feed?topic=commodities")
+    assert unrelated_response.status_code == 200
+    unrelated_payload = unrelated_response.json()
+    assert unrelated_payload["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_news_sources_are_private_per_user(client, monkeypatch):
     user_one_headers, _ = await _register_and_auth(client, "news-user-one@example.com")
     user_two_headers, _ = await _register_and_auth(client, "news-user-two@example.com")

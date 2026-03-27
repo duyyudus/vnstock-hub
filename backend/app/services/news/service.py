@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
@@ -66,6 +67,15 @@ def utc_naive_to_local_iso(value: datetime | None) -> str | None:
         return None
     aware = value.replace(tzinfo=UTC).astimezone(VN_TZ)
     return aware.isoformat(timespec="seconds")
+
+
+def _matches_topic_filter(topic_filter: str | None, topics: list[str]) -> bool:
+    if not topic_filter:
+        return True
+    normalized_filter = topic_filter.strip().lower()
+    if not normalized_filter:
+        return True
+    return any(normalized_filter in str(item).strip().lower() for item in topics if item)
 
 
 class NewsIngestionService:
@@ -530,6 +540,9 @@ class NewsIngestionService:
     ) -> dict[str, Any]:
         safe_limit = min(50, max(1, limit))
         cursor_dt, cursor_id = self._parse_cursor(cursor)
+        source_filter = source.strip().lower() if source else None
+        ticker_filter = ticker.strip().upper() if ticker else None
+        topic_filter = topic.strip().lower() if topic else None
         async with async_session() as session:
             blocked_labels = await self._load_blocked_labels(session, user_id)
             stmt = select(NewsArticle).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
@@ -546,20 +559,21 @@ class NewsIngestionService:
                 )
             articles = (await session.execute(stmt.limit(max(100, safe_limit * 5)))).scalars().all()
             semantic_map = await self._load_semantics_map(session, [article.id for article in articles])
+            source_map = await self._load_article_sources_map(session, [article.id for article in articles], user_id=user_id)
 
             items: list[dict[str, Any]] = []
             for article in articles:
-                sources = await self._load_article_sources(session, article.id, user_id=user_id)
+                sources = source_map.get(article.id, [])
                 if not sources:
                     continue
                 semantics = semantic_map.get(article.id)
                 topics = [str(item) for item in (semantics.topics if semantics else [])]
                 tickers = [str(item) for item in (semantics.tickers if semantics else [])]
-                if source and not any(source.lower() == str(item.get("domain") or "").lower() for item in sources):
+                if source_filter and not any(source_filter == str(item.get("domain") or "").lower() for item in sources):
                     continue
-                if ticker and ticker.upper() not in {item.upper() for item in tickers}:
+                if ticker_filter and not any(ticker_filter == item.upper() for item in tickers):
                     continue
-                if topic and topic.lower() not in {item.lower() for item in topics}:
+                if not _matches_topic_filter(topic_filter, topics):
                     continue
                 if matches_blocked_labels(
                     blocked_labels,
@@ -1119,13 +1133,26 @@ class NewsIngestionService:
         return {row.article_id: row for row in rows}
 
     async def _load_article_sources(self, session, article_id: int, *, user_id: int | None) -> list[dict[str, Any]]:
-        sources: list[dict[str, Any]] = []
+        source_map = await self._load_article_sources_map(session, [article_id], user_id=user_id)
+        return source_map.get(article_id, [])
+
+    async def _load_article_sources_map(
+        self,
+        session,
+        article_ids: list[int],
+        *,
+        user_id: int | None,
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not article_ids:
+            return {}
+
+        grouped_sources: dict[int, list[dict[str, Any]]] = defaultdict(list)
 
         feed_stmt = (
             select(NewsArticleSource, NewsSiteFeed, NewsSite)
             .join(NewsSiteFeed, NewsSiteFeed.id == NewsArticleSource.site_feed_id)
             .join(NewsSite, NewsSite.id == NewsSiteFeed.site_id)
-            .where(NewsArticleSource.article_id == article_id)
+            .where(NewsArticleSource.article_id.in_(article_ids))
         )
         if user_id is None:
             feed_stmt = feed_stmt.where(NewsSiteFeed.is_public.is_(True))
@@ -1143,7 +1170,7 @@ class NewsIngestionService:
             )
         feed_rows = (await session.execute(feed_stmt)).all()
         for mapping, feed, site in feed_rows:
-            sources.append(
+            grouped_sources[mapping.article_id].append(
                 {
                     "source_type": "rss",
                     "source_id": feed.id,
@@ -1158,7 +1185,7 @@ class NewsIngestionService:
             select(NewsArticleSource, NewsCrawlSource, NewsSite)
             .join(NewsCrawlSource, NewsCrawlSource.id == NewsArticleSource.crawl_source_id)
             .join(NewsSite, NewsSite.id == NewsCrawlSource.site_id)
-            .where(NewsArticleSource.article_id == article_id)
+            .where(NewsArticleSource.article_id.in_(article_ids))
         )
         if user_id is None:
             crawl_stmt = crawl_stmt.where(NewsCrawlSource.is_public.is_(True))
@@ -1176,7 +1203,7 @@ class NewsIngestionService:
             )
         crawl_rows = (await session.execute(crawl_stmt)).all()
         for mapping, source, site in crawl_rows:
-            sources.append(
+            grouped_sources[mapping.article_id].append(
                 {
                     "source_type": "crawl",
                     "source_id": source.id,
@@ -1186,7 +1213,7 @@ class NewsIngestionService:
                     "is_public": bool(source.is_public),
                 }
             )
-        return sources
+        return dict(grouped_sources)
 
     async def _serialize_feed_source_admin(self, session, feed: NewsSiteFeed) -> dict[str, Any]:
         site = await session.get(NewsSite, feed.site_id)

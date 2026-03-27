@@ -156,6 +156,15 @@ def test_extract_article_payload_strips_related_blocks_from_vneconomy_layout():
     assert "Từ khóa:" not in payload["content_text"]
 
 
+def test_matches_topic_filter_supports_case_insensitive_partial_phrases():
+    assert news_service_module._matches_topic_filter("bank", ["banking"]) is True
+    assert news_service_module._matches_topic_filter("bank", ["macro banking", "rates"]) is True
+    assert news_service_module._matches_topic_filter("Bank", ["banking"]) is True
+    assert news_service_module._matches_topic_filter("interest rates", ["global interest rates"]) is True
+    assert news_service_module._matches_topic_filter("interest rates", ["interest", "rates"]) is False
+    assert news_service_module._matches_topic_filter("commodities", ["banking", "interest rates"]) is False
+
+
 @pytest.mark.asyncio
 async def test_discover_rss_feeds_follows_rss_hub_pages():
     homepage_html = """
@@ -505,6 +514,78 @@ async def test_generate_article_summary_force_refresh_overwrites_existing_summar
     assert payload["excerpt"] == "Fresh regenerated summary"
     assert payload["llm_summary"] == "Fresh regenerated summary"
     assert article.llm_summary == "Fresh regenerated summary"
+
+
+@pytest.mark.asyncio
+async def test_load_article_sources_map_groups_sources_by_article(db_session):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    crawl_source = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://example.com/news",
+        article_link_selector="a.story-link",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add_all([feed, crawl_source])
+    await db_session.flush()
+
+    first_article = NewsArticle(
+        canonical_url="https://example.com/articles/first",
+        title="First article",
+        excerpt="First excerpt",
+        content_text="First content",
+        published_at=datetime(2026, 3, 26, 12, 0, 0),
+        language="en",
+        content_hash="first-hash",
+    )
+    second_article = NewsArticle(
+        canonical_url="https://example.com/articles/second",
+        title="Second article",
+        excerpt="Second excerpt",
+        content_text="Second content",
+        published_at=datetime(2026, 3, 26, 11, 0, 0),
+        language="en",
+        content_hash="second-hash",
+    )
+    db_session.add_all([first_article, second_article])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=first_article.id, site_feed_id=feed.id, article_url=first_article.canonical_url),
+            NewsArticleSource(article_id=first_article.id, crawl_source_id=crawl_source.id, article_url=first_article.canonical_url),
+            NewsArticleSource(article_id=second_article.id, site_feed_id=feed.id, article_url=second_article.canonical_url),
+        ]
+    )
+    await db_session.commit()
+
+    source_map = await news_service._load_article_sources_map(
+        db_session,
+        [first_article.id, second_article.id],
+        user_id=None,
+    )
+
+    assert [item["source_type"] for item in source_map[first_article.id]] == ["rss", "crawl"]
+    assert [item["domain"] for item in source_map[first_article.id]] == ["example.com", "example.com"]
+    assert [item["source_type"] for item in source_map[second_article.id]] == ["rss"]
 
 
 @pytest.mark.asyncio

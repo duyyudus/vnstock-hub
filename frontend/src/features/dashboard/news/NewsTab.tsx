@@ -395,6 +395,14 @@ export const NewsTab: React.FC = () => {
         await loadNewsFeed(nextDraft, false);
     };
 
+    const handleFeedInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) {
+            return;
+        }
+        event.preventDefault();
+        void handleApplyFilters();
+    };
+
     const handleSourceFilterChange = async (value: string) => {
         const nextDraft = {
             ...feedDraft,
@@ -928,6 +936,7 @@ export const NewsTab: React.FC = () => {
                                     placeholder="VCB"
                                     value={feedDraft.ticker}
                                     onChange={(event) => setFeedDraft((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))}
+                                    onKeyDown={handleFeedInputKeyDown}
                                 />
                             </label>
                             <label className="form-control">
@@ -937,10 +946,14 @@ export const NewsTab: React.FC = () => {
                                 <input
                                     type="text"
                                     className="input input-bordered"
-                                    placeholder="earnings, rates, M&A"
+                                    placeholder="bank, interest rates, M&A"
                                     value={feedDraft.topic}
                                     onChange={(event) => setFeedDraft((current) => ({ ...current, topic: event.target.value }))}
+                                    onKeyDown={handleFeedInputKeyDown}
                                 />
+                                <div className="label">
+                                    <span className="label-text-alt">Partial match against topic tags, for example bank matches banking.</span>
+                                </div>
                             </label>
                             <label className="form-control">
                                 <div className="label">
