@@ -19,7 +19,15 @@ interface FormState {
     purchaseDate: string;
 }
 
-type SortKey = 'ticker' | 'quantity' | 'averageCost' | 'purchaseDate' | 'currentPrice' | 'marketValue' | 'pnl';
+type SortKey =
+    | 'ticker'
+    | 'quantity'
+    | 'averageCost'
+    | 'purchaseDate'
+    | 'currentPrice'
+    | 'priceChange24h'
+    | 'marketValue'
+    | 'pnl';
 type SortDirection = 'asc' | 'desc';
 
 interface StockAllocationItem {
@@ -308,6 +316,9 @@ export const PortfolioTab: React.FC = () => {
             const ticker = position.ticker.toUpperCase();
             const quote = quotes[ticker];
             const price = typeof quote?.price === 'number' && Number.isFinite(quote.price) ? quote.price : null;
+            const priceChange24h = typeof quote?.price_change_24h === 'number' && Number.isFinite(quote.price_change_24h)
+                ? quote.price_change_24h
+                : null;
             const averageCost = getAverageCost(position);
             const costBasis = averageCost !== null ? position.quantity * averageCost : null;
             const marketValue = price !== null ? position.quantity * price : null;
@@ -323,6 +334,8 @@ export const PortfolioTab: React.FC = () => {
                     return position.purchase_date ? position.purchase_date : null;
                 case 'currentPrice':
                     return price;
+                case 'priceChange24h':
+                    return priceChange24h;
                 case 'marketValue':
                     return marketValue;
                 case 'pnl':
@@ -932,6 +945,7 @@ export const PortfolioTab: React.FC = () => {
                                         <th>{renderSortHeader('Quantity', 'quantity')}</th>
                                         <th>{renderSortHeader('Avg Cost', 'averageCost')}</th>
                                         <th>{renderSortHeader('Current Price', 'currentPrice')}</th>
+                                        <th>{renderSortHeader('24h Change %', 'priceChange24h')}</th>
                                         <th>{renderSortHeader('Market Value', 'marketValue')}</th>
                                         <th>{renderSortHeader('P&L', 'pnl')}</th>
                                         <th>Actions</th>
@@ -959,12 +973,23 @@ export const PortfolioTab: React.FC = () => {
                                             ? (exchangeName ? `${exchangeName} - ${companyName}` : companyName)
                                             : exchangeName;
                                         const price = quote?.price ?? null;
+                                        const priceChange24h = typeof quote?.price_change_24h === 'number'
+                                            && Number.isFinite(quote.price_change_24h)
+                                            ? quote.price_change_24h
+                                            : null;
                                         const costBasis = averageCost !== null ? quantity * averageCost : null;
                                         const marketValue = price !== null ? quantity * price : null;
                                         const pnl = price !== null && costBasis !== null ? marketValue! - costBasis : null;
                                         const pnlPercent = pnl !== null && costBasis !== null && costBasis > 0
                                             ? (pnl / costBasis) * 100
                                             : null;
+                                        const priceChange24hClassName = priceChange24h === null
+                                            ? 'text-base-content/50'
+                                            : priceChange24h > 0
+                                                ? 'text-success'
+                                                : priceChange24h < 0
+                                                    ? 'text-error'
+                                                    : 'text-base-content';
                                         const pnlClassName = pnl === null
                                             ? 'text-base-content/50'
                                             : pnl > 0
@@ -1019,6 +1044,9 @@ export const PortfolioTab: React.FC = () => {
                                                     )}
                                                 </td>
                                                 <td>{price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}</td>
+                                                <td className={priceChange24hClassName}>
+                                                    {priceChange24h !== null ? formatPercent(priceChange24h) : '--'}
+                                                </td>
                                                 <td>{marketValue !== null ? formatNumber(marketValue, { maximumFractionDigits: 2 }) : '--'}</td>
                                                 <td className={pnlClassName}>
                                                     {pnl !== null ? (

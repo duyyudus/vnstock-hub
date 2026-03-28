@@ -19,6 +19,7 @@ type SortKey =
     | 'quantity'
     | 'averageEntryCost'
     | 'currentPrice'
+    | 'priceChange24h'
     | 'marketValue'
     | 'pnl';
 type SortDirection = 'asc' | 'desc';
@@ -295,6 +296,9 @@ export const TradingTab: React.FC = () => {
             const ticker = position.ticker.toUpperCase();
             const quote = quotes[ticker];
             const currentPrice = typeof quote?.price === 'number' && Number.isFinite(quote.price) ? quote.price : null;
+            const priceChange24h = typeof quote?.price_change_24h === 'number' && Number.isFinite(quote.price_change_24h)
+                ? quote.price_change_24h
+                : null;
             const marketValue = currentPrice !== null ? position.quantity * currentPrice : null;
             const pnl = currentPrice !== null
                 ? position.quantity * (currentPrice - position.average_entry_cost)
@@ -309,6 +313,8 @@ export const TradingTab: React.FC = () => {
                     return position.average_entry_cost;
                 case 'currentPrice':
                     return currentPrice;
+                case 'priceChange24h':
+                    return priceChange24h;
                 case 'marketValue':
                     return marketValue;
                 case 'pnl':
@@ -728,6 +734,7 @@ export const TradingTab: React.FC = () => {
                                             <th>{renderSortHeader('Quantity', 'quantity')}</th>
                                             <th>{renderSortHeader('Entry', 'averageEntryCost')}</th>
                                             <th>{renderSortHeader('Current', 'currentPrice')}</th>
+                                            <th>{renderSortHeader('24h Change %', 'priceChange24h')}</th>
                                             <th>{renderSortHeader('Market Value', 'marketValue')}</th>
                                             <th>{renderSortHeader('P&L', 'pnl')}</th>
                                             <th>Actions</th>
@@ -746,6 +753,10 @@ export const TradingTab: React.FC = () => {
                                                 ? (exchangeName ? `${exchangeName} - ${companyName}` : companyName)
                                                 : exchangeName;
                                             const price = quote?.price ?? null;
+                                            const priceChange24h = typeof quote?.price_change_24h === 'number'
+                                                && Number.isFinite(quote.price_change_24h)
+                                                ? quote.price_change_24h
+                                                : null;
                                             const marketValue = typeof price === 'number' && Number.isFinite(price) && Number.isFinite(quantity)
                                                 ? quantity * price
                                                 : null;
@@ -756,6 +767,13 @@ export const TradingTab: React.FC = () => {
                                             const pnlPercent = pnl !== null && costBasis !== null && costBasis > 0
                                                 ? (pnl / costBasis) * 100
                                                 : null;
+                                            const priceChange24hClassName = priceChange24h === null
+                                                ? 'text-base-content/50'
+                                                : priceChange24h > 0
+                                                    ? 'text-success'
+                                                    : priceChange24h < 0
+                                                        ? 'text-error'
+                                                        : 'text-base-content';
                                             const pnlClassName = pnl === null
                                                 ? 'text-base-content/50'
                                                 : pnl > 0
@@ -812,6 +830,9 @@ export const TradingTab: React.FC = () => {
                                                     </td>
                                                     <td>
                                                         {price !== null ? formatNumber(price, { maximumFractionDigits: 2 }) : '--'}
+                                                    </td>
+                                                    <td className={priceChange24hClassName}>
+                                                        {priceChange24h !== null ? formatPercent(priceChange24h) : '--'}
                                                     </td>
                                                     <td>{marketValue !== null ? formatNumber(marketValue, { maximumFractionDigits: 2 }) : '--'}</td>
                                                     <td className={pnlClassName}>
