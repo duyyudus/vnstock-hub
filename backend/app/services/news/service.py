@@ -237,6 +237,7 @@ class NewsIngestionService:
         with config_path.open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle) or {}
         public_sources = payload.get("public_sources") or []
+        configured_public_feed_urls: set[str] = set()
         async with async_session() as session:
             for site_payload in public_sources:
                 homepage_url = normalize_url(str(site_payload.get("homepage_url") or "").strip())
@@ -253,6 +254,7 @@ class NewsIngestionService:
                     feed_url = normalize_url(str(feed_payload.get("feed_url") or "").strip())
                     if not feed_url:
                         continue
+                    configured_public_feed_urls.add(feed_url)
                     await self._get_or_create_feed(
                         session,
                         site_id=site.id,
@@ -266,6 +268,36 @@ class NewsIngestionService:
                             feed_payload.get("poll_interval_minutes") or self.get_default_poll_interval_minutes()
                         ),
                     )
+
+            # Seeded public feeds should mirror the YAML config. If a feed was removed
+            # from the config, remove the stale seeded record from the DB as well.
+            stale_public_seed_feeds = (
+                await session.execute(
+                    select(NewsSiteFeed).where(
+                        NewsSiteFeed.is_public.is_(True),
+                        NewsSiteFeed.discovery_method == "seed",
+                    )
+                )
+            ).scalars().all()
+            for feed in stale_public_seed_feeds:
+                if feed.feed_url not in configured_public_feed_urls:
+                    await session.delete(feed)
+
+            remaining_feeds = (await session.execute(select(NewsSiteFeed))).scalars().all()
+            remaining_crawl_sources = (await session.execute(select(NewsCrawlSource))).scalars().all()
+            remaining_feed_site_ids = {int(feed.site_id) for feed in remaining_feeds}
+            remaining_crawl_site_ids = {int(source.site_id) for source in remaining_crawl_sources}
+
+            site_rows = (await session.execute(select(NewsSite))).scalars().all()
+            for site in site_rows:
+                has_sources = site.id in remaining_feed_site_ids or site.id in remaining_crawl_site_ids
+                if not has_sources:
+                    await session.delete(site)
+                    continue
+
+                site.is_public = any(feed.is_public for feed in remaining_feeds if int(feed.site_id) == int(site.id)) or any(
+                    source.is_public for source in remaining_crawl_sources if int(source.site_id) == int(site.id)
+                )
             await session.commit()
 
     async def normalize_legacy_rss_titles(self) -> int:
@@ -472,7 +504,7 @@ class NewsIngestionService:
                 items.append(await self._serialize_crawl_source(session, int(row.crawl_source_id), user_id=user_id))
             return items
 
-    async def get_admin_status(self) -> dict[str, Any]:
+    async def get_admin_status(self, *, user_id: int | None = None) -> dict[str, Any]:
         await self.reconcile_stale_runs()
         async with async_session() as session:
             site_rows = (await session.execute(select(NewsSite).order_by(NewsSite.id.asc()))).scalars().all()
@@ -495,8 +527,8 @@ class NewsIngestionService:
                 )
             ).scalars().all()
 
-            feed_items = [await self._serialize_feed_source_admin(session, row) for row in feed_rows]
-            crawl_items = [await self._serialize_crawl_source_admin(session, row) for row in crawl_rows]
+            feed_items = [await self._serialize_feed_source_admin(session, row, user_id=user_id) for row in feed_rows]
+            crawl_items = [await self._serialize_crawl_source_admin(session, row, user_id=user_id) for row in crawl_rows]
             runs = [await self._serialize_run_admin(session, row) for row in run_rows]
 
             return {
@@ -629,11 +661,32 @@ class NewsIngestionService:
         async with async_session() as session:
             if source_type == "rss":
                 subscription = await self._get_subscription(session, user_id=user_id, site_feed_id=source_id)
+                feed = await session.get(NewsSiteFeed, source_id)
+                if feed is None:
+                    raise ValueError("News source not found")
+                site_id = int(feed.site_id)
+                is_public = bool(feed.is_public)
             elif source_type == "crawl":
                 subscription = await self._get_subscription(session, user_id=user_id, crawl_source_id=source_id)
+                source = await session.get(NewsCrawlSource, source_id)
+                if source is None:
+                    raise ValueError("News source not found")
+                site_id = int(source.site_id)
+                is_public = bool(source.is_public)
             else:
                 raise ValueError("Unsupported source type")
             await session.delete(subscription)
+            await session.flush()
+
+            if not is_public:
+                await self._maybe_delete_orphaned_private_source(session, source_type=source_type, source_id=source_id)
+                await self._cleanup_orphaned_site(session, site_id=site_id)
+
+            await session.commit()
+
+    async def delete_source_admin(self, *, source_type: str, source_id: int) -> None:
+        async with async_session() as session:
+            await self._hard_delete_source(session, source_type=source_type, source_id=source_id)
             await session.commit()
 
     async def get_user_preferences(self, user_id: int) -> dict[str, Any]:
@@ -1507,6 +1560,74 @@ class NewsIngestionService:
             subscription.enabled = True
         return subscription
 
+    async def _maybe_delete_orphaned_private_source(self, session, *, source_type: str, source_id: int) -> None:
+        if source_type == "rss":
+            remaining_subscription = (
+                await session.execute(
+                    select(NewsSourceSubscription.id).where(NewsSourceSubscription.site_feed_id == source_id).limit(1)
+                )
+            ).scalar_one_or_none()
+            if remaining_subscription is None:
+                await self._hard_delete_source(session, source_type=source_type, source_id=source_id)
+            return
+
+        if source_type == "crawl":
+            remaining_subscription = (
+                await session.execute(
+                    select(NewsSourceSubscription.id).where(NewsSourceSubscription.crawl_source_id == source_id).limit(1)
+                )
+            ).scalar_one_or_none()
+            if remaining_subscription is None:
+                await self._hard_delete_source(session, source_type=source_type, source_id=source_id)
+            return
+
+        raise ValueError("Unsupported source type")
+
+    async def _hard_delete_source(self, session, *, source_type: str, source_id: int) -> None:
+        if source_type == "rss":
+            feed = await session.get(NewsSiteFeed, source_id)
+            if feed is None:
+                raise ValueError("News source not found")
+            site_id = int(feed.site_id)
+            await session.execute(delete(NewsSourceSubscription).where(NewsSourceSubscription.site_feed_id == source_id))
+            await session.execute(delete(NewsArticleSource).where(NewsArticleSource.site_feed_id == source_id))
+            await session.execute(delete(NewsIngestionRun).where(NewsIngestionRun.site_feed_id == source_id))
+            await session.delete(feed)
+            await session.flush()
+            await self._cleanup_orphaned_site(session, site_id=site_id)
+            return
+
+        if source_type == "crawl":
+            source = await session.get(NewsCrawlSource, source_id)
+            if source is None:
+                raise ValueError("News source not found")
+            site_id = int(source.site_id)
+            await session.execute(delete(NewsSourceSubscription).where(NewsSourceSubscription.crawl_source_id == source_id))
+            await session.execute(delete(NewsArticleSource).where(NewsArticleSource.crawl_source_id == source_id))
+            await session.execute(delete(NewsIngestionRun).where(NewsIngestionRun.crawl_source_id == source_id))
+            await session.delete(source)
+            await session.flush()
+            await self._cleanup_orphaned_site(session, site_id=site_id)
+            return
+
+        raise ValueError("Unsupported source type")
+
+    async def _cleanup_orphaned_site(self, session, *, site_id: int) -> None:
+        site = await session.get(NewsSite, site_id)
+        if site is None:
+            return
+
+        has_feed = (
+            await session.execute(select(NewsSiteFeed.id).where(NewsSiteFeed.site_id == site_id).limit(1))
+        ).scalar_one_or_none()
+        has_crawl_source = (
+            await session.execute(select(NewsCrawlSource.id).where(NewsCrawlSource.site_id == site_id).limit(1))
+        ).scalar_one_or_none()
+
+        if has_feed is None and has_crawl_source is None:
+            await session.delete(site)
+            await session.flush()
+
     async def _get_existing_subscription(
         self,
         session,
@@ -1677,15 +1798,18 @@ class NewsIngestionService:
             )
         return dict(grouped_sources)
 
-    async def _serialize_feed_source_admin(self, session, feed: NewsSiteFeed) -> dict[str, Any]:
+    async def _serialize_feed_source_admin(self, session, feed: NewsSiteFeed, *, user_id: int | None = None) -> dict[str, Any]:
         site = await session.get(NewsSite, feed.site_id)
-        subscription_count = len(
-            (
-                await session.execute(
-                    select(NewsSourceSubscription).where(NewsSourceSubscription.site_feed_id == feed.id)
-                )
-            ).scalars().all()
-        )
+        subscriptions = (
+            await session.execute(
+                select(NewsSourceSubscription).where(NewsSourceSubscription.site_feed_id == feed.id)
+            )
+        ).scalars().all()
+        subscription_count = len(subscriptions)
+        enabled = bool(feed.is_public)
+        if user_id is not None:
+            matched_subscription = next((item for item in subscriptions if int(item.user_id) == int(user_id)), None)
+            enabled = bool(matched_subscription.enabled) if matched_subscription is not None else bool(feed.is_public)
         article_count = len(
             (
                 await session.execute(
@@ -1710,20 +1834,24 @@ class NewsIngestionService:
             "next_poll_at": utc_naive_to_local_iso(feed.next_poll_at),
             "last_success_at": utc_naive_to_local_iso(feed.last_success_at),
             "last_failure_at": utc_naive_to_local_iso(feed.last_failure_at),
+            "enabled": enabled,
             "is_public": feed.is_public,
             "subscription_count": subscription_count,
             "article_count": article_count,
         }
 
-    async def _serialize_crawl_source_admin(self, session, source: NewsCrawlSource) -> dict[str, Any]:
+    async def _serialize_crawl_source_admin(self, session, source: NewsCrawlSource, *, user_id: int | None = None) -> dict[str, Any]:
         site = await session.get(NewsSite, source.site_id)
-        subscription_count = len(
-            (
-                await session.execute(
-                    select(NewsSourceSubscription).where(NewsSourceSubscription.crawl_source_id == source.id)
-                )
-            ).scalars().all()
-        )
+        subscriptions = (
+            await session.execute(
+                select(NewsSourceSubscription).where(NewsSourceSubscription.crawl_source_id == source.id)
+            )
+        ).scalars().all()
+        subscription_count = len(subscriptions)
+        enabled = bool(source.is_public)
+        if user_id is not None:
+            matched_subscription = next((item for item in subscriptions if int(item.user_id) == int(user_id)), None)
+            enabled = bool(matched_subscription.enabled) if matched_subscription is not None else bool(source.is_public)
         article_count = len(
             (
                 await session.execute(
@@ -1750,6 +1878,7 @@ class NewsIngestionService:
             "next_poll_at": utc_naive_to_local_iso(source.next_poll_at),
             "last_success_at": utc_naive_to_local_iso(source.last_success_at),
             "last_failure_at": utc_naive_to_local_iso(source.last_failure_at),
+            "enabled": enabled,
             "is_public": source.is_public,
             "subscription_count": subscription_count,
             "article_count": article_count,

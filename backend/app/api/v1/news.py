@@ -733,6 +733,16 @@ async def delete_news_source(
     await news_service.delete_source(user_id=current_user.id, source_type=source_type, source_id=source_id)
 
 
+@router.delete("/admin/sources/{source_type}/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_news_monitoring_source(
+    source_type: NewsSourceKind,
+    source_id: int,
+    current_user=Depends(get_current_admin_user),
+):
+    del current_user
+    await news_service.delete_source_admin(source_type=source_type, source_id=source_id)
+
+
 @router.get("/preferences", response_model=NewsUserPreferencesResponse)
 async def get_news_preferences(current_user=Depends(get_current_user)):
     payload = await news_service.get_user_preferences(current_user.id)
@@ -847,8 +857,7 @@ async def update_news_admin_config(
 
 @router.get("/admin/sources", response_model=NewsSourcesResponse)
 async def get_news_monitoring_sources(current_user=Depends(get_current_admin_user)):
-    del current_user
-    payload = await news_service.get_admin_status()
+    payload = await news_service.get_admin_status(user_id=current_user.id)
     site_map: dict[int, NewsSiteResponse] = {}
     for item in [*payload["rss_sources"], *payload["crawl_sources"]]:
         site_id = item.get("site_id")

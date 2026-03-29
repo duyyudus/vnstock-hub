@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.db.models import (
     BookmarkGroup,
@@ -382,6 +383,103 @@ async def test_news_sources_are_private_per_user(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_deleting_last_private_news_source_subscription_removes_source_record(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-delete-one@example.com")
+
+    async def _fake_validate_feed(feed_url: str, site_url: str | None = None):
+        return {
+            "feed_url": feed_url,
+            "site_url": site_url,
+            "kind": "rss",
+            "title": "Private Feed",
+            "entry_count": 3,
+            "sample_entries": [{"title": "Sample", "link": "https://example.com/a", "published_at": None}],
+        }
+
+    monkeypatch.setattr(news_service, "validate_rss_feed", _fake_validate_feed)
+
+    create_response = await client.post(
+        "/api/v1/news/sources/rss",
+        json={
+            "feed_url": "https://private-delete.example.com/rss.xml",
+            "site_url": "https://private-delete.example.com",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    source_id = create_response.json()["id"]
+
+    delete_response = await client.delete(f"/api/v1/news/sources/rss/{source_id}", headers=headers)
+    assert delete_response.status_code == 204
+
+    list_response = await client.get("/api/v1/news/sources", headers=headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["rss_sources"] == []
+
+    await db_session.rollback()
+
+    feed = (
+        await db_session.execute(select(NewsSiteFeed).where(NewsSiteFeed.feed_url == "https://private-delete.example.com/rss.xml"))
+    ).scalar_one_or_none()
+    site = (
+        await db_session.execute(select(NewsSite).where(NewsSite.homepage_url == "https://private-delete.example.com"))
+    ).scalar_one_or_none()
+
+    assert feed is None
+    assert site is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_private_news_source_subscription_keeps_shared_source_record(client, db_session, monkeypatch):
+    user_one_headers, _ = await _register_and_auth(client, "news-delete-shared-one@example.com")
+    user_two_headers, _ = await _register_and_auth(client, "news-delete-shared-two@example.com")
+
+    async def _fake_validate_feed(feed_url: str, site_url: str | None = None):
+        return {
+            "feed_url": feed_url,
+            "site_url": site_url,
+            "kind": "rss",
+            "title": "Shared Feed",
+            "entry_count": 3,
+            "sample_entries": [{"title": "Sample", "link": "https://example.com/a", "published_at": None}],
+        }
+
+    monkeypatch.setattr(news_service, "validate_rss_feed", _fake_validate_feed)
+
+    create_one_response = await client.post(
+        "/api/v1/news/sources/rss",
+        json={
+            "feed_url": "https://shared-delete.example.com/rss.xml",
+            "site_url": "https://shared-delete.example.com",
+        },
+        headers=user_one_headers,
+    )
+    assert create_one_response.status_code == 200
+    source_id = create_one_response.json()["id"]
+
+    create_two_response = await client.post(
+        "/api/v1/news/sources/rss",
+        json={
+            "feed_url": "https://shared-delete.example.com/rss.xml",
+            "site_url": "https://shared-delete.example.com",
+        },
+        headers=user_two_headers,
+    )
+    assert create_two_response.status_code == 200
+    assert create_two_response.json()["id"] == source_id
+
+    delete_response = await client.delete(f"/api/v1/news/sources/rss/{source_id}", headers=user_one_headers)
+    assert delete_response.status_code == 204
+
+    list_one = await client.get("/api/v1/news/sources", headers=user_one_headers)
+    list_two = await client.get("/api/v1/news/sources", headers=user_two_headers)
+    assert list_one.status_code == 200
+    assert list_one.json()["rss_sources"] == []
+    assert list_two.status_code == 200
+    assert [item["feed_url"] for item in list_two.json()["rss_sources"]] == ["https://shared-delete.example.com/rss.xml"]
+
+
+@pytest.mark.asyncio
 async def test_news_rss_discovery_returns_multiple_candidates(client, monkeypatch):
     headers, _ = await _register_and_auth(client, "news-discovery@example.com")
 
@@ -756,6 +854,82 @@ async def test_news_admin_status_and_manual_run(client, monkeypatch):
     refresh_response = await client.post("/api/v1/news/admin/refresh", headers=headers)
     assert refresh_response.status_code == 200
     assert refresh_response.json()["timestamp"] == "2026-03-26T19:14:22+07:00"
+
+
+@pytest.mark.asyncio
+async def test_news_admin_can_delete_source_from_monitoring_catalog(client, db_session):
+    headers, _ = await _register_and_auth(client, "admin@example.com")
+
+    site = NewsSite(
+        domain="admin-delete.example.com",
+        homepage_url="https://admin-delete.example.com",
+        display_name="Admin Delete",
+        is_public=False,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://admin-delete.example.com/rss.xml",
+        title="Admin Delete Feed",
+        kind="rss",
+        discovery_method="manual",
+        validation_status="valid",
+        is_public=False,
+    )
+    db_session.add(feed)
+    await db_session.commit()
+    feed_id = feed.id
+    site_id = site.id
+
+    response = await client.delete(f"/api/v1/news/admin/sources/rss/{feed_id}", headers=headers)
+    assert response.status_code == 204
+
+    sources_response = await client.get("/api/v1/news/admin/sources", headers=headers)
+    assert sources_response.status_code == 200
+    assert all(item["id"] != feed_id for item in sources_response.json()["rss_sources"])
+
+
+@pytest.mark.asyncio
+async def test_news_admin_sources_reflect_current_subscription_enabled_state(client, monkeypatch):
+    headers, _ = await _register_and_auth(client, "admin@example.com")
+
+    async def _fake_validate_feed(feed_url: str, site_url: str | None = None):
+        return {
+            "feed_url": feed_url,
+            "site_url": site_url,
+            "kind": "rss",
+            "title": "Admin Toggle Feed",
+            "entry_count": 3,
+            "sample_entries": [{"title": "Sample", "link": "https://example.com/a", "published_at": None}],
+        }
+
+    monkeypatch.setattr(news_service, "validate_rss_feed", _fake_validate_feed)
+
+    create_response = await client.post(
+        "/api/v1/news/sources/rss",
+        json={
+            "feed_url": "https://admin-toggle.example.com/rss.xml",
+            "site_url": "https://admin-toggle.example.com",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    source_id = create_response.json()["id"]
+
+    disable_response = await client.patch(
+        f"/api/v1/news/sources/rss/{source_id}",
+        json={"enabled": False},
+        headers=headers,
+    )
+    assert disable_response.status_code == 200
+    assert disable_response.json()["enabled"] is False
+
+    admin_sources_response = await client.get("/api/v1/news/admin/sources", headers=headers)
+    assert admin_sources_response.status_code == 200
+    admin_source = next(item for item in admin_sources_response.json()["rss_sources"] if int(item["id"]) == source_id)
+    assert admin_source["enabled"] is False
 
 
 @pytest.mark.asyncio

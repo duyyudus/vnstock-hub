@@ -429,6 +429,25 @@ export const NewsMonitoringTab: React.FC = () => {
         }
     }, [loadData]);
 
+    const handleDeleteSource = useCallback(async (source: MonitoringSourceRow) => {
+        if (!window.confirm(`Delete "${source.title}" from the source catalog?`)) {
+            return;
+        }
+
+        setBusySourceKey(`${source.kind}:${source.id}:delete`);
+        setMessage(null);
+        setError(null);
+        try {
+            await stockApi.deleteNewsMonitoringSource(source.kind, source.id);
+            setMessage(`${source.title} was deleted.`);
+            await loadData(false);
+        } catch (deleteError) {
+            setError(getErrorMessage(deleteError));
+        } finally {
+            setBusySourceKey(null);
+        }
+    }, [loadData]);
+
     return (
         <section className="space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -582,7 +601,8 @@ export const NewsMonitoringTab: React.FC = () => {
                                         sourceRows.map((source) => {
                                             const busyKey = `${source.kind}:${source.id}`;
                                             const validatingKey = `${busyKey}:validate`;
-                                            const isBusy = busySourceKey === busyKey || busySourceKey === validatingKey;
+                                            const deletingKey = `${busyKey}:delete`;
+                                            const isBusy = busySourceKey === busyKey || busySourceKey === validatingKey || busySourceKey === deletingKey;
 
                                             return (
                                                 <tr key={busyKey}>
@@ -624,6 +644,14 @@ export const NewsMonitoringTab: React.FC = () => {
                                                             >
                                                                 {busySourceKey === busyKey ? <span className="loading loading-spinner loading-xs"></span> : null}
                                                                 {source.enabled ? 'Disable' : 'Enable'}
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-error btn-outline btn-xs"
+                                                                onClick={() => void handleDeleteSource(source)}
+                                                                disabled={isBusy}
+                                                            >
+                                                                {busySourceKey === deletingKey ? <span className="loading loading-spinner loading-xs"></span> : null}
+                                                                Delete
                                                             </button>
                                                         </div>
                                                     </td>

@@ -1051,6 +1051,97 @@ async def test_apply_default_poll_interval_to_existing_sources_updates_mismatche
 
 
 @pytest.mark.asyncio
+async def test_ensure_public_sources_removes_seeded_public_feeds_missing_from_config(db_session, tmp_path, monkeypatch):
+    news_sources_path = Path(tmp_path) / "news_sources.yaml"
+    news_sources_path.write_text(
+        """
+public_sources:
+  - homepage_url: "https://cafef.vn"
+    display_name: "CafeF"
+    feeds:
+      - feed_url: "https://cafef.vn/thi-truong-chung-khoan.rss"
+        title: "CafeF - Thi truong chung khoan"
+        kind: "rss"
+        poll_interval_minutes: 30
+        """.strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(news_service_module.settings, "news_sources_yaml_path", str(news_sources_path))
+
+    cafef_site = NewsSite(
+        domain="cafef.vn",
+        homepage_url="https://cafef.vn",
+        display_name="CafeF",
+        is_public=True,
+    )
+    stale_site = NewsSite(
+        domain="tuoitre.vn",
+        homepage_url="https://tuoitre.vn",
+        display_name="Tuoi Tre",
+        is_public=True,
+    )
+    private_site = NewsSite(
+        domain="private.example.com",
+        homepage_url="https://private.example.com",
+        display_name="Private",
+        is_public=False,
+    )
+    db_session.add_all([cafef_site, stale_site, private_site])
+    await db_session.flush()
+
+    cafef_feed = NewsSiteFeed(
+        site_id=cafef_site.id,
+        feed_url="https://cafef.vn/thi-truong-chung-khoan.rss",
+        title="Old CafeF Title",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        poll_interval_minutes=15,
+    )
+    stale_feed = NewsSiteFeed(
+        site_id=stale_site.id,
+        feed_url="https://tuoitre.vn/rss/thoi-su.rss",
+        title="Tuoi Tre - Thoi su",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        poll_interval_minutes=30,
+    )
+    private_feed = NewsSiteFeed(
+        site_id=private_site.id,
+        feed_url="https://private.example.com/rss.xml",
+        title="Private Feed",
+        kind="rss",
+        discovery_method="manual",
+        validation_status="valid",
+        is_public=False,
+        poll_interval_minutes=30,
+    )
+    db_session.add_all([cafef_feed, stale_feed, private_feed])
+    await db_session.commit()
+
+    await news_service.ensure_public_sources()
+    await db_session.rollback()
+
+    feed_urls = {
+        row.feed_url
+        for row in (await db_session.execute(select(NewsSiteFeed).order_by(NewsSiteFeed.feed_url.asc()))).scalars().all()
+    }
+    site_homepages = {
+        row.homepage_url
+        for row in (await db_session.execute(select(NewsSite).order_by(NewsSite.homepage_url.asc()))).scalars().all()
+    }
+
+    assert "https://tuoitre.vn/rss/thoi-su.rss" not in feed_urls
+    assert "https://cafef.vn/thi-truong-chung-khoan.rss" in feed_urls
+    assert "https://private.example.com/rss.xml" in feed_urls
+    assert "https://tuoitre.vn" not in site_homepages
+
+
+@pytest.mark.asyncio
 async def test_reconcile_stale_runs_marks_abandoned_running_rows_failed(db_session):
     stale_run = NewsIngestionRun(
         source_type="rss",

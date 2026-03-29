@@ -1305,6 +1305,10 @@ export const stockApi = {
         return response.data;
     },
 
+    async deleteNewsMonitoringSource(sourceType: NewsSourceKind, sourceId: number): Promise<void> {
+        await apiClient.delete(`/news/admin/sources/${sourceType}/${sourceId}`);
+    },
+
     async getNewsMonitoringRuns(limit: number = 12): Promise<NewsMonitoringRunsResponse> {
         const response = await apiClient.get<NewsMonitoringRunsResponse>(`/news/admin/runs?limit=${limit}`);
         return response.data;
