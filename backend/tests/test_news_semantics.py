@@ -264,10 +264,14 @@ async def test_classify_article_uses_classification_task_key(monkeypatch):
     assert payload["topics"] == ["banking"]
     assert payload["tickers"] == ["VCB"]
     assert payload["raw_payload"]["display_topics"] == ["banking"]
+    assert payload["event_type"] == "earnings"
+    assert payload["raw_payload"]["event_type"] == "earnings"
     assert captured["task_key"] == NEWS_ARTICLE_CLASSIFICATION_TASK
     assert "Do not guess." in captured["user_prompt"]
     assert "currencies such as USD" in captured["user_prompt"]
     assert "empty tickers array" in captured["user_prompt"]
+    assert "\"event_type\"" in captured["user_prompt"]
+    assert "\"event_labels\"" in captured["user_prompt"]
 
 
 @pytest.mark.asyncio
@@ -330,6 +334,24 @@ async def test_classify_article_keeps_tickers_empty_when_llm_unavailable(monkeyp
 
     assert payload["tickers"] == []
     assert payload["topics"]
+
+
+@pytest.mark.asyncio
+async def test_classify_article_sets_heuristic_event_metadata_when_llm_unavailable(monkeypatch):
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        return None
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.classify_article(
+        "ABC approves cash dividend and record date",
+        "Board confirms dividend payout",
+        "The company announced a cash dividend and the upcoming record date for shareholders.",
+    )
+
+    assert payload["event_type"] == "dividend"
+    assert payload["event_labels"] == ["dividend"]
+    assert payload["raw_payload"]["event_type"] == "dividend"
 
 
 @pytest.mark.asyncio

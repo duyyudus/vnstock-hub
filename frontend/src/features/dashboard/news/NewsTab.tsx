@@ -2,14 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatDateTime, getErrorMessage } from '../../admin/adminUtils';
 import { useAuthUser } from '../../auth/useAuthUser';
 import {
+    type BookmarkGroup,
     stockApi,
     type NewsArticleDetail,
     type NewsArticleSummaryResponse,
     type NewsCrawlDiscoveryCandidate,
     type NewsCrawlSource,
     type NewsCrawlSourceCreateRequest,
+    type NewsEventType,
     type NewsFeedItem,
     type NewsFeedQuery,
+    type NewsImportanceLevel,
     type NewsRssDiscoveryCandidate,
     type NewsRssSource,
     type NewsRssSourceCreateRequest,
@@ -23,7 +26,15 @@ type FeedDraft = {
     ticker: string;
     from: string;
     to: string;
+    sort: 'latest' | 'relevance';
+    scope: 'all' | 'portfolio' | 'bookmarks';
+    bookmarkGroupId: string;
+    eventType: '' | NewsEventType;
+    importance: '' | NewsImportanceLevel;
+    groupBy: 'article' | 'story';
 };
+
+type FeedViewKey = 'forYou' | 'latest' | 'portfolio' | 'bookmarks';
 
 type RssDraft = {
     feedUrl: string;
@@ -49,13 +60,38 @@ type PanelKey = 'rssDiscovery' | 'manualRss' | 'crawlSource' | 'blockedTopics' |
 const FEED_PAGE_SIZE = 20;
 const NEWS_UTILITY_RAIL_STORAGE_KEY = 'news:utility-rail-open';
 
-const emptyFeedDraft: FeedDraft = {
+const NEWS_EVENT_FILTER_OPTIONS: Array<{ value: NewsEventType; label: string }> = [
+    { value: 'earnings', label: 'Earnings' },
+    { value: 'dividend', label: 'Dividend' },
+    { value: 'capital_raise', label: 'Capital Raise' },
+    { value: 'insider_trading', label: 'Insider Trading' },
+    { value: 'management_change', label: 'Management Change' },
+    { value: 'regulatory', label: 'Regulatory' },
+    { value: 'mna', label: 'M&A' },
+    { value: 'analyst_view', label: 'Analyst View' },
+    { value: 'macro_policy', label: 'Macro Policy' },
+    { value: 'other', label: 'Other' },
+];
+
+const NEWS_IMPORTANCE_OPTIONS: Array<{ value: NewsImportanceLevel; label: string }> = [
+    { value: 'high', label: 'High' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'low', label: 'Low' },
+];
+
+const createDefaultFeedDraft = (): FeedDraft => ({
     source: '',
     topic: '',
     ticker: '',
     from: '',
     to: '',
-};
+    sort: 'latest',
+    scope: 'all',
+    bookmarkGroupId: '',
+    eventType: '',
+    importance: '',
+    groupBy: 'story',
+});
 
 const emptyRssDraft: RssDraft = {
     feedUrl: '',
@@ -179,7 +215,8 @@ const CollapsiblePanel: React.FC<CollapsiblePanelProps> = ({ title, description,
 
 export const NewsTab: React.FC = () => {
     const user = useAuthUser();
-    const canManageSources = Boolean(user);
+    const isSignedIn = Boolean(user);
+    const canManageSources = isSignedIn;
 
     const [feedItems, setFeedItems] = useState<NewsFeedItem[]>([]);
     const [feedCursor, setFeedCursor] = useState<string | null>(null);
@@ -187,8 +224,8 @@ export const NewsTab: React.FC = () => {
     const [feedPersonalized, setFeedPersonalized] = useState(false);
     const [feedLoading, setFeedLoading] = useState(true);
     const [feedError, setFeedError] = useState<string | null>(null);
-    const [feedDraft, setFeedDraft] = useState<FeedDraft>(emptyFeedDraft);
-    const [appliedFeed, setAppliedFeed] = useState<FeedDraft>(emptyFeedDraft);
+    const [feedDraft, setFeedDraft] = useState<FeedDraft>(() => createDefaultFeedDraft());
+    const [appliedFeed, setAppliedFeed] = useState<FeedDraft>(() => createDefaultFeedDraft());
 
     const [sources, setSources] = useState<{ rss_sources: NewsRssSource[]; crawl_sources: NewsCrawlSource[] } | null>(null);
     const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -215,6 +252,7 @@ export const NewsTab: React.FC = () => {
     const [preferencesSaving, setPreferencesSaving] = useState(false);
     const [preferencesError, setPreferencesError] = useState<string | null>(null);
     const [preferencesSuccess, setPreferencesSuccess] = useState<string | null>(null);
+    const [bookmarkGroups, setBookmarkGroups] = useState<BookmarkGroup[]>([]);
 
     const [newsDetail, setNewsDetail] = useState<NewsArticleDetail | null>(null);
     const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
@@ -279,6 +317,19 @@ export const NewsTab: React.FC = () => {
         return Array.from(domains).sort((left, right) => left.localeCompare(right));
     }, [activeNewsSources, feedItems, feedDraft.source]);
 
+    const activeFeedView = useMemo<FeedViewKey>(() => {
+        if (feedDraft.scope === 'portfolio') {
+            return 'portfolio';
+        }
+        if (feedDraft.scope === 'bookmarks') {
+            return 'bookmarks';
+        }
+        if (feedDraft.sort === 'relevance') {
+            return 'forYou';
+        }
+        return 'latest';
+    }, [feedDraft.scope, feedDraft.sort]);
+
     useEffect(() => {
         appliedFeedRef.current = appliedFeed;
     }, [appliedFeed]);
@@ -317,6 +368,12 @@ export const NewsTab: React.FC = () => {
             ticker: normalizeTextInput(draft.ticker).toUpperCase() || undefined,
             from: normalizeTextInput(draft.from) || undefined,
             to: normalizeTextInput(draft.to) || undefined,
+            sort: draft.sort,
+            scope: draft.scope,
+            bookmark_group_id: draft.scope === 'bookmarks' && draft.bookmarkGroupId ? Number(draft.bookmarkGroupId) : undefined,
+            event_type: draft.eventType || undefined,
+            importance: draft.importance || undefined,
+            group_by: draft.groupBy,
             cursor: cursor || undefined,
             limit: FEED_PAGE_SIZE,
         };
@@ -349,6 +406,7 @@ export const NewsTab: React.FC = () => {
             setSources(null);
             setPreferences(null);
             setPreferencesDraft('');
+            setBookmarkGroups([]);
             setSourcesLoading(false);
             setPreferencesLoading(false);
             return;
@@ -360,9 +418,10 @@ export const NewsTab: React.FC = () => {
         setPreferencesError(null);
 
         try {
-            const [sourcesResponse, preferencesResponse] = await Promise.all([
+            const [sourcesResponse, preferencesResponse, bookmarkGroupsResponse] = await Promise.all([
                 stockApi.getNewsSources(),
                 stockApi.getNewsPreferences(),
+                stockApi.getBookmarkGroups(),
             ]);
             setSources({
                 rss_sources: sourcesResponse.rss_sources,
@@ -370,6 +429,7 @@ export const NewsTab: React.FC = () => {
             });
             setPreferences(preferencesResponse);
             setPreferencesDraft(preferencesResponse.blocked_topics_text);
+            setBookmarkGroups(bookmarkGroupsResponse.groups);
         } catch (error) {
             const message = getErrorMessage(error);
             setSourcesError(message);
@@ -381,12 +441,16 @@ export const NewsTab: React.FC = () => {
     }, [canManageSources]);
 
     useEffect(() => {
-        void loadNewsFeed(appliedFeedRef.current, false);
-    }, [loadNewsFeed, user?.id]);
+        const nextDraft = createDefaultFeedDraft();
+        setFeedDraft(nextDraft);
+        setAppliedFeed(nextDraft);
+        setFeedCursor(null);
+        void loadNewsFeed(nextDraft, false);
+    }, [isSignedIn, loadNewsFeed]);
 
     useEffect(() => {
         void loadSourceManagement();
-    }, [loadSourceManagement, user?.id]);
+    }, [loadSourceManagement]);
 
     const handleApplyFilters = async () => {
         const nextDraft = feedDraft;
@@ -415,7 +479,27 @@ export const NewsTab: React.FC = () => {
     };
 
     const handleResetFilters = async () => {
-        const nextDraft = emptyFeedDraft;
+        const nextDraft = createDefaultFeedDraft();
+        setFeedDraft(nextDraft);
+        setAppliedFeed(nextDraft);
+        setFeedCursor(null);
+        await loadNewsFeed(nextDraft, false);
+    };
+
+    const handleFeedViewChange = async (view: FeedViewKey) => {
+        const baseDraft = {
+            ...feedDraft,
+            bookmarkGroupId: view === 'bookmarks' ? feedDraft.bookmarkGroupId : '',
+            groupBy: 'story' as const,
+        };
+        const nextDraft: FeedDraft =
+            view === 'latest'
+                ? { ...baseDraft, sort: 'latest', scope: 'all' }
+                : view === 'portfolio'
+                    ? { ...baseDraft, sort: 'relevance', scope: 'portfolio' }
+                    : view === 'bookmarks'
+                        ? { ...baseDraft, sort: 'relevance', scope: 'bookmarks' }
+                        : { ...baseDraft, sort: 'relevance', scope: 'all' };
         setFeedDraft(nextDraft);
         setAppliedFeed(nextDraft);
         setFeedCursor(null);
@@ -695,6 +779,19 @@ export const NewsTab: React.FC = () => {
         }
     };
 
+    const handleOpenRelatedArticle = async (articleId: number) => {
+        setDetailLoadingId(articleId);
+        setDetailError(null);
+        try {
+            const response = await stockApi.getNewsArticle(articleId);
+            setNewsDetail(response);
+        } catch (error) {
+            setDetailError(getErrorMessage(error));
+        } finally {
+            setDetailLoadingId(null);
+        }
+    };
+
     const handleRefreshArticleContent = async () => {
         if (!newsDetail) {
             return;
@@ -724,6 +821,12 @@ export const NewsTab: React.FC = () => {
                               sectors: response.sectors,
                               importance: response.importance,
                               sentiment: response.sentiment,
+                              event_type: response.event_type,
+                              event_labels: response.event_labels,
+                              matched_tickers: response.matched_tickers,
+                              why_relevant: response.why_relevant,
+                              story_key: response.story_key,
+                              story_source_count: response.story_source_count,
                               source_title: response.source_title,
                               source_kind: response.source_kind,
                               is_filtered_for_user: response.is_filtered_for_user,
@@ -885,8 +988,8 @@ export const NewsTab: React.FC = () => {
                                 <h3 className="card-title text-2xl">Feed</h3>
                                 <p className="text-sm text-base-content/70">
                                     {feedPersonalized
-                                        ? 'This feed is merged with your private subscriptions and semantic preferences.'
-                                        : 'This is the public feed from the default source pack.'}
+                                        ? 'Prioritize portfolio and bookmark-relevant stories, then drill into clustered coverage when something matters.'
+                                        : 'This is the public latest view from the default source pack.'}
                                 </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -906,7 +1009,41 @@ export const NewsTab: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${activeFeedView === 'forYou' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => void handleFeedViewChange('forYou')}
+                                disabled={!canManageSources}
+                            >
+                                For You
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${activeFeedView === 'latest' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => void handleFeedViewChange('latest')}
+                            >
+                                Latest
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${activeFeedView === 'portfolio' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => void handleFeedViewChange('portfolio')}
+                                disabled={!canManageSources}
+                            >
+                                Portfolio
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-sm ${activeFeedView === 'bookmarks' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => void handleFeedViewChange('bookmarks')}
+                                disabled={!canManageSources}
+                            >
+                                Bookmarks
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
                             <label className="form-control">
                                 <div className="label">
                                     <span className="label-text">Source</span>
@@ -938,6 +1075,36 @@ export const NewsTab: React.FC = () => {
                                     onChange={(event) => setFeedDraft((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))}
                                     onKeyDown={handleFeedInputKeyDown}
                                 />
+                            </label>
+                            <label className="form-control">
+                                <div className="label">
+                                    <span className="label-text">Event</span>
+                                </div>
+                                <select
+                                    className="select select-bordered"
+                                    value={feedDraft.eventType}
+                                    onChange={(event) => setFeedDraft((current) => ({ ...current, eventType: event.target.value as FeedDraft['eventType'] }))}
+                                >
+                                    <option value="">All events</option>
+                                    {NEWS_EVENT_FILTER_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-control">
+                                <div className="label">
+                                    <span className="label-text">Importance</span>
+                                </div>
+                                <select
+                                    className="select select-bordered"
+                                    value={feedDraft.importance}
+                                    onChange={(event) => setFeedDraft((current) => ({ ...current, importance: event.target.value as FeedDraft['importance'] }))}
+                                >
+                                    <option value="">All levels</option>
+                                    {NEWS_IMPORTANCE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
                             </label>
                             <label className="form-control">
                                 <div className="label">
@@ -978,6 +1145,31 @@ export const NewsTab: React.FC = () => {
                                 />
                             </label>
                         </div>
+
+                        {feedDraft.scope === 'bookmarks' ? (
+                            <label className="form-control max-w-sm">
+                                <div className="label">
+                                    <span className="label-text">Bookmark group</span>
+                                </div>
+                                <select
+                                    className="select select-bordered"
+                                    value={feedDraft.bookmarkGroupId}
+                                    onChange={(event) => setFeedDraft((current) => ({ ...current, bookmarkGroupId: event.target.value }))}
+                                >
+                                    <option value="">All bookmark groups</option>
+                                    {bookmarkGroups.map((group) => (
+                                        <option key={group.id} value={group.id}>
+                                            {group.name} ({group.tickers.length})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="label">
+                                    <span className="label-text-alt">
+                                        {bookmarkGroups.length > 0 ? 'Optional: narrow the bookmark scope to one group.' : 'No bookmark groups yet. Create them from the indices view.'}
+                                    </span>
+                                </div>
+                            </label>
+                        ) : null}
 
                         {feedError ? (
                             <div className="alert alert-error">
@@ -1062,9 +1254,23 @@ export const NewsTab: React.FC = () => {
                                                 <p className="text-xs text-error">{getItemSummaryError(item.id)}</p>
                                             ) : null}
 
+                                            {item.why_relevant.length > 0 ? (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {item.why_relevant.map((reason) => (
+                                                        <span key={`${item.id}-${reason}`} className="badge badge-primary badge-outline">{reason}</span>
+                                                    ))}
+                                                </div>
+                                            ) : null}
+
                                             <div className="flex flex-wrap gap-2">
+                                                {item.event_labels.slice(0, 2).map((label) => (
+                                                    <span key={label} className="badge badge-warning badge-outline">{label}</span>
+                                                ))}
                                                 {item.topics.slice(0, 5).map((topic) => (
                                                     <span key={topic} className="badge badge-outline">{topic}</span>
+                                                ))}
+                                                {item.matched_tickers.slice(0, 5).map((ticker) => (
+                                                    <span key={`matched-${ticker}`} className="badge badge-primary">{ticker}</span>
                                                 ))}
                                                 {item.tickers.slice(0, 5).map((ticker) => (
                                                     <span key={ticker} className="badge badge-secondary badge-outline">{ticker}</span>
@@ -1078,6 +1284,8 @@ export const NewsTab: React.FC = () => {
                                                 <span>Published: {formatDateTime(item.published_at)}</span>
                                                 {item.importance ? <span>Importance: {item.importance}</span> : null}
                                                 {item.sentiment ? <span>Sentiment: {item.sentiment}</span> : null}
+                                                {item.story_source_count > 1 ? <span>Story coverage: {item.story_source_count} sources</span> : null}
+                                                {item.related_article_ids.length > 0 ? <span>Related coverage: {item.related_article_ids.length} more articles</span> : null}
                                             </div>
                                         </div>
                                     </div>
@@ -1087,7 +1295,7 @@ export const NewsTab: React.FC = () => {
 
                         <div className="flex items-center justify-between gap-3">
                             <p className="text-sm text-base-content/60">
-                                Showing {feedItems.length.toLocaleString()} of {feedCount.toLocaleString()} articles
+                                Showing {feedItems.length.toLocaleString()} of {feedCount.toLocaleString()} {feedDraft.groupBy === 'story' ? 'stories' : 'articles'}
                             </p>
                             <button
                                 type="button"
@@ -1614,9 +1822,23 @@ export const NewsTab: React.FC = () => {
                                 <p className="text-sm text-base-content/60">No article body was returned.</p>
                             )}
 
+                            {newsDetail.why_relevant.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {newsDetail.why_relevant.map((reason) => (
+                                        <span key={reason} className="badge badge-primary badge-outline">{reason}</span>
+                                    ))}
+                                </div>
+                            ) : null}
+
                             <div className="flex flex-wrap gap-2">
+                                {newsDetail.event_labels.map((label) => (
+                                    <span key={label} className="badge badge-warning badge-outline">{label}</span>
+                                ))}
                                 {newsDetail.topics.map((topic) => (
                                     <span key={topic} className="badge badge-outline">{topic}</span>
+                                ))}
+                                {newsDetail.matched_tickers.map((ticker) => (
+                                    <span key={`matched-${ticker}`} className="badge badge-primary">{ticker}</span>
                                 ))}
                                 {newsDetail.tickers.map((ticker) => (
                                     <span key={ticker} className="badge badge-secondary badge-outline">{ticker}</span>
@@ -1624,6 +1846,12 @@ export const NewsTab: React.FC = () => {
                                 {newsDetail.sectors.map((sector) => (
                                     <span key={sector} className="badge badge-accent badge-outline">{sector}</span>
                                 ))}
+                            </div>
+
+                            <div className="flex flex-wrap gap-3 text-xs text-base-content/60">
+                                {newsDetail.importance ? <span>Importance: {newsDetail.importance}</span> : null}
+                                {newsDetail.sentiment ? <span>Sentiment: {newsDetail.sentiment}</span> : null}
+                                {newsDetail.story_source_count > 1 ? <span>Story coverage: {newsDetail.story_source_count} sources</span> : null}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3">
@@ -1634,6 +1862,41 @@ export const NewsTab: React.FC = () => {
                                     Source URLs: {newsDetail.source_urls.join(' · ')}
                                 </div>
                             </div>
+
+                            {newsDetail.related_articles.length > 0 ? (
+                                <div className="space-y-3 rounded-2xl border border-base-300 bg-base-100/80 p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <h4 className="font-semibold text-base-content">Related Coverage</h4>
+                                        <span className="badge badge-outline">{newsDetail.related_articles.length}</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {newsDetail.related_articles.map((related) => (
+                                            <div key={related.id} className="flex flex-col gap-2 rounded-xl border border-base-300 p-3 md:flex-row md:items-center md:justify-between">
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-base-content">{related.title}</p>
+                                                    <p className="text-xs text-base-content/60">
+                                                        {related.source_title || 'Unknown source'}
+                                                        {related.published_at ? ` · ${formatDateTime(related.published_at)}` : ''}
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-sm btn-outline"
+                                                        onClick={() => void handleOpenRelatedArticle(related.id)}
+                                                        disabled={detailLoadingId === related.id}
+                                                    >
+                                                        {detailLoadingId === related.id ? 'Opening...' : 'Open detail'}
+                                                    </button>
+                                                    <a href={related.canonical_url} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">
+                                                        Open source
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                     ) : (
                         <div className="py-6 text-sm text-base-content/60">No article detail loaded.</div>

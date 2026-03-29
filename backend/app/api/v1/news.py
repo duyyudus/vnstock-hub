@@ -18,6 +18,22 @@ router = APIRouter(prefix="/news", tags=["news"])
 NewsSourceKind = Literal["rss", "crawl"]
 NewsDiscoveryMethod = Literal["homepage", "manual", "default_pack", "sitemap"]
 NewsValidationStatus = Literal["pending", "valid", "invalid"]
+NewsSortMode = Literal["latest", "relevance"]
+NewsScopeMode = Literal["all", "portfolio", "bookmarks"]
+NewsGroupMode = Literal["article", "story"]
+NewsEventType = Literal[
+    "earnings",
+    "dividend",
+    "capital_raise",
+    "insider_trading",
+    "management_change",
+    "regulatory",
+    "mna",
+    "analyst_view",
+    "macro_policy",
+    "other",
+]
+NewsImportanceLevel = Literal["low", "medium", "high"]
 
 
 class NewsSiteResponse(BaseModel):
@@ -87,14 +103,31 @@ class NewsFeedItemResponse(BaseModel):
     sectors: list[str] = Field(default_factory=list)
     importance: str | None = None
     sentiment: str | None = None
+    event_type: NewsEventType | None = None
+    event_labels: list[str] = Field(default_factory=list)
+    matched_tickers: list[str] = Field(default_factory=list)
+    why_relevant: list[str] = Field(default_factory=list)
+    story_key: str | None = None
+    story_source_count: int = 1
+    related_article_ids: list[int] = Field(default_factory=list)
     source_title: str | None = None
     source_kind: NewsSourceKind | None = None
     is_filtered_for_user: bool = False
 
 
+class NewsRelatedArticleResponse(BaseModel):
+    id: int
+    title: str
+    published_at: str | None = None
+    canonical_url: str
+    source_title: str | None = None
+
+
 class NewsArticleDetailResponse(NewsFeedItemResponse):
     content_text: str | None = None
     source_urls: list[str] = Field(default_factory=list)
+    related_article_ids: list[int] = Field(default_factory=list)
+    related_articles: list[NewsRelatedArticleResponse] = Field(default_factory=list)
 
 
 class NewsFeedResponse(BaseModel):
@@ -309,7 +342,6 @@ def _serialize_feed_item(payload: dict[str, Any]) -> NewsFeedItemResponse:
     sources = payload.get("sources") or []
     source_labels = [str(item.get("label")) for item in sources if item.get("label")]
     source_kind = sources[0]["source_type"] if sources else None
-    source_urls = [str(item.get("article_url")) for item in sources if item.get("article_url")]
     return NewsFeedItemResponse(
         id=int(payload["id"]),
         title=str(payload["title"]),
@@ -326,6 +358,13 @@ def _serialize_feed_item(payload: dict[str, Any]) -> NewsFeedItemResponse:
         sectors=[str(item) for item in payload.get("sectors", [])],
         importance=payload.get("importance"),
         sentiment=payload.get("sentiment"),
+        event_type=payload.get("event_type"),
+        event_labels=[str(item) for item in payload.get("event_labels", [])],
+        matched_tickers=[str(item) for item in payload.get("matched_tickers", [])],
+        why_relevant=[str(item) for item in payload.get("why_relevant", [])],
+        story_key=payload.get("story_key"),
+        story_source_count=int(payload.get("story_source_count") or 1),
+        related_article_ids=[int(item) for item in payload.get("related_article_ids", [])],
         source_title=source_labels[0] if source_labels else None,
         source_kind=source_kind,
         is_filtered_for_user=False,
@@ -339,6 +378,17 @@ def _serialize_article_detail(payload: dict[str, Any]) -> NewsArticleDetailRespo
         **base.model_dump(),
         content_text=payload.get("content_text"),
         source_urls=[str(item.get("article_url")) for item in sources if item.get("article_url")],
+        related_articles=[
+            NewsRelatedArticleResponse(
+                id=int(item["id"]),
+                title=str(item["title"]),
+                published_at=item.get("published_at"),
+                canonical_url=str(item["canonical_url"]),
+                source_title=item.get("source_title"),
+            )
+            for item in payload.get("related_articles", [])
+            if isinstance(item, dict)
+        ],
     )
 
 
@@ -436,18 +486,33 @@ async def get_news_feed(
     to: str | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
+    sort: NewsSortMode = Query(default="latest"),
+    scope: NewsScopeMode = Query(default="all"),
+    bookmark_group_id: int | None = Query(default=None, ge=1),
+    event_type: NewsEventType | None = Query(default=None),
+    importance: NewsImportanceLevel | None = Query(default=None),
+    group_by: NewsGroupMode = Query(default="article"),
     current_user=Depends(get_current_user_optional),
 ):
-    payload = await news_service.get_feed(
-        user_id=current_user.id if current_user else None,
-        source=source,
-        topic=topic,
-        ticker=ticker,
-        date_from=_parse_datetime_boundary(from_, end=False),
-        date_to=_parse_datetime_boundary(to, end=True),
-        cursor=cursor,
-        limit=limit,
-    )
+    try:
+        payload = await news_service.get_feed(
+            user_id=current_user.id if current_user else None,
+            source=source,
+            topic=topic,
+            ticker=ticker,
+            date_from=_parse_datetime_boundary(from_, end=False),
+            date_to=_parse_datetime_boundary(to, end=True),
+            cursor=cursor,
+            limit=limit,
+            sort=sort,
+            scope=scope,
+            bookmark_group_id=bookmark_group_id,
+            event_type=event_type,
+            importance=importance,
+            group_by=group_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return NewsFeedResponse(
         items=[_serialize_feed_item(item) for item in payload["items"]],
         count=int(payload["count"]),

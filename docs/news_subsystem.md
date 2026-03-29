@@ -1,39 +1,46 @@
-# News Subsystem V1
+# News Subsystem V2
 
 ## Purpose
 
-The News subsystem provides a first-class news pipeline for VNStock Hub. In v1 it supports:
+The News subsystem provides a first-class news pipeline for VNStock Hub. In v2 it supports:
 
-- a public default feed available without login
-- private user-managed sources for signed-in users
-- RSS/Atom discovery and manual feed onboarding
-- deterministic non-RSS crawl setup
-- article deduplication and ingest-time semantic classification
+- a public latest feed available without login
+- private user-managed RSS and crawl sources for signed-in users
+- RSS/Atom discovery and deterministic non-RSS crawl onboarding
+- article deduplication and ingest-time semantic enrichment
+- investor-oriented feed triage through relevance ranking
+- portfolio-aware and bookmark-aware feed scopes
+- event and catalyst labeling
+- story clustering with related-coverage navigation
 - per-user blocked-topic filtering
 - admin monitoring and repair controls
 
-This document describes the subsystem as implemented in v1.
+This document describes the subsystem as currently implemented in v2.
 
 ## Scope
 
-V1 is intentionally not a general web intelligence platform. It is a deterministic ingestion system with LLM-assisted content understanding.
+V2 is still not a general web intelligence platform. It is a deterministic ingestion system with LLM-assisted content understanding and heuristic investor triage layered on top.
 
-Included in v1:
+Included in v2:
 
 - background polling of RSS feeds and crawl sources
 - public source seeding from YAML
 - homepage RSS/Atom discovery
 - sitemap-assisted crawl suggestion when RSS is unavailable
+- ingest-time semantic classification
 - on-demand article summary generation
+- portfolio/bookmark-aware relevance scoring
+- story grouping and related coverage
 - admin monitoring and maintenance actions
 
-Explicitly out of scope in v1:
+Explicitly out of scope in v2:
 
 - vector search or embeddings
-- semantic reranking or recommendation boosting
 - browser-rendered crawling
 - LLM-generated crawl rules
-- treating sitemap files as permanent feed sources
+- full LLM-first clustering
+- push/email/webhook alerts
+- a separate watchlist model beyond existing bookmarks and portfolio positions
 
 ## Runtime Placement
 
@@ -53,10 +60,12 @@ Key integration points:
   - `backend/app/services/news/discovery.py`
 - Semantic classification and summaries:
   - `backend/app/services/news/semantics.py`
+- Dashboard UI:
+  - `frontend/src/features/dashboard/news/NewsTab.tsx`
+- Shared client types:
+  - `frontend/src/api/stockApi.ts`
 
 ## Data Model
-
-The subsystem uses dedicated relational tables instead of the standalone scraper catalog.
 
 Core tables in `backend/app/db/models.py`:
 
@@ -77,11 +86,16 @@ Core tables in `backend/app/db/models.py`:
 - `news_article_sources`
   - maps one canonical article to one or more origin sources
 - `news_article_semantics`
-  - topics, tickers, sectors, importance, sentiment, raw LLM payload
+  - topics, tickers, sectors, importance, sentiment, and `raw_payload`
+  - `raw_payload` now also carries `event_type`, `event_labels`, and `story_key`
 - `news_user_preferences`
   - per-user blocked-topic text and compiled blocked labels
 - `news_ingestion_runs`
   - execution history for source polling
+- existing cross-subsystem user-interest tables reused by v2:
+  - `portfolio_positions`
+  - `bookmark_groups`
+  - `bookmark_stocks`
 
 Important model behavior:
 
@@ -89,6 +103,7 @@ Important model behavior:
 - content hash is indexed for secondary dedupe
 - one article can originate from multiple feeds/sources
 - feed and crawl source polling schedules are source-specific
+- story grouping is derived from semantic payload, not stored in a separate table
 
 ## Source Types
 
@@ -100,7 +115,7 @@ Public sources are seeded from:
 
 These are loaded at startup by `ensure_public_sources()`.
 
-V1 defaults to validated RSS feeds for the public pack.
+Current defaults are validated RSS feeds.
 
 ### Private RSS Sources
 
@@ -123,59 +138,42 @@ Users can add crawl sources for non-RSS sites by providing:
 
 Validation is deterministic and uses static HTML only.
 
-## Discovery Strategy
+## Discovery and Validation
 
 ### RSS Discovery
 
-RSS discovery is handled by `discover_rss_feeds()` and is deterministic.
-
-It currently tries:
+`discover_rss_feeds()` is deterministic and currently tries:
 
 1. `<link rel="alternate" ...>` feed tags on the homepage
 2. homepage anchors with feed-like URLs or labels
 3. common feed paths such as `/rss`, `/rss.html`, `/feed`, `/atom.xml`
 4. feed hub pages that link to real category feeds
 
-Supported result kinds for RSS discovery:
+Supported result kinds:
 
 - `rss`
 - `atom`
 
 ### Sitemap-Assisted Crawl Discovery
 
-If RSS/Atom discovery returns nothing, the subsystem may use sitemap metadata as a discovery aid only.
+If RSS/Atom discovery returns nothing, `discover_crawl_listings()` may use sitemap metadata as a discovery aid only.
 
-Important v1 rule:
+Important rule:
 
-- sitemap is not treated as a permanent feed source anymore
+- sitemap is not treated as a permanent feed source
 
-Instead, `discover_crawl_listings()` uses sitemap files to suggest stable section/listing pages for crawl setup, for example:
+Instead it suggests stable section/listing pages for crawl setup, for example:
 
 - `/kinh-te/`
 - `/chung-khoan/`
 
-This is meant to help onboarding for sites that have no real RSS feed but do publish structured category URLs.
-
-### Manual Fallback
-
-Discovery is best-effort. Users can always fall back to:
-
-- manual RSS entry
-- manual crawl-source entry
-
-## Validation
-
-### RSS Validation
+### Validation
 
 `validate_feed()`:
 
 - fetches the feed URL
 - parses RSS or Atom entries
 - returns sample titles and entry counts
-
-Validation succeeds only if the feed contains parseable entries.
-
-### Crawl Validation
 
 `validate_crawl_source()`:
 
@@ -185,7 +183,7 @@ Validation succeeds only if the feed contains parseable entries.
 - verifies article body extraction works
 - returns heuristic selector suggestions
 
-V1 does not use a headless browser here.
+No headless browser is used here.
 
 ## Ingestion Pipeline
 
@@ -208,7 +206,7 @@ Polling uses source-level intervals and `next_poll_at`.
 
 When poll intervals change for a source, the service resets `next_poll_at` so the updated schedule takes effect quickly.
 
-## Content Extraction
+## Content Extraction and Repair
 
 Extraction is deterministic and rule-based.
 
@@ -221,7 +219,8 @@ Current behavior includes:
 There is also article repair logic:
 
 - opening detail can trigger content repair for suspicious stored bodies
-- explicit admin/user-triggered refresh can re-fetch and re-extract one article
+- explicit refresh can re-fetch and re-extract one article
+- when content materially changes, semantic payload is regenerated and stale summaries are cleared
 
 ## Deduplication
 
@@ -237,7 +236,7 @@ This allows:
 
 ## Semantic Layer
 
-LLM usage in v1 is limited to content understanding, not crawling.
+LLM usage in v2 is still limited to content understanding, not crawling or clustering.
 
 ### Ingest-Time Classification
 
@@ -248,15 +247,20 @@ For new or changed articles, the subsystem stores:
 - `sectors`
 - `importance`
 - `sentiment`
+- `event_type`
+- `event_labels`
+- `story_key`
 - raw payload for debugging/inspection
 
-Classification runs asynchronously during ingestion and is cached in DB.
+Classification is performed by `classify_article()`.
+
+The classifier may use an OpenAI-compatible provider, but it has heuristic fallback behavior when providers are unavailable.
 
 ### Provider Fallback
 
-The subsystem supports multiple OpenAI-compatible providers from `LLM_PROVIDERS`.
+The subsystem supports multiple OpenAI-compatible providers from shared LLM configuration.
 
-The implementation:
+Current behavior:
 
 - skips obviously unusable providers
 - cools down failing providers
@@ -271,13 +275,13 @@ User preference flow:
 2. backend compiles that text into normalized blocked labels
 3. personalized feed excludes matching articles
 
-This is exclusion-only in v1.
+This remains exclusion-only.
 
 ## Summaries
 
-LLM summaries are on-demand only.
+LLM summaries are still on-demand only.
 
-Important v1 behavior:
+Important v2 behavior:
 
 - `llm_summary` is not generated by default at ingest time
 - feed cards show original excerpt unless a summary has been generated
@@ -287,6 +291,126 @@ Important v1 behavior:
 
 If article content is refreshed and materially changes, stale `llm_summary` is cleared.
 
+## Investor Triage Layer
+
+V2 adds a read-time investor triage layer on top of stored articles.
+
+### Feed Modes
+
+The frontend exposes these top-level views:
+
+- `Latest`
+- `For You`
+- `Portfolio`
+- `Bookmarks`
+
+Current frontend default:
+
+- `Latest`
+
+### Feed Query Surface
+
+`GET /api/v1/news/feed` now supports:
+
+- `source`
+- `topic`
+- `ticker`
+- `from`
+- `to`
+- `cursor`
+- `limit`
+- `sort`
+  - `latest`
+  - `relevance`
+- `scope`
+  - `all`
+  - `portfolio`
+  - `bookmarks`
+- `bookmark_group_id`
+- `event_type`
+- `importance`
+- `group_by`
+  - `article`
+  - `story`
+
+### Relevance Ranking
+
+Relevance ranking is heuristic and request-time only. It does not currently invoke an LLM.
+
+Inputs include:
+
+- matched portfolio tickers
+- matched bookmark tickers
+- importance
+- recency
+- source multiplicity
+
+Associated explanatory fields returned in feed/detail payloads:
+
+- `matched_tickers`
+- `why_relevant`
+
+Current `why_relevant` reasons are intentionally limited to:
+
+- portfolio matches
+- bookmark matches
+- multi-source coverage
+- cluster size when a grouped story contains multiple related articles
+
+### Event and Catalyst Labels
+
+Feed and detail payloads expose:
+
+- `event_type`
+- `event_labels`
+
+These are used for:
+
+- event filtering
+- feed-card badges
+- detail badges
+
+### Story Clustering
+
+V2 adds lightweight story clustering as a presentation layer.
+
+Important implementation details:
+
+- clustering is heuristic, not LLM-based
+- `story_key` is derived from:
+  - primary ticker
+  - short time bucket
+  - normalized title signature
+- articles are still stored individually
+- grouping only changes how feed items are presented
+
+Returned clustering fields:
+
+- `story_key`
+- `story_source_count`
+- `related_article_ids`
+
+Article detail also returns:
+
+- `related_articles`
+
+### Scope Integration
+
+V2 reuses existing user-interest sources instead of creating a new watchlist model.
+
+Supported interest sources:
+
+- `portfolio_positions`
+- `bookmark_groups` and `bookmark_stocks`
+
+Scope behavior:
+
+- anonymous users always operate effectively in public/latest mode
+- signed-in users can request relevance ranking
+- `scope=portfolio` restricts to articles matching held tickers
+- `scope=bookmarks` restricts to articles matching bookmark tickers
+- `bookmark_group_id` can narrow bookmark scope to one group
+
 ## Feed Behavior
 
 ### Anonymous Feed
@@ -294,23 +418,20 @@ If article content is refreshed and materially changes, stale `llm_summary` is c
 Anonymous users see:
 
 - public default sources only
+- latest sort only in practice
 
-### Personalized Feed
+### Signed-In Feed
 
 Signed-in users see:
 
 - public default sources
 - plus their own private subscriptions
+- optional relevance ranking against portfolio and bookmarks
+- blocked-topic filtering after semantic matching
 
-Feed-level filtering supports:
+Current frontend page size is 20 items per request.
 
-- source domain
-- topic
-- ticker
-- date range
-- cursor pagination
-
-Current frontend default page size is 20 items per request.
+Current pagination behavior for the v2 feed is offset-style cursor pagination, returned through `next_cursor`.
 
 ## API Surface
 
@@ -375,7 +496,7 @@ Environment-backed settings in `backend/app/core/config.py`:
 - `NEWS_DEFAULT_POLL_INTERVAL_MINUTES`
 - `NEWS_INGESTION_BATCH_SIZE`
 - `NEWS_SOURCES_YAML_PATH`
-- shared `LLM_PROVIDERS`
+- shared LLM provider settings
 - shared `LLM_REQUEST_TIMEOUT_SECONDS`
 
 Persistent admin override:
@@ -391,7 +512,7 @@ Public source seed file:
 
 The subsystem keeps UTC-naive internal timestamps for scheduling/storage consistency and serializes operational timestamps to `Asia/Ho_Chi_Minh` (`GMT+7`) for admin-facing API responses.
 
-This applies to things like:
+This applies to:
 
 - ingestion run timestamps
 - source status timestamps
@@ -407,9 +528,12 @@ There is focused coverage for:
 - sitemap-assisted crawl discovery
 - malformed feed parsing fallback
 - extraction and cleanup behavior
-- dedupe behavior
-- semantic storage
+- semantic storage and fallback behavior
 - summary generation
+- event-type classification
+- relevance ranking
+- portfolio and bookmark scope filtering
+- story grouping and related coverage
 - article refresh and repair paths
 - admin config and monitoring endpoints
 
@@ -421,7 +545,7 @@ Primary backend tests:
 
 ## Known Limitations
 
-V1 still has important limits:
+Important current limits:
 
 - crawl setup remains selector-driven and often site-specific
 - no JavaScript-rendered crawling
@@ -429,7 +553,9 @@ V1 still has important limits:
 - no vector search or semantic retrieval
 - RSS discovery is best-effort and not universal
 - sitemap-assisted discovery is only a hint for crawl onboarding
-- source-specific edge cases may still require extraction or validation refinements
+- story clustering is heuristic and can miss or over-group edge cases
+- relevance scoring is heuristic and request-time only
+- no proactive alert delivery yet
 
 ## Operational Notes
 
@@ -440,6 +566,7 @@ When troubleshooting:
 3. check `/api/v1/news/admin/overview`
 4. check `/api/v1/news/admin/runs`
 5. inspect source validation status in `/api/v1/news/admin/sources`
+6. compare feed behavior in `latest` vs `relevance` mode when triage output looks suspicious
 
 Useful repair actions:
 
@@ -451,10 +578,11 @@ Useful repair actions:
 
 ## Recommended Future Work
 
-Likely v2 directions:
+Likely next directions after v2:
 
+- selective LLM adjudication for ambiguous story-clustering cases
 - more robust per-site crawl adapters
 - better crawl suggestion UX and presets
 - more structured source-level analytics
-- explicit admin “reclassify article” or “reprocess source” actions
-- optional digest or ranking features built on top of the stored semantic layer
+- explicit admin reclassify/reprocess actions
+- alert and digest delivery built on top of the stored semantic layer

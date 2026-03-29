@@ -50,6 +50,125 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "technology": ("technology", "software", "ai", "data center", "chip", "semiconductor"),
 }
 
+EVENT_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "earnings": (
+        "earnings",
+        "quarterly earnings",
+        "financial results",
+        "profit",
+        "loi nhuan",
+        "lợi nhuận",
+        "revenue",
+        "doanh thu",
+        "quarter",
+        "annual report",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+    ),
+    "dividend": (
+        "dividend",
+        "cash payout",
+        "stock dividend",
+        "record date",
+        "ex-dividend",
+        "bonus shares",
+        "co tuc",
+        "cổ tức",
+        "ngay dang ky cuoi cung",
+        "ngày đăng ký cuối cùng",
+    ),
+    "capital_raise": (
+        "capital raise",
+        "private placement",
+        "rights issue",
+        "share issuance",
+        "bond issuance",
+        "increase charter capital",
+        "fundraising",
+    ),
+    "insider_trading": (
+        "insider trading",
+        "internal trading",
+        "major shareholder",
+        "registered to buy",
+        "registered to sell",
+        "bought shares",
+        "sold shares",
+    ),
+    "management_change": (
+        "ceo",
+        "cfo",
+        "chairman",
+        "appoint",
+        "appointment",
+        "resignation",
+        "dismissal",
+        "leadership",
+        "management change",
+    ),
+    "regulatory": (
+        "regulator",
+        "investigation",
+        "sanction",
+        "inspection",
+        "compliance",
+        "decree",
+        "circular",
+        "policy",
+        "regulation",
+        "license",
+        "approval",
+    ),
+    "mna": (
+        "merger",
+        "acquisition",
+        "takeover",
+        "buyout",
+        "strategic stake",
+        "strategic investment",
+        "sell stake",
+        "divestment",
+    ),
+    "analyst_view": (
+        "target price",
+        "broker report",
+        "research report",
+        "recommendation",
+        "upgrade",
+        "downgrade",
+        "outperform",
+        "underperform",
+        "buy rating",
+        "sell rating",
+    ),
+    "macro_policy": (
+        "interest rate",
+        "gdp",
+        "cpi",
+        "inflation",
+        "exchange rate",
+        "central bank",
+        "monetary policy",
+        "fiscal policy",
+        "trade policy",
+    ),
+}
+
+EVENT_TYPE_DISPLAY_LABELS: dict[str, str] = {
+    "earnings": "earnings",
+    "dividend": "dividend",
+    "capital_raise": "capital raise",
+    "insider_trading": "insider trading",
+    "management_change": "management change",
+    "regulatory": "regulatory",
+    "mna": "M&A",
+    "analyst_view": "analyst view",
+    "macro_policy": "macro policy",
+    "other": "other",
+}
+
 SECTOR_MAP = {
     "banking": "banking",
     "real_estate": "real_estate",
@@ -257,24 +376,47 @@ def _heuristic_importance(text: str) -> str:
     return "low"
 
 
+def _heuristic_event_payload(text: str) -> dict[str, Any]:
+    lowered = text.lower()
+    matched_types = [
+        event_type
+        for event_type, keywords in EVENT_TYPE_KEYWORDS.items()
+        if any(keyword in lowered for keyword in keywords)
+    ]
+    event_type = matched_types[0] if matched_types else "other"
+    event_labels = [
+        EVENT_TYPE_DISPLAY_LABELS.get(item, item.replace("_", " "))
+        for item in matched_types[:3]
+    ] or [EVENT_TYPE_DISPLAY_LABELS[event_type]]
+    return {
+        "event_type": event_type,
+        "event_labels": _display_labels(event_labels),
+    }
+
+
 async def classify_article(title: str, excerpt: str | None, content_text: str | None) -> dict[str, Any]:
     body = "\n\n".join(part for part in [title, excerpt or "", content_text or ""] if part).strip()
     heuristic_topics = _heuristic_topics(body)
     heuristic_sectors = _normalize_labels(
         [SECTOR_MAP[topic] for topic in heuristic_topics if topic in SECTOR_MAP]
     )
+    heuristic_event_payload = _heuristic_event_payload(body)
     heuristic_payload = {
         "topics": heuristic_topics,
         "tickers": [],
         "sectors": heuristic_sectors,
         "importance": _heuristic_importance(body),
         "sentiment": _heuristic_sentiment(body),
+        "event_type": heuristic_event_payload["event_type"],
+        "event_labels": heuristic_event_payload["event_labels"],
     }
 
     prompt = (
         "Classify the article into strict JSON with keys: "
         "{\"topics\": string[], \"tickers\": string[], \"sectors\": string[], "
-        "\"importance\": \"low|medium|high\", \"sentiment\": \"negative|neutral|positive\"}. "
+        "\"importance\": \"low|medium|high\", \"sentiment\": \"negative|neutral|positive\", "
+        "\"event_type\": \"earnings|dividend|capital_raise|insider_trading|management_change|regulatory|mna|analyst_view|macro_policy|other\", "
+        "\"event_labels\": string[]}. "
         "Use concise normalized labels. "
         "For tickers, include only real listed stock symbols explicitly supported by the article context. "
         "Do not guess. Do not return generic uppercase words, country abbreviations, organization acronyms, product names, policy terms, or currencies such as USD. "
@@ -296,6 +438,14 @@ async def classify_article(title: str, excerpt: str | None, content_text: str | 
     sentiment = str(llm_payload.get("sentiment") or heuristic_payload["sentiment"]).strip().lower()
     raw_payload = dict(llm_payload)
     raw_payload["display_topics"] = display_topics or heuristic_topics
+    event_type = str(llm_payload.get("event_type") or heuristic_payload["event_type"]).strip().lower()
+    if event_type not in EVENT_TYPE_DISPLAY_LABELS:
+        event_type = heuristic_payload["event_type"]
+    event_labels = _display_labels([str(item) for item in llm_payload.get("event_labels", [])])
+    if not event_labels:
+        event_labels = heuristic_payload["event_labels"]
+    raw_payload["event_type"] = event_type
+    raw_payload["event_labels"] = event_labels
 
     merged = {
         "topics": topics or heuristic_topics,
@@ -303,6 +453,8 @@ async def classify_article(title: str, excerpt: str | None, content_text: str | 
         "sectors": sectors or heuristic_sectors,
         "importance": importance if importance in {"low", "medium", "high"} else heuristic_payload["importance"],
         "sentiment": sentiment if sentiment in {"negative", "neutral", "positive"} else heuristic_payload["sentiment"],
+        "event_type": event_type,
+        "event_labels": event_labels,
         "raw_payload": raw_payload,
     }
     return merged

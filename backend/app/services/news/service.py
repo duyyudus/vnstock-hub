@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+import unicodedata
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -16,6 +17,8 @@ import yaml
 from app.core.config import settings
 from app.db.database import async_session
 from app.db.models import (
+    BookmarkGroup,
+    BookmarkStock,
     NewsArticle,
     NewsArticleSemantic,
     NewsArticleSource,
@@ -25,6 +28,7 @@ from app.db.models import (
     NewsSiteFeed,
     NewsSourceSubscription,
     NewsUserPreference,
+    PortfolioPosition,
 )
 
 from .discovery import (
@@ -56,6 +60,39 @@ CONTENT_REPAIR_MARKERS = (
 ALWAYS_REFRESH_DETAIL_DOMAINS = {"vneconomy.vn"}
 LEGACY_FEED_TITLE_WORD_THRESHOLD = 8
 LEGACY_FEED_TITLE_LENGTH_THRESHOLD = 60
+NEWS_STORY_BUCKET_HOURS = 12
+STORY_TITLE_STOPWORDS = {
+    "and",
+    "are",
+    "cua",
+    "cho",
+    "duoc",
+    "giao",
+    "has",
+    "issue",
+    "issued",
+    "khong",
+    "la",
+    "nam",
+    "news",
+    "sau",
+    "says",
+    "says",
+    "sẽ",
+    "tai",
+    "the",
+    "thi",
+    "thong",
+    "tin",
+    "to",
+    "trong",
+    "updated",
+    "ve",
+    "voi",
+    "với",
+}
+IMPORTANCE_WEIGHTS = {"high": 60, "medium": 30, "low": 10}
+SOURCE_MULTIPLIER_CAP = 4
 
 
 def utc_now() -> datetime:
@@ -89,6 +126,82 @@ def _display_topics(semantics: NewsArticleSemantic | None) -> list[str]:
             if display_topics:
                 return display_topics
     return [str(item) for item in (semantics.topics or [])]
+
+
+def _ascii_fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.replace("đ", "d").replace("Đ", "D"))
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _normalize_story_title(value: str) -> str:
+    folded = _ascii_fold(value).lower()
+    return re.sub(r"[^a-z0-9\s]+", " ", folded)
+
+
+def _story_signature(title: str) -> str:
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for token in re.findall(r"[a-z0-9]+", _normalize_story_title(title)):
+        if len(token) < 3 or token in STORY_TITLE_STOPWORDS:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+        if len(tokens) >= 6:
+            break
+    return "-".join(tokens) if tokens else "story"
+
+
+def _story_time_bucket(published_at: datetime | None) -> str:
+    if published_at is None:
+        return "na"
+    bucket_hour = (published_at.hour // NEWS_STORY_BUCKET_HOURS) * NEWS_STORY_BUCKET_HOURS
+    return published_at.replace(hour=bucket_hour, minute=0, second=0, microsecond=0).strftime("%Y%m%d%H")
+
+
+def _compute_story_key(title: str, tickers: list[str], published_at: datetime | None) -> str:
+    primary_ticker = (sorted({str(item).strip().upper() for item in tickers if str(item).strip()}) or ["MARKET"])[0]
+    signature = _story_signature(title)
+    return f"{primary_ticker}|{_story_time_bucket(published_at)}|{signature}"
+
+
+def _semantic_raw_payload(semantics: NewsArticleSemantic | None) -> dict[str, Any]:
+    if semantics is None or not isinstance(semantics.raw_payload, dict):
+        return {}
+    return semantics.raw_payload
+
+
+def _semantic_event_type(semantics: NewsArticleSemantic | None) -> str | None:
+    raw_payload = _semantic_raw_payload(semantics)
+    value = str(raw_payload.get("event_type") or "").strip().lower()
+    return value or None
+
+
+def _semantic_event_labels(semantics: NewsArticleSemantic | None) -> list[str]:
+    raw_payload = _semantic_raw_payload(semantics)
+    values = raw_payload.get("event_labels")
+    if isinstance(values, list):
+        labels = _display_labels([str(item) for item in values])
+        if labels:
+            return labels
+    event_type = _semantic_event_type(semantics)
+    if not event_type:
+        return []
+    return [event_type.replace("_", " ")]
+
+
+def _semantic_story_key(semantics: NewsArticleSemantic | None, article: NewsArticle) -> str:
+    raw_payload = _semantic_raw_payload(semantics)
+    story_key = str(raw_payload.get("story_key") or "").strip()
+    if story_key:
+        return story_key
+    tickers = [str(item) for item in (semantics.tickers if semantics else [])]
+    return _compute_story_key(article.title, tickers, article.published_at)
+
+
+def _importance_value(importance: str | None) -> int:
+    return IMPORTANCE_WEIGHTS.get(str(importance or "").strip().lower(), 0)
 
 
 class NewsIngestionService:
@@ -539,6 +652,270 @@ class NewsIngestionService:
             await session.refresh(preference)
             return self._serialize_preference(preference)
 
+    async def _load_user_interest_context(
+        self,
+        session,
+        *,
+        user_id: int | None,
+        bookmark_group_id: int | None = None,
+    ) -> dict[str, set[str]]:
+        if user_id is None:
+            return {
+                "portfolio_tickers": set(),
+                "bookmark_tickers": set(),
+            }
+
+        portfolio_tickers = {
+            str(row[0]).strip().upper()
+            for row in (
+                await session.execute(
+                    select(PortfolioPosition.ticker).where(PortfolioPosition.user_id == user_id)
+                )
+            ).all()
+            if str(row[0]).strip()
+        }
+
+        bookmark_stmt = (
+            select(BookmarkStock.ticker)
+            .join(BookmarkGroup, BookmarkGroup.id == BookmarkStock.group_id)
+            .where(BookmarkGroup.user_id == user_id)
+        )
+        if bookmark_group_id is not None:
+            bookmark_group = await session.get(BookmarkGroup, bookmark_group_id)
+            if bookmark_group is None or int(bookmark_group.user_id) != int(user_id):
+                raise ValueError("Bookmark group not found")
+            bookmark_stmt = bookmark_stmt.where(BookmarkGroup.id == bookmark_group_id)
+        bookmark_tickers = {
+            str(row[0]).strip().upper()
+            for row in (await session.execute(bookmark_stmt)).all()
+            if str(row[0]).strip()
+        }
+
+        return {
+            "portfolio_tickers": portfolio_tickers,
+            "bookmark_tickers": bookmark_tickers,
+        }
+
+    def _parse_offset_cursor(self, cursor: str | None) -> int:
+        if not cursor:
+            return 0
+        if cursor.startswith("offset:"):
+            try:
+                return max(0, int(cursor.split(":", 1)[1]))
+            except (TypeError, ValueError):
+                return 0
+        return 0
+
+    def _build_why_relevant(
+        self,
+        *,
+        matched_portfolio_tickers: list[str],
+        matched_bookmark_tickers: list[str],
+        event_type: str | None,
+        source_count: int,
+    ) -> list[str]:
+        reasons: list[str] = []
+        if matched_portfolio_tickers:
+            joined = ", ".join(matched_portfolio_tickers[:3])
+            reasons.append(f"Matches your portfolio: {joined}")
+        if matched_bookmark_tickers:
+            joined = ", ".join(matched_bookmark_tickers[:3])
+            reasons.append(f"Matches your bookmarks: {joined}")
+        if source_count > 1:
+            reasons.append(f"Covered by {source_count} sources")
+        return reasons
+
+    def _compute_relevance_score(
+        self,
+        *,
+        matched_portfolio_tickers: list[str],
+        matched_bookmark_tickers: list[str],
+        importance: str | None,
+        published_at: str | None,
+        source_count: int,
+    ) -> int:
+        score = 0
+        score += 130 * len(matched_portfolio_tickers[:3])
+        score += 90 * len(matched_bookmark_tickers[:3])
+        score += _importance_value(importance)
+        score += min(source_count, SOURCE_MULTIPLIER_CAP) * 8
+
+        if published_at:
+            try:
+                published_dt = datetime.fromisoformat(published_at)
+            except ValueError:
+                published_dt = None
+            if published_dt is not None:
+                age_hours = max(0.0, (utc_now() - published_dt).total_seconds() / 3600.0)
+                if age_hours <= 6:
+                    score += 40
+                elif age_hours <= 24:
+                    score += 25
+                elif age_hours <= 72:
+                    score += 12
+        return score
+
+    def _build_feed_payload(
+        self,
+        article: NewsArticle,
+        *,
+        sources: list[dict[str, Any]],
+        semantics: NewsArticleSemantic | None,
+        interest_context: dict[str, set[str]] | None = None,
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        interest_context = interest_context or {
+            "portfolio_tickers": set(),
+            "bookmark_tickers": set(),
+        }
+        semantic_tickers = sorted({str(item).strip().upper() for item in (semantics.tickers if semantics else []) if str(item).strip()})
+        matched_portfolio_tickers = sorted(set(semantic_tickers) & interest_context["portfolio_tickers"])
+        matched_bookmark_tickers = sorted(set(semantic_tickers) & interest_context["bookmark_tickers"])
+        matched_tickers = sorted(set(matched_portfolio_tickers + matched_bookmark_tickers))
+        source_count = len(
+            {
+                f"{item.get('source_type')}:{item.get('source_id')}"
+                for item in sources
+                if item and item.get("source_id") is not None
+            }
+        ) or len({str(item.get("article_url") or "") for item in sources if item})
+        event_type = _semantic_event_type(semantics)
+        payload = self._serialize_feed_item(
+            article,
+            sources=sources,
+            semantics=semantics,
+            include_content=include_content,
+        )
+        payload["matched_tickers"] = matched_tickers
+        payload["why_relevant"] = self._build_why_relevant(
+            matched_portfolio_tickers=matched_portfolio_tickers,
+            matched_bookmark_tickers=matched_bookmark_tickers,
+            event_type=event_type,
+            source_count=source_count,
+        )
+        payload["_matched_portfolio_tickers"] = matched_portfolio_tickers
+        payload["_matched_bookmark_tickers"] = matched_bookmark_tickers
+        payload["_sort_score"] = self._compute_relevance_score(
+            matched_portfolio_tickers=matched_portfolio_tickers,
+            matched_bookmark_tickers=matched_bookmark_tickers,
+            importance=payload.get("importance"),
+            published_at=payload.get("published_at"),
+            source_count=source_count,
+        )
+        return payload
+
+    def _annotate_story_groups(self, items: list[dict[str, Any]], *, group_by: str) -> list[dict[str, Any]]:
+        if not items:
+            return []
+
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        order: list[str] = []
+        for item in items:
+            key = str(item.get("story_key") or f"article:{item['id']}")
+            if key not in grouped:
+                order.append(key)
+            grouped[key].append(item)
+
+        annotated_items: list[dict[str, Any]] = []
+        for key in order:
+            cluster = grouped[key]
+            unique_sources = {
+                f"{source.get('source_type')}:{source.get('source_id')}"
+                for cluster_item in cluster
+                for source in (cluster_item.get("sources") or [])
+                if source and source.get("source_id") is not None
+            }
+            related_ids = [int(cluster_item["id"]) for cluster_item in cluster[1:]]
+            lead = dict(cluster[0])
+            lead["story_source_count"] = len(unique_sources) or 1
+            lead["related_article_ids"] = related_ids
+            if len(cluster) > 1 and not any(reason.startswith("Clustered from ") for reason in lead.get("why_relevant", [])):
+                lead["why_relevant"] = [*lead.get("why_relevant", []), f"Clustered from {len(cluster)} related articles"]
+            if group_by == "story":
+                annotated_items.append(lead)
+                continue
+
+            for cluster_item in cluster:
+                item_payload = dict(cluster_item)
+                item_payload["story_source_count"] = lead["story_source_count"]
+                item_payload["related_article_ids"] = [
+                    int(candidate["id"])
+                    for candidate in cluster
+                    if int(candidate["id"]) != int(cluster_item["id"])
+                ]
+                annotated_items.append(item_payload)
+        return annotated_items
+
+    def _story_sort_key(self, item: dict[str, Any]) -> tuple[int, str, int]:
+        return (
+            int(item.get("_sort_score") or 0),
+            str(item.get("published_at") or ""),
+            int(item.get("id") or 0),
+        )
+
+    async def _load_related_articles(
+        self,
+        session,
+        *,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        user_id: int | None,
+        interest_context: dict[str, set[str]],
+    ) -> list[dict[str, Any]]:
+        story_key = _semantic_story_key(semantics, article)
+        if not story_key:
+            return []
+
+        stmt = select(NewsArticle).where(NewsArticle.id != article.id)
+        if article.published_at is not None:
+            window_start = article.published_at - timedelta(days=3)
+            window_end = article.published_at + timedelta(days=3)
+            stmt = stmt.where(
+                NewsArticle.published_at.is_not(None),
+                NewsArticle.published_at >= window_start,
+                NewsArticle.published_at <= window_end,
+            )
+        candidate_articles = (
+            await session.execute(
+                stmt.order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc()).limit(100)
+            )
+        ).scalars().all()
+        if not candidate_articles:
+            return []
+
+        candidate_ids = [candidate.id for candidate in candidate_articles]
+        semantic_map = await self._load_semantics_map(session, candidate_ids)
+        source_map = await self._load_article_sources_map(session, candidate_ids, user_id=user_id)
+
+        related_items: list[dict[str, Any]] = []
+        for candidate in candidate_articles:
+            candidate_semantics = semantic_map.get(candidate.id)
+            if _semantic_story_key(candidate_semantics, candidate) != story_key:
+                continue
+            sources = source_map.get(candidate.id, [])
+            if not sources:
+                continue
+            related_items.append(
+                self._build_feed_payload(
+                    candidate,
+                    sources=sources,
+                    semantics=candidate_semantics,
+                    interest_context=interest_context,
+                )
+            )
+
+        related_items = self._annotate_story_groups(related_items, group_by="article")
+        return [
+            {
+                "id": int(item["id"]),
+                "title": str(item["title"]),
+                "published_at": item.get("published_at"),
+                "canonical_url": str(item["canonical_url"]),
+                "source_title": (item.get("source_labels") or [None])[0],
+            }
+            for item in related_items[:6]
+        ]
+
     async def get_feed(
         self,
         *,
@@ -550,27 +927,36 @@ class NewsIngestionService:
         date_to: datetime | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        sort: str = "latest",
+        scope: str = "all",
+        bookmark_group_id: int | None = None,
+        event_type: str | None = None,
+        importance: str | None = None,
+        group_by: str = "article",
     ) -> dict[str, Any]:
         safe_limit = min(50, max(1, limit))
-        cursor_dt, cursor_id = self._parse_cursor(cursor)
+        offset = self._parse_offset_cursor(cursor)
         source_filter = source.strip().lower() if source else None
         ticker_filter = ticker.strip().upper() if ticker else None
         topic_filter = topic.strip().lower() if topic else None
+        event_type_filter = event_type.strip().lower() if event_type else None
+        importance_filter = importance.strip().lower() if importance else None
+        scope_mode = scope if user_id is not None and scope in {"all", "portfolio", "bookmarks"} else "all"
+        sort_mode = sort if user_id is not None and sort == "relevance" else "latest"
+        group_mode = "story" if group_by == "story" else "article"
         async with async_session() as session:
             blocked_labels = await self._load_blocked_labels(session, user_id)
+            interest_context = await self._load_user_interest_context(
+                session,
+                user_id=user_id,
+                bookmark_group_id=bookmark_group_id,
+            )
             stmt = select(NewsArticle).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
             if date_from:
                 stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at >= date_from)
             if date_to:
                 stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at <= date_to)
-            if cursor_dt is not None and cursor_id is not None:
-                stmt = stmt.where(
-                    or_(
-                        NewsArticle.published_at < cursor_dt,
-                        and_(NewsArticle.published_at == cursor_dt, NewsArticle.id < cursor_id),
-                    )
-                )
-            articles = (await session.execute(stmt.limit(max(100, safe_limit * 5)))).scalars().all()
+            articles = (await session.execute(stmt)).scalars().all()
             semantic_map = await self._load_semantics_map(session, [article.id for article in articles])
             source_map = await self._load_article_sources_map(session, [article.id for article in articles], user_id=user_id)
 
@@ -582,37 +968,55 @@ class NewsIngestionService:
                 semantics = semantic_map.get(article.id)
                 normalized_topics = [str(item) for item in (semantics.topics if semantics else [])]
                 display_topics = _display_topics(semantics)
-                tickers = [str(item) for item in (semantics.tickers if semantics else [])]
+                semantic_tickers = [str(item).strip().upper() for item in (semantics.tickers if semantics else []) if str(item).strip()]
+                matched_portfolio_tickers = sorted(set(semantic_tickers) & interest_context["portfolio_tickers"])
+                matched_bookmark_tickers = sorted(set(semantic_tickers) & interest_context["bookmark_tickers"])
+                semantic_event_type = _semantic_event_type(semantics)
                 if source_filter and not any(source_filter == str(item.get("domain") or "").lower() for item in sources):
                     continue
-                if ticker_filter and not any(ticker_filter == item.upper() for item in tickers):
+                if ticker_filter and ticker_filter not in semantic_tickers:
                     continue
                 if not _matches_topic_filter(topic_filter, display_topics):
+                    continue
+                if event_type_filter and semantic_event_type != event_type_filter:
+                    continue
+                if importance_filter and str(semantics.importance if semantics else "").strip().lower() != importance_filter:
+                    continue
+                if scope_mode == "portfolio" and not matched_portfolio_tickers:
+                    continue
+                if scope_mode == "bookmarks" and not matched_bookmark_tickers:
                     continue
                 if matches_blocked_labels(
                     blocked_labels,
                     article_topics=normalized_topics,
-                    article_tickers=tickers,
+                    article_tickers=semantic_tickers,
                     title=article.title,
                     excerpt=article.excerpt,
                     content_text=article.content_text,
                 ):
                     continue
                 items.append(
-                    self._serialize_feed_item(
+                    self._build_feed_payload(
                         article,
                         sources=sources,
                         semantics=semantics,
+                        interest_context=interest_context,
                     )
                 )
-                if len(items) >= safe_limit:
-                    break
+
+            items.sort(
+                key=lambda item: (
+                    self._story_sort_key(item) if sort_mode == "relevance" else (0, str(item.get("published_at") or ""), int(item.get("id") or 0))
+                ),
+                reverse=True,
+            )
+            grouped_items = self._annotate_story_groups(items, group_by=group_mode)
+            total_count = len(grouped_items)
+            paged_items = grouped_items[offset : offset + safe_limit]
             next_cursor = None
-            if items:
-                last = items[-1]
-                if last["published_at"]:
-                    next_cursor = f"{last['published_at']}|{last['id']}"
-            return {"items": items, "count": len(items), "next_cursor": next_cursor}
+            if offset + safe_limit < total_count:
+                next_cursor = f"offset:{offset + safe_limit}"
+            return {"items": paged_items, "count": total_count, "next_cursor": next_cursor}
 
     async def get_article_detail(self, article_id: int, *, user_id: int | None) -> dict[str, Any] | None:
         async with async_session() as session:
@@ -629,7 +1033,25 @@ class NewsIngestionService:
                 await session.commit()
                 await session.refresh(article)
             semantic_map = await self._load_semantics_map(session, [article_id])
-            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id), include_content=True)
+            interest_context = await self._load_user_interest_context(session, user_id=user_id)
+            semantics = semantic_map.get(article_id)
+            payload = self._build_feed_payload(
+                article,
+                sources=sources,
+                semantics=semantics,
+                interest_context=interest_context,
+                include_content=True,
+            )
+            related_articles = await self._load_related_articles(
+                session,
+                article=article,
+                semantics=semantics,
+                user_id=user_id,
+                interest_context=interest_context,
+            )
+            payload["related_article_ids"] = [int(item["id"]) for item in related_articles]
+            payload["related_articles"] = related_articles
+            return payload
 
     async def refresh_article_content(self, article_id: int, *, user_id: int | None) -> dict[str, Any] | None:
         async with async_session() as session:
@@ -648,7 +1070,25 @@ class NewsIngestionService:
             if not repaired and not article.content_text:
                 raise ValueError("Unable to refresh article content")
             semantic_map = await self._load_semantics_map(session, [article_id])
-            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id), include_content=True)
+            interest_context = await self._load_user_interest_context(session, user_id=user_id)
+            semantics = semantic_map.get(article_id)
+            payload = self._build_feed_payload(
+                article,
+                sources=sources,
+                semantics=semantics,
+                interest_context=interest_context,
+                include_content=True,
+            )
+            related_articles = await self._load_related_articles(
+                session,
+                article=article,
+                semantics=semantics,
+                user_id=user_id,
+                interest_context=interest_context,
+            )
+            payload["related_article_ids"] = [int(item["id"]) for item in related_articles]
+            payload["related_articles"] = related_articles
+            return payload
 
     async def generate_article_summary(
         self,
@@ -677,7 +1117,15 @@ class NewsIngestionService:
                 await session.commit()
                 await session.refresh(article)
             semantic_map = await self._load_semantics_map(session, [article_id])
-            return self._serialize_feed_item(article, sources=sources, semantics=semantic_map.get(article_id))
+            interest_context = await self._load_user_interest_context(session, user_id=user_id)
+            payload = self._build_feed_payload(
+                article,
+                sources=sources,
+                semantics=semantic_map.get(article_id),
+                interest_context=interest_context,
+            )
+            payload["related_article_ids"] = []
+            return payload
 
     async def _run_loop(self) -> None:
         while True:
@@ -1421,6 +1869,21 @@ class NewsIngestionService:
             "sectors": [str(item) for item in (semantics.sectors if semantics else [])],
             "importance": semantics.importance if semantics else None,
             "sentiment": semantics.sentiment if semantics else None,
+            "event_type": _semantic_event_type(semantics),
+            "event_labels": _semantic_event_labels(semantics),
+            "matched_tickers": [],
+            "why_relevant": [],
+            "story_key": _semantic_story_key(semantics, article),
+            "story_source_count": len(
+                {
+                    f"{item.get('source_type')}:{item.get('source_id')}"
+                    for item in sources
+                    if item and item.get("source_id") is not None
+                }
+            )
+            or len({str(item.get("article_url") or "") for item in sources if item})
+            or 1,
+            "related_article_ids": [],
         }
         if include_content:
             payload["content_text"] = article.content_text
@@ -1529,6 +1992,14 @@ class NewsIngestionService:
 
     async def _upsert_article_semantics(self, session, article: NewsArticle) -> None:
         semantics = await classify_article(article.title, article.excerpt, article.content_text)
+        raw_payload = dict(semantics["raw_payload"]) if isinstance(semantics.get("raw_payload"), dict) else {}
+        raw_payload["event_type"] = semantics.get("event_type")
+        raw_payload["event_labels"] = semantics.get("event_labels") or []
+        raw_payload["story_key"] = _compute_story_key(
+            article.title,
+            [str(item) for item in semantics.get("tickers", [])],
+            article.published_at,
+        )
         semantic_row = (
             await session.execute(select(NewsArticleSemantic).where(NewsArticleSemantic.article_id == article.id))
         ).scalar_one_or_none()
@@ -1540,6 +2011,6 @@ class NewsIngestionService:
         semantic_row.sectors = semantics["sectors"]
         semantic_row.importance = semantics["importance"]
         semantic_row.sentiment = semantics["sentiment"]
-        semantic_row.raw_payload = semantics["raw_payload"]
+        semantic_row.raw_payload = raw_payload
         semantic_row.classified_at = utc_now()
         await session.flush()

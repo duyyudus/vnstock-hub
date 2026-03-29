@@ -275,6 +275,24 @@ const buildNewsQueryParams = (options?: NewsFeedQuery): URLSearchParams => {
     if (options?.to) {
         params.set('to', options.to);
     }
+    if (options?.sort) {
+        params.set('sort', options.sort);
+    }
+    if (options?.scope) {
+        params.set('scope', options.scope);
+    }
+    if (typeof options?.bookmark_group_id === 'number') {
+        params.set('bookmark_group_id', String(options.bookmark_group_id));
+    }
+    if (options?.event_type) {
+        params.set('event_type', options.event_type);
+    }
+    if (options?.importance) {
+        params.set('importance', options.importance);
+    }
+    if (options?.group_by) {
+        params.set('group_by', options.group_by);
+    }
     if (options?.cursor) {
         params.set('cursor', options.cursor);
     }
@@ -613,6 +631,21 @@ export interface UpdateUserSettingsRequest {
 export type NewsSourceKind = 'rss' | 'crawl';
 export type NewsDiscoveryMethod = 'homepage' | 'manual' | 'default_pack' | 'sitemap';
 export type NewsValidationStatus = 'pending' | 'valid' | 'invalid';
+export type NewsSortMode = 'latest' | 'relevance';
+export type NewsScopeMode = 'all' | 'portfolio' | 'bookmarks';
+export type NewsGroupMode = 'article' | 'story';
+export type NewsEventType =
+    | 'earnings'
+    | 'dividend'
+    | 'capital_raise'
+    | 'insider_trading'
+    | 'management_change'
+    | 'regulatory'
+    | 'mna'
+    | 'analyst_view'
+    | 'macro_policy'
+    | 'other';
+export type NewsImportanceLevel = 'low' | 'medium' | 'high';
 
 export interface NewsSite {
     id: number;
@@ -681,14 +714,30 @@ export interface NewsFeedItem {
     sectors: string[];
     importance: string | null;
     sentiment: string | null;
+    event_type: NewsEventType | null;
+    event_labels: string[];
+    matched_tickers: string[];
+    why_relevant: string[];
+    story_key: string | null;
+    story_source_count: number;
+    related_article_ids: number[];
     source_title: string | null;
     source_kind: NewsSourceKind | null;
     is_filtered_for_user: boolean;
 }
 
+export interface NewsRelatedArticle {
+    id: number;
+    title: string;
+    published_at: string | null;
+    canonical_url: string;
+    source_title: string | null;
+}
+
 export interface NewsArticleDetail extends NewsFeedItem {
     content_text: string | null;
     source_urls: string[];
+    related_articles: NewsRelatedArticle[];
 }
 
 export interface NewsArticleSummaryResponse {
@@ -783,6 +832,12 @@ export interface NewsFeedQuery {
     ticker?: string;
     from?: string;
     to?: string;
+    sort?: NewsSortMode;
+    scope?: NewsScopeMode;
+    bookmark_group_id?: number;
+    event_type?: NewsEventType;
+    importance?: NewsImportanceLevel;
+    group_by?: NewsGroupMode;
     cursor?: string;
     limit?: number;
 }

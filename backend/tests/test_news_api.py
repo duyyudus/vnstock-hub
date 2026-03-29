@@ -4,12 +4,15 @@ import pytest
 from httpx import AsyncClient
 
 from app.db.models import (
+    BookmarkGroup,
+    BookmarkStock,
     NewsArticle,
     NewsArticleSemantic,
     NewsArticleSource,
     NewsSite,
     NewsSiteFeed,
     NewsUserPreference,
+    PortfolioPosition,
 )
 from app.services.news import news_service
 
@@ -21,6 +24,17 @@ async def _register_and_auth(client: AsyncClient, email: str) -> tuple[dict[str,
     payload = response.json()
     token = payload["access_token"]
     return {"Authorization": f"Bearer {token}"}, int(payload["user"]["id"])
+
+
+def _semantic_payload(*, event_type: str, story_key: str, display_topics: list[str] | None = None) -> dict:
+    payload = {
+        "event_type": event_type,
+        "event_labels": [event_type.replace("_", " ")],
+        "story_key": story_key,
+    }
+    if display_topics is not None:
+        payload["display_topics"] = display_topics
+    return payload
 
 
 @pytest.mark.asyncio
@@ -832,3 +846,341 @@ async def test_news_admin_config_patch_updates_default_poll_interval(client, mon
         "default_poll_interval_minutes": 45,
     }
     assert captured["default_poll_interval_minutes"] == 45
+
+
+@pytest.mark.asyncio
+async def test_news_feed_relevance_prioritizes_portfolio_matches(client, db_session):
+    headers, user_id = await _register_and_auth(client, "news-relevance@example.com")
+
+    site = NewsSite(domain="example.com", homepage_url="https://example.com", display_name="Example", is_public=True)
+    db_session.add(site)
+    await db_session.flush()
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    db_session.add(PortfolioPosition(user_id=user_id, ticker="ABC", quantity=100, average_cost=10))
+    await db_session.flush()
+
+    article_a = NewsArticle(
+        canonical_url="https://example.com/articles/abc",
+        title="ABC board approves dividend plan",
+        excerpt="ABC dividend plan",
+        content_text="ABC dividend plan and record date update.",
+        published_at=datetime(2026, 3, 26, 9, 0, 0),
+        language="en",
+        content_hash="relevance-a",
+    )
+    article_b = NewsArticle(
+        canonical_url="https://example.com/articles/xyz",
+        title="XYZ opens new office",
+        excerpt="XYZ office",
+        content_text="XYZ office update.",
+        published_at=datetime(2026, 3, 26, 11, 0, 0),
+        language="en",
+        content_hash="relevance-b",
+    )
+    db_session.add_all([article_a, article_b])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=article_a.id, site_feed_id=feed.id, article_url=article_a.canonical_url),
+            NewsArticleSource(article_id=article_b.id, site_feed_id=feed.id, article_url=article_b.canonical_url),
+        ]
+    )
+    db_session.add_all(
+        [
+            NewsArticleSemantic(
+                article_id=article_a.id,
+                topics=["dividend"],
+                tickers=["ABC"],
+                sectors=["banking"],
+                importance="high",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="dividend", story_key="ABC|2026032600|abc-dividend"),
+            ),
+            NewsArticleSemantic(
+                article_id=article_b.id,
+                topics=["expansion"],
+                tickers=["XYZ"],
+                sectors=["real_estate"],
+                importance="low",
+                sentiment="neutral",
+                raw_payload=_semantic_payload(event_type="other", story_key="XYZ|2026032612|xyz-office"),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.get("/api/v1/news/feed?sort=relevance&group_by=article", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["canonical_url"] == "https://example.com/articles/abc"
+    assert payload["items"][0]["matched_tickers"] == ["ABC"]
+    assert any("Matches your portfolio" in reason for reason in payload["items"][0]["why_relevant"])
+
+
+@pytest.mark.asyncio
+async def test_news_feed_scope_portfolio_returns_only_portfolio_matches(client, db_session):
+    headers, user_id = await _register_and_auth(client, "news-portfolio@example.com")
+
+    site = NewsSite(domain="scope.example.com", homepage_url="https://scope.example.com", display_name="Scope", is_public=True)
+    db_session.add(site)
+    await db_session.flush()
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://scope.example.com/rss.xml",
+        title="Scope RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    db_session.add(PortfolioPosition(user_id=user_id, ticker="VCB", quantity=50, average_cost=20))
+    await db_session.flush()
+
+    matching_article = NewsArticle(
+        canonical_url="https://scope.example.com/articles/vcb",
+        title="VCB earnings rise",
+        excerpt="VCB article",
+        content_text="VCB results",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="scope-vcb",
+    )
+    other_article = NewsArticle(
+        canonical_url="https://scope.example.com/articles/fpt",
+        title="FPT signs deal",
+        excerpt="FPT article",
+        content_text="FPT results",
+        published_at=datetime(2026, 3, 26, 9, 0, 0),
+        language="en",
+        content_hash="scope-fpt",
+    )
+    db_session.add_all([matching_article, other_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=matching_article.id, site_feed_id=feed.id, article_url=matching_article.canonical_url),
+            NewsArticleSource(article_id=other_article.id, site_feed_id=feed.id, article_url=other_article.canonical_url),
+        ]
+    )
+    db_session.add_all(
+        [
+            NewsArticleSemantic(
+                article_id=matching_article.id,
+                topics=["earnings"],
+                tickers=["VCB"],
+                sectors=["banking"],
+                importance="high",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="earnings", story_key="VCB|2026032600|vcb-earnings"),
+            ),
+            NewsArticleSemantic(
+                article_id=other_article.id,
+                topics=["technology"],
+                tickers=["FPT"],
+                sectors=["technology"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload=_semantic_payload(event_type="other", story_key="FPT|2026032600|fpt-deal"),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.get("/api/v1/news/feed?scope=portfolio&sort=relevance", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["items"][0]["tickers"] == ["VCB"]
+
+
+@pytest.mark.asyncio
+async def test_news_feed_scope_bookmarks_can_target_specific_group(client, db_session):
+    headers, user_id = await _register_and_auth(client, "news-bookmark@example.com")
+
+    site = NewsSite(domain="bookmark.example.com", homepage_url="https://bookmark.example.com", display_name="Bookmark", is_public=True)
+    db_session.add(site)
+    await db_session.flush()
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://bookmark.example.com/rss.xml",
+        title="Bookmark RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    banks_group = BookmarkGroup(user_id=user_id, name="Banks")
+    tech_group = BookmarkGroup(user_id=user_id, name="Tech")
+    db_session.add_all([banks_group, tech_group])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            BookmarkStock(group_id=banks_group.id, ticker="VCB"),
+            BookmarkStock(group_id=tech_group.id, ticker="FPT"),
+        ]
+    )
+
+    bank_article = NewsArticle(
+        canonical_url="https://bookmark.example.com/articles/vcb",
+        title="VCB insider trading update",
+        excerpt="VCB update",
+        content_text="VCB insider update",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="bookmark-vcb",
+    )
+    tech_article = NewsArticle(
+        canonical_url="https://bookmark.example.com/articles/fpt",
+        title="FPT gets analyst upgrade",
+        excerpt="FPT update",
+        content_text="FPT analyst view",
+        published_at=datetime(2026, 3, 26, 11, 0, 0),
+        language="en",
+        content_hash="bookmark-fpt",
+    )
+    db_session.add_all([bank_article, tech_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=bank_article.id, site_feed_id=feed.id, article_url=bank_article.canonical_url),
+            NewsArticleSource(article_id=tech_article.id, site_feed_id=feed.id, article_url=tech_article.canonical_url),
+        ]
+    )
+    db_session.add_all(
+        [
+            NewsArticleSemantic(
+                article_id=bank_article.id,
+                topics=["insider_trading"],
+                tickers=["VCB"],
+                sectors=["banking"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload=_semantic_payload(event_type="insider_trading", story_key="VCB|2026032600|vcb-insider"),
+            ),
+            NewsArticleSemantic(
+                article_id=tech_article.id,
+                topics=["analyst_view"],
+                tickers=["FPT"],
+                sectors=["technology"],
+                importance="medium",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="analyst_view", story_key="FPT|2026032612|fpt-upgrade"),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/news/feed?scope=bookmarks&bookmark_group_id={tech_group.id}&sort=relevance",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["items"][0]["tickers"] == ["FPT"]
+
+
+@pytest.mark.asyncio
+async def test_news_feed_event_type_filter_and_story_grouping(client, db_session):
+    site = NewsSite(domain="group.example.com", homepage_url="https://group.example.com", display_name="Group", is_public=True)
+    db_session.add(site)
+    await db_session.flush()
+    feed_a = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://group.example.com/rss-a.xml",
+        title="Group RSS A",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    feed_b = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://group.example.com/rss-b.xml",
+        title="Group RSS B",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add_all([feed_a, feed_b])
+    await db_session.flush()
+
+    lead_article = NewsArticle(
+        canonical_url="https://group.example.com/articles/dividend-a",
+        title="ABC sets dividend record date",
+        excerpt="Dividend article A",
+        content_text="Dividend article A",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="group-a",
+    )
+    related_article = NewsArticle(
+        canonical_url="https://group.example.com/articles/dividend-b",
+        title="ABC finalizes dividend payment",
+        excerpt="Dividend article B",
+        content_text="Dividend article B",
+        published_at=datetime(2026, 3, 26, 10, 30, 0),
+        language="en",
+        content_hash="group-b",
+    )
+    db_session.add_all([lead_article, related_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=lead_article.id, site_feed_id=feed_a.id, article_url=lead_article.canonical_url),
+            NewsArticleSource(article_id=related_article.id, site_feed_id=feed_b.id, article_url=related_article.canonical_url),
+        ]
+    )
+    shared_story_key = "ABC|2026032600|abc-dividend"
+    db_session.add_all(
+        [
+            NewsArticleSemantic(
+                article_id=lead_article.id,
+                topics=["dividend"],
+                tickers=["ABC"],
+                sectors=["banking"],
+                importance="high",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="dividend", story_key=shared_story_key),
+            ),
+            NewsArticleSemantic(
+                article_id=related_article.id,
+                topics=["dividend"],
+                tickers=["ABC"],
+                sectors=["banking"],
+                importance="medium",
+                sentiment="neutral",
+                raw_payload=_semantic_payload(event_type="dividend", story_key=shared_story_key),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    feed_response = await client.get("/api/v1/news/feed?event_type=dividend&group_by=story")
+    assert feed_response.status_code == 200
+    feed_payload = feed_response.json()
+    assert feed_payload["count"] == 1
+    assert feed_payload["items"][0]["event_type"] == "dividend"
+    assert feed_payload["items"][0]["story_source_count"] == 2
+    assert len(feed_payload["items"][0]["why_relevant"]) >= 1
+
+    detail_response = await client.get(f"/api/v1/news/articles/{lead_article.id}")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["story_key"] == shared_story_key
+    assert detail_payload["related_article_ids"] == [related_article.id]
+    assert detail_payload["related_articles"][0]["id"] == related_article.id
