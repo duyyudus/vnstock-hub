@@ -42,10 +42,12 @@ IGNORED_QUERY_PREFIXES = ("utm_",)
 ARTICLE_BODY_SELECTORS = (
     ".ct-edtior-web",
     ".ct-editor-web",
+    ".article__body",
+    ".zce-content-body",
+    ".cms-body",
     ".article__content",
     ".entry-content",
     ".post-content",
-    "article",
     "[itemprop='articleBody']",
     ".article-content",
     ".content-detail",
@@ -55,6 +57,7 @@ ARTICLE_BODY_SELECTORS = (
     ".detail-body",
     ".detail__body",
     ".main-detail-page",
+    "article",
 )
 ARTICLE_NOISE_SELECTORS = (
     "script",

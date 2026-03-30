@@ -2076,6 +2076,20 @@ class NewsIngestionService:
             return True
         if extract_domain(article.canonical_url) in ALWAYS_REFRESH_DETAIL_DOMAINS:
             return True
+        excerpt = (article.excerpt or "").strip()
+        normalized_content = re.sub(r"\s+", " ", content_text).strip().casefold()
+        normalized_excerpt = re.sub(r"\s+", " ", excerpt).strip().casefold()
+        if (
+            normalized_excerpt
+            and normalized_content
+            and len(normalized_content) <= max(280, len(normalized_excerpt) + 40)
+            and (
+                normalized_content == normalized_excerpt
+                or normalized_content in normalized_excerpt
+                or normalized_excerpt in normalized_content
+            )
+        ):
+            return True
         lowered = content_text.lower()
         if any(marker in lowered for marker in CONTENT_REPAIR_MARKERS):
             return True

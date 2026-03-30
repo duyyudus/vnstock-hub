@@ -156,6 +156,43 @@ def test_extract_article_payload_strips_related_blocks_from_vneconomy_layout():
     assert "Từ khóa:" not in payload["content_text"]
 
 
+def test_extract_article_payload_supports_sggp_dttc_article_body_layout():
+    html = """
+    <html lang="vi">
+      <head>
+        <meta property="og:title" content="Email của Giám đốc FBI bị hacker xâm nhập" />
+        <meta property="og:description" content="(ĐTTCO) - Cục Điều tra liên bang Mỹ (FBI) ngày 29-3 xác nhận tin tặc đã xâm nhập hộp thư điện tử cá nhân của Giám đốc Kash Patel." />
+      </head>
+      <body>
+        <div class="article">
+          <div class="article__sapo cms-desc">
+            <p>(ĐTTCO) - Cục Điều tra liên bang Mỹ (FBI) ngày 29-3 xác nhận tin tặc đã xâm nhập hộp thư điện tử cá nhân của Giám đốc Kash Patel.</p>
+          </div>
+          <div class="article__body zce-content-body cms-body" itemprop="articleBody">
+            <p>Theo FBI, dữ liệu bị đánh cắp không phải thông tin mới và không bao gồm bất kỳ dữ liệu nào của chính phủ.</p>
+            <p>Nhóm này sau đó đăng tải một số ảnh và tài liệu cá nhân, cùng các email từ thời điểm trước khi ông Patel đảm nhiệm chức vụ Giám đốc FBI.</p>
+            <div class="related-news">
+              <article class="story">
+                <h2>Hacker chỉ mất vài giây để xâm nhập tai nghe của bạn</h2>
+              </article>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    payload = extract_article_payload("https://dttc.sggp.org.vn/email-cua-giam-doc-fbi-bi-hacker-xam-nhap-post132660.html", html)
+
+    assert payload["title"] == "Email của Giám đốc FBI bị hacker xâm nhập"
+    assert payload["excerpt"].startswith("(ĐTTCO) - Cục Điều tra liên bang Mỹ")
+    assert payload["content_text"] == (
+        "Theo FBI, dữ liệu bị đánh cắp không phải thông tin mới và không bao gồm bất kỳ dữ liệu nào của chính phủ.\n"
+        "Nhóm này sau đó đăng tải một số ảnh và tài liệu cá nhân, cùng các email từ thời điểm trước khi ông Patel đảm nhiệm chức vụ Giám đốc FBI."
+    )
+    assert "Hacker chỉ mất vài giây" not in payload["content_text"]
+
+
 def test_matches_topic_filter_supports_case_insensitive_partial_phrases():
     assert news_service_module._matches_topic_filter("bank", ["banking"]) is True
     assert news_service_module._matches_topic_filter("bank", ["macro banking", "rates"]) is True
@@ -700,6 +737,120 @@ async def test_get_article_detail_repairs_stored_noisy_content(db_session, monke
     assert payload["tickers"] == ["PLX"]
     assert semantic.topics == ["tax"]
     assert semantic.sectors == ["energy"]
+
+
+@pytest.mark.asyncio
+async def test_get_article_detail_repairs_excerpt_only_content_for_sggp_layout(db_session, monkeypatch):
+    html = """
+    <html lang="vi">
+      <head>
+        <meta property="og:title" content="Email của Giám đốc FBI bị hacker xâm nhập" />
+        <meta property="og:description" content="(ĐTTCO) - Cục Điều tra liên bang Mỹ (FBI) ngày 29-3 xác nhận tin tặc đã xâm nhập hộp thư điện tử cá nhân của Giám đốc Kash Patel." />
+      </head>
+      <body>
+        <div class="article">
+          <div class="article__sapo cms-desc">
+            <p>(ĐTTCO) - Cục Điều tra liên bang Mỹ (FBI) ngày 29-3 xác nhận tin tặc đã xâm nhập hộp thư điện tử cá nhân của Giám đốc Kash Patel.</p>
+          </div>
+          <div class="article__body zce-content-body cms-body" itemprop="articleBody">
+            <p>Theo FBI, dữ liệu bị đánh cắp không phải thông tin mới và không bao gồm bất kỳ dữ liệu nào của chính phủ.</p>
+            <p>Nhóm này sau đó đăng tải một số ảnh và tài liệu cá nhân, cùng các email từ thời điểm trước khi ông Patel đảm nhiệm chức vụ Giám đốc FBI.</p>
+            <div class="related-news">
+              <article class="story">
+                <h2>Hacker chỉ mất vài giây để xâm nhập tai nghe của bạn</h2>
+              </article>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    async def _fake_fetch_text(client, url: str) -> str:
+        del client, url
+        return html
+
+    async def _fake_classify_article(title: str, excerpt: str | None, content_text: str | None):
+        assert title == "Email của Giám đốc FBI bị hacker xâm nhập"
+        assert excerpt and excerpt.startswith("(ĐTTCO) - Cục Điều tra liên bang Mỹ")
+        assert content_text == (
+            "Theo FBI, dữ liệu bị đánh cắp không phải thông tin mới và không bao gồm bất kỳ dữ liệu nào của chính phủ.\n"
+            "Nhóm này sau đó đăng tải một số ảnh và tài liệu cá nhân, cùng các email từ thời điểm trước khi ông Patel đảm nhiệm chức vụ Giám đốc FBI."
+        )
+        return {
+            "topics": ["cybersecurity"],
+            "tickers": [],
+            "sectors": ["technology"],
+            "importance": "medium",
+            "sentiment": "neutral",
+            "raw_payload": {"topics": ["cybersecurity"]},
+        }
+
+    monkeypatch.setattr("app.services.news.service.fetch_text", _fake_fetch_text)
+    monkeypatch.setattr("app.services.news.service.classify_article", _fake_classify_article)
+
+    site = NewsSite(
+        domain="dttc.sggp.org.vn",
+        homepage_url="https://dttc.sggp.org.vn",
+        display_name="DTTC",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://saigondautu.com.vn/rss/home.rss",
+        title="DTTC RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    excerpt = "(ĐTTCO) - Cục Điều tra liên bang Mỹ (FBI) ngày 29-3 xác nhận tin tặc đã xâm nhập hộp thư điện tử cá nhân của Giám đốc Kash Patel."
+    article = NewsArticle(
+        canonical_url="https://dttc.sggp.org.vn/email-cua-giam-doc-fbi-bi-hacker-xam-nhap-post132660.html",
+        title="Email của Giám đốc FBI bị hacker xâm nhập",
+        excerpt=excerpt,
+        content_text=excerpt,
+        llm_summary="Old generated summary",
+        published_at=datetime(2026, 3, 30, 9, 42, 49),
+        language="vi",
+        content_hash="old-sggp-hash",
+    )
+    db_session.add(article)
+    await db_session.flush()
+    db_session.add(NewsArticleSource(article_id=article.id, site_feed_id=feed.id, article_url=article.canonical_url))
+    db_session.add(
+        NewsArticleSemantic(
+            article_id=article.id,
+            topics=["old-topic"],
+            tickers=[],
+            sectors=["old-sector"],
+            importance="low",
+            sentiment="neutral",
+            raw_payload={},
+        )
+    )
+    await db_session.commit()
+
+    payload = await news_service.get_article_detail(article.id, user_id=None)
+    await db_session.refresh(article)
+    semantic = (await db_session.execute(select(NewsArticleSemantic).where(NewsArticleSemantic.article_id == article.id))).scalar_one()
+
+    assert payload is not None
+    assert payload["content_text"] == article.content_text
+    assert article.content_text == (
+        "Theo FBI, dữ liệu bị đánh cắp không phải thông tin mới và không bao gồm bất kỳ dữ liệu nào của chính phủ.\n"
+        "Nhóm này sau đó đăng tải một số ảnh và tài liệu cá nhân, cùng các email từ thời điểm trước khi ông Patel đảm nhiệm chức vụ Giám đốc FBI."
+    )
+    assert article.llm_summary is None
+    assert payload["topics"] == ["cybersecurity"]
+    assert semantic.topics == ["cybersecurity"]
+    assert semantic.sectors == ["technology"]
 
 
 @pytest.mark.asyncio
