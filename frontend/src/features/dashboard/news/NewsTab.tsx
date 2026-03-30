@@ -478,6 +478,17 @@ export const NewsTab: React.FC = () => {
         await loadNewsFeed(nextDraft, false);
     };
 
+    const handleEventFilterChange = async (value: FeedDraft['eventType']) => {
+        const nextDraft = {
+            ...feedDraft,
+            eventType: value,
+        };
+        setFeedDraft(nextDraft);
+        setAppliedFeed(nextDraft);
+        setFeedCursor(null);
+        await loadNewsFeed(nextDraft, false);
+    };
+
     const handleResetFilters = async () => {
         const nextDraft = createDefaultFeedDraft();
         setFeedDraft(nextDraft);
@@ -1083,7 +1094,9 @@ export const NewsTab: React.FC = () => {
                                 <select
                                     className="select select-bordered"
                                     value={feedDraft.eventType}
-                                    onChange={(event) => setFeedDraft((current) => ({ ...current, eventType: event.target.value as FeedDraft['eventType'] }))}
+                                    onChange={(event) => {
+                                        void handleEventFilterChange(event.target.value as FeedDraft['eventType']);
+                                    }}
                                 >
                                     <option value="">All events</option>
                                     {NEWS_EVENT_FILTER_OPTIONS.map((option) => (
