@@ -1,7 +1,8 @@
 import React from 'react';
 import { type IndexInfo, type HistoryJobStatus } from '../../../api/stockApi';
+import { SyncCollectionSelector } from '../components/SyncCollectionSelector';
 import { FailedTickerList } from '../components/FailedTickerList';
-import { formatDateTime } from '../adminUtils';
+import { formatDateTime, type SyncCollectionScope } from '../adminUtils';
 
 interface CompanySyncTabProps {
     runtimeCompany: HistoryJobStatus | undefined;
@@ -9,6 +10,8 @@ interface CompanySyncTabProps {
     indexOptions: IndexInfo[];
     companyIndexSymbol: string;
     onCompanyIndexSymbolChange: (value: string) => void;
+    companyCollectionScope: SyncCollectionScope;
+    onCompanyCollectionScopeChange: (value: SyncCollectionScope) => void;
     companySymbols: string;
     onCompanySymbolsChange: (value: string) => void;
     companyForceRestart: boolean;
@@ -19,6 +22,8 @@ interface CompanySyncTabProps {
     companyActive: boolean;
     anyJobActive: boolean;
     actionDisabled: boolean;
+    portfolioCollectionCount: number;
+    tradingCollectionCount: number;
 }
 
 export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
@@ -27,6 +32,8 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
     indexOptions,
     companyIndexSymbol,
     onCompanyIndexSymbolChange,
+    companyCollectionScope,
+    onCompanyCollectionScopeChange,
     companySymbols,
     onCompanySymbolsChange,
     companyForceRestart,
@@ -37,6 +44,8 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
     companyActive,
     anyJobActive,
     actionDisabled,
+    portfolioCollectionCount,
+    tradingCollectionCount,
 }) => {
     return (
         <section className="grid gap-4 lg:grid-cols-2">
@@ -60,12 +69,19 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
             <div className="card bg-base-100 shadow-lg">
                 <div className="card-body space-y-3">
                     <h2 className="card-title">Run Company Sync</h2>
+                    <SyncCollectionSelector
+                        value={companyCollectionScope}
+                        onChange={onCompanyCollectionScopeChange}
+                        portfolioCount={portfolioCollectionCount}
+                        tradingCount={tradingCollectionCount}
+                    />
                     <label className="form-control">
                         <span className="label-text">Index scope (optional)</span>
                         <select
                             className="select select-bordered"
                             value={companyIndexSymbol}
                             onChange={(event) => onCompanyIndexSymbolChange(event.target.value)}
+                            disabled={companyCollectionScope !== 'manual'}
                         >
                             <option value="">All indices</option>
                             {indexOptions.map((index) => (
@@ -83,6 +99,7 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
                             value={companySymbols}
                             onChange={(event) => onCompanySymbolsChange(event.target.value)}
                             placeholder="All symbols if empty"
+                            disabled={companyCollectionScope !== 'manual'}
                         />
                     </label>
                     <label className="label cursor-pointer justify-start gap-3">

@@ -1,7 +1,8 @@
 import React from 'react';
 import { type IndexInfo, type HistoryJobStatus } from '../../../api/stockApi';
+import { SyncCollectionSelector } from '../components/SyncCollectionSelector';
 import { FailedTickerList } from '../components/FailedTickerList';
-import { formatDateTime } from '../adminUtils';
+import { formatDateTime, type SyncCollectionScope } from '../adminUtils';
 
 interface FinanceSyncTabProps {
     runtimeFinance: HistoryJobStatus | undefined;
@@ -9,6 +10,8 @@ interface FinanceSyncTabProps {
     indexOptions: IndexInfo[];
     financeIndexSymbol: string;
     onFinanceIndexSymbolChange: (value: string) => void;
+    financeCollectionScope: SyncCollectionScope;
+    onFinanceCollectionScopeChange: (value: SyncCollectionScope) => void;
     financeSymbols: string;
     onFinanceSymbolsChange: (value: string) => void;
     financeForceRestart: boolean;
@@ -19,6 +22,8 @@ interface FinanceSyncTabProps {
     financeActive: boolean;
     anyJobActive: boolean;
     actionDisabled: boolean;
+    portfolioCollectionCount: number;
+    tradingCollectionCount: number;
 }
 
 export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
@@ -27,6 +32,8 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
     indexOptions,
     financeIndexSymbol,
     onFinanceIndexSymbolChange,
+    financeCollectionScope,
+    onFinanceCollectionScopeChange,
     financeSymbols,
     onFinanceSymbolsChange,
     financeForceRestart,
@@ -37,6 +44,8 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
     financeActive,
     anyJobActive,
     actionDisabled,
+    portfolioCollectionCount,
+    tradingCollectionCount,
 }) => {
     return (
         <section className="grid gap-4 lg:grid-cols-2">
@@ -60,12 +69,19 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
             <div className="card bg-base-100 shadow-lg">
                 <div className="card-body space-y-3">
                     <h2 className="card-title">Run Finance Sync</h2>
+                    <SyncCollectionSelector
+                        value={financeCollectionScope}
+                        onChange={onFinanceCollectionScopeChange}
+                        portfolioCount={portfolioCollectionCount}
+                        tradingCount={tradingCollectionCount}
+                    />
                     <label className="form-control">
                         <span className="label-text">Index scope (optional)</span>
                         <select
                             className="select select-bordered"
                             value={financeIndexSymbol}
                             onChange={(event) => onFinanceIndexSymbolChange(event.target.value)}
+                            disabled={financeCollectionScope !== 'manual'}
                         >
                             <option value="">All indices</option>
                             {indexOptions.map((index) => (
@@ -83,6 +99,7 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
                             value={financeSymbols}
                             onChange={(event) => onFinanceSymbolsChange(event.target.value)}
                             placeholder="All symbols if empty"
+                            disabled={financeCollectionScope !== 'manual'}
                         />
                     </label>
                     <label className="label cursor-pointer justify-start gap-3">

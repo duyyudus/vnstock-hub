@@ -1795,8 +1795,12 @@ export const stockApi = {
         return response.data;
     },
 
-    async getStockQuotes(symbols: string[]): Promise<StockQuotesResponse> {
-        const response = await apiClient.post<StockQuotesResponse>('/stocks/quotes', { symbols });
+    async getStockQuotes(symbols: string[], options?: StockListRangeParams): Promise<StockQuotesResponse> {
+        const response = await apiClient.post<StockQuotesResponse>(
+            '/stocks/quotes',
+            { symbols },
+            { params: buildStockRangeParams(options) },
+        );
         return response.data;
     },
 

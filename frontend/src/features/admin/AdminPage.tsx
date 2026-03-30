@@ -8,7 +8,7 @@ import {
     type HistorySyncActionResponse,
     type SyncStatusResponse,
 } from '../../api/stockApi';
-import { getErrorMessage, parseSymbolsInput } from './adminUtils';
+import { getErrorMessage, parseSymbolsInput, type SyncCollectionScope } from './adminUtils';
 import { CompanySyncTab } from './tabs/CompanySyncTab';
 import { FinanceSyncTab } from './tabs/FinanceSyncTab';
 import { HistorySyncTab } from './tabs/HistorySyncTab';
@@ -32,11 +32,13 @@ export const AdminPage: React.FC = () => {
 
     const [syncSymbols, setSyncSymbols] = useState('');
     const [syncIndexSymbol, setSyncIndexSymbol] = useState('');
+    const [syncCollectionScope, setSyncCollectionScope] = useState<SyncCollectionScope>('manual');
     const [forceRestart, setForceRestart] = useState(false);
 
     const [indexOptions, setIndexOptions] = useState<IndexInfo[]>([]);
     const [auditSymbols, setAuditSymbols] = useState('');
     const [auditIndexSymbol, setAuditIndexSymbol] = useState('');
+    const [auditCollectionScope, setAuditCollectionScope] = useState<SyncCollectionScope>('manual');
     const [auditStartDate, setAuditStartDate] = useState('');
     const [auditEndDate, setAuditEndDate] = useState('');
     const [auditAutoRepair, setAuditAutoRepair] = useState(false);
@@ -44,17 +46,22 @@ export const AdminPage: React.FC = () => {
 
     const [repairSymbols, setRepairSymbols] = useState('');
     const [repairIndexSymbol, setRepairIndexSymbol] = useState('');
+    const [repairCollectionScope, setRepairCollectionScope] = useState<SyncCollectionScope>('manual');
     const [repairStartDate, setRepairStartDate] = useState('');
     const [repairEndDate, setRepairEndDate] = useState('');
 
     const [financeSymbols, setFinanceSymbols] = useState('');
     const [financeIndexSymbol, setFinanceIndexSymbol] = useState('');
+    const [financeCollectionScope, setFinanceCollectionScope] = useState<SyncCollectionScope>('manual');
     const [financeForceRestart, setFinanceForceRestart] = useState(false);
     const [financeQuickSync, setFinanceQuickSync] = useState(false);
     const [companySymbols, setCompanySymbols] = useState('');
     const [companyIndexSymbol, setCompanyIndexSymbol] = useState('');
+    const [companyCollectionScope, setCompanyCollectionScope] = useState<SyncCollectionScope>('manual');
     const [companyForceRestart, setCompanyForceRestart] = useState(false);
     const [companyQuickSync, setCompanyQuickSync] = useState(false);
+    const [portfolioCollectionSymbols, setPortfolioCollectionSymbols] = useState<string[]>([]);
+    const [tradingCollectionSymbols, setTradingCollectionSymbols] = useState<string[]>([]);
 
     const [syncRunning, setSyncRunning] = useState(false);
     const [auditRunning, setAuditRunning] = useState(false);
@@ -99,9 +106,33 @@ export const AdminPage: React.FC = () => {
         }
     }, [canAccess]);
 
+    const loadCollectionSymbols = useCallback(async () => {
+        if (!canAccess) {
+            setPortfolioCollectionSymbols([]);
+            setTradingCollectionSymbols([]);
+            return;
+        }
+        try {
+            const [portfolioResponse, tradingResponse] = await Promise.all([
+                stockApi.getPortfolioPositions(),
+                stockApi.getTradingPositions(),
+            ]);
+            setPortfolioCollectionSymbols(Array.from(new Set(
+                portfolioResponse.positions.map((position) => position.ticker.toUpperCase()),
+            )));
+            setTradingCollectionSymbols(Array.from(new Set(
+                tradingResponse.positions.map((position) => position.ticker.toUpperCase()),
+            )));
+        } catch {
+            setPortfolioCollectionSymbols([]);
+            setTradingCollectionSymbols([]);
+        }
+    }, [canAccess]);
+
     useEffect(() => {
         loadStatuses();
         loadIndexOptions();
+        loadCollectionSymbols();
 
         if (!canAccess) {
             return;
@@ -114,7 +145,27 @@ export const AdminPage: React.FC = () => {
         return () => {
             window.clearInterval(intervalId);
         };
-    }, [canAccess, loadIndexOptions, loadStatuses]);
+    }, [canAccess, loadCollectionSymbols, loadIndexOptions, loadStatuses]);
+
+    const getCollectionSymbols = useCallback((scope: SyncCollectionScope) => {
+        if (scope === 'portfolio') {
+            return portfolioCollectionSymbols;
+        }
+        if (scope === 'trading') {
+            return tradingCollectionSymbols;
+        }
+        return [];
+    }, [portfolioCollectionSymbols, tradingCollectionSymbols]);
+
+    const getCollectionLabel = useCallback((scope: SyncCollectionScope) => {
+        if (scope === 'portfolio') {
+            return 'portfolio holdings';
+        }
+        if (scope === 'trading') {
+            return 'trading positions';
+        }
+        return 'manual symbols';
+    }, []);
 
     const runAction = async <T extends HistorySyncActionResponse>(
         fn: () => Promise<T>,
@@ -146,12 +197,18 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunSync = async () => {
-        const symbols = parseSymbolsInput(syncSymbols);
+        const symbols = syncCollectionScope === 'manual'
+            ? parseSymbolsInput(syncSymbols)
+            : getCollectionSymbols(syncCollectionScope);
+        if (syncCollectionScope !== 'manual' && symbols.length === 0) {
+            setActionError(`No symbols found in ${getCollectionLabel(syncCollectionScope)}.`);
+            return;
+        }
         await runAction(
             () => stockApi.runHistorySync(
                 forceRestart,
                 symbols.length > 0 ? symbols : undefined,
-                syncIndexSymbol || undefined,
+                syncCollectionScope === 'manual' ? syncIndexSymbol || undefined : undefined,
             ),
             setSyncRunning,
             undefined,
@@ -165,14 +222,20 @@ export const AdminPage: React.FC = () => {
             return;
         }
 
-        const symbols = parseSymbolsInput(auditSymbols);
+        const symbols = auditCollectionScope === 'manual'
+            ? parseSymbolsInput(auditSymbols)
+            : getCollectionSymbols(auditCollectionScope);
+        if (auditCollectionScope !== 'manual' && symbols.length === 0) {
+            setActionError(`No symbols found in ${getCollectionLabel(auditCollectionScope)}.`);
+            return;
+        }
 
         await runAction(
             () => stockApi.runHistoryAudit(
                 auditStartDate,
                 auditEndDate,
                 symbols.length > 0 ? symbols : undefined,
-                auditIndexSymbol || undefined,
+                auditCollectionScope === 'manual' ? auditIndexSymbol || undefined : undefined,
                 auditAutoRepair,
             ),
             setAuditRunning,
@@ -181,9 +244,16 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunRepair = async () => {
-        const symbols = parseSymbolsInput(repairSymbols);
+        const symbols = repairCollectionScope === 'manual'
+            ? parseSymbolsInput(repairSymbols)
+            : getCollectionSymbols(repairCollectionScope);
 
-        if (symbols.length === 0 && !repairIndexSymbol) {
+        if (repairCollectionScope !== 'manual' && symbols.length === 0) {
+            setActionError(`No symbols found in ${getCollectionLabel(repairCollectionScope)}.`);
+            return;
+        }
+
+        if (repairCollectionScope === 'manual' && symbols.length === 0 && !repairIndexSymbol) {
             setActionError('Please provide at least one symbol or select an index scope for repair.');
             return;
         }
@@ -198,19 +268,25 @@ export const AdminPage: React.FC = () => {
                 symbols.length > 0 ? symbols : undefined,
                 repairStartDate,
                 repairEndDate,
-                repairIndexSymbol || undefined,
+                repairCollectionScope === 'manual' ? repairIndexSymbol || undefined : undefined,
             ),
             setRepairRunning,
         );
     };
 
     const handleRunFinanceSync = async () => {
-        const symbols = parseSymbolsInput(financeSymbols);
+        const symbols = financeCollectionScope === 'manual'
+            ? parseSymbolsInput(financeSymbols)
+            : getCollectionSymbols(financeCollectionScope);
+        if (financeCollectionScope !== 'manual' && symbols.length === 0) {
+            setActionError(`No symbols found in ${getCollectionLabel(financeCollectionScope)}.`);
+            return;
+        }
         await runAction(
             () => stockApi.runFinanceSync(
                 financeForceRestart,
                 symbols.length > 0 ? symbols : undefined,
-                financeIndexSymbol || undefined,
+                financeCollectionScope === 'manual' ? financeIndexSymbol || undefined : undefined,
                 financeQuickSync,
             ),
             setFinanceRunning,
@@ -220,12 +296,18 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunCompanySync = async () => {
-        const symbols = parseSymbolsInput(companySymbols);
+        const symbols = companyCollectionScope === 'manual'
+            ? parseSymbolsInput(companySymbols)
+            : getCollectionSymbols(companyCollectionScope);
+        if (companyCollectionScope !== 'manual' && symbols.length === 0) {
+            setActionError(`No symbols found in ${getCollectionLabel(companyCollectionScope)}.`);
+            return;
+        }
         await runAction(
             () => stockApi.runCompanySync(
                 companyForceRestart,
                 symbols.length > 0 ? symbols : undefined,
-                companyIndexSymbol || undefined,
+                companyCollectionScope === 'manual' ? companyIndexSymbol || undefined : undefined,
                 companyQuickSync,
             ),
             setCompanyRunning,
@@ -420,6 +502,8 @@ export const AdminPage: React.FC = () => {
                         indexOptions={indexOptions}
                         syncIndexSymbol={syncIndexSymbol}
                         onSyncIndexSymbolChange={(value) => setSyncIndexSymbol(value)}
+                        syncCollectionScope={syncCollectionScope}
+                        onSyncCollectionScopeChange={setSyncCollectionScope}
                         syncSymbols={syncSymbols}
                         onSyncSymbolsChange={(value) => setSyncSymbols(value)}
                         forceRestart={forceRestart}
@@ -428,6 +512,8 @@ export const AdminPage: React.FC = () => {
                         syncActive={syncActive}
                         auditIndexSymbol={auditIndexSymbol}
                         onAuditIndexSymbolChange={(value) => setAuditIndexSymbol(value)}
+                        auditCollectionScope={auditCollectionScope}
+                        onAuditCollectionScopeChange={setAuditCollectionScope}
                         auditSymbols={auditSymbols}
                         onAuditSymbolsChange={(value) => setAuditSymbols(value)}
                         auditStartDate={auditStartDate}
@@ -440,6 +526,8 @@ export const AdminPage: React.FC = () => {
                         auditActive={auditActive}
                         repairIndexSymbol={repairIndexSymbol}
                         onRepairIndexSymbolChange={(value) => setRepairIndexSymbol(value)}
+                        repairCollectionScope={repairCollectionScope}
+                        onRepairCollectionScopeChange={setRepairCollectionScope}
                         repairSymbols={repairSymbols}
                         onRepairSymbolsChange={(value) => setRepairSymbols(value)}
                         repairStartDate={repairStartDate}
@@ -451,6 +539,8 @@ export const AdminPage: React.FC = () => {
                         anyJobActive={anyJobActive}
                         actionDisabled={actionDisabled}
                         auditResult={auditResult}
+                        portfolioCollectionCount={portfolioCollectionSymbols.length}
+                        tradingCollectionCount={tradingCollectionSymbols.length}
                     />
                 ) : null}
 
@@ -461,6 +551,8 @@ export const AdminPage: React.FC = () => {
                         indexOptions={indexOptions}
                         financeIndexSymbol={financeIndexSymbol}
                         onFinanceIndexSymbolChange={(value) => setFinanceIndexSymbol(value)}
+                        financeCollectionScope={financeCollectionScope}
+                        onFinanceCollectionScopeChange={setFinanceCollectionScope}
                         financeSymbols={financeSymbols}
                         onFinanceSymbolsChange={(value) => setFinanceSymbols(value)}
                         financeForceRestart={financeForceRestart}
@@ -471,6 +563,8 @@ export const AdminPage: React.FC = () => {
                         financeActive={financeActive}
                         anyJobActive={anyJobActive}
                         actionDisabled={actionDisabled}
+                        portfolioCollectionCount={portfolioCollectionSymbols.length}
+                        tradingCollectionCount={tradingCollectionSymbols.length}
                     />
                 ) : null}
 
@@ -481,6 +575,8 @@ export const AdminPage: React.FC = () => {
                         indexOptions={indexOptions}
                         companyIndexSymbol={companyIndexSymbol}
                         onCompanyIndexSymbolChange={(value) => setCompanyIndexSymbol(value)}
+                        companyCollectionScope={companyCollectionScope}
+                        onCompanyCollectionScopeChange={setCompanyCollectionScope}
                         companySymbols={companySymbols}
                         onCompanySymbolsChange={(value) => setCompanySymbols(value)}
                         companyForceRestart={companyForceRestart}
@@ -491,6 +587,8 @@ export const AdminPage: React.FC = () => {
                         companyActive={companyActive}
                         anyJobActive={anyJobActive}
                         actionDisabled={actionDisabled}
+                        portfolioCollectionCount={portfolioCollectionSymbols.length}
+                        tradingCollectionCount={tradingCollectionSymbols.length}
                     />
                 ) : null}
 

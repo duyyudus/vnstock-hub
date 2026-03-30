@@ -1,3 +1,5 @@
+export type SyncCollectionScope = 'manual' | 'portfolio' | 'trading';
+
 export const getErrorMessage = (error: unknown) => {
     if (typeof error === 'object' && error && 'response' in error) {
         const response = (error as { response?: { data?: { detail?: string } } }).response;

@@ -4,6 +4,7 @@ import type { Stock, IndustryInfo, BookmarkGroup } from '../../../api/stockApi';
 import { IndexSelector } from './IndexSelector';
 import { IndustrySelector } from './IndustrySelector';
 import { BookmarkSelector } from './BookmarkSelector';
+import { PositionsSelector, type PositionsFilter } from './PositionsSelector';
 import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
 import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
@@ -58,6 +59,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         return indices.find(idx => idx.id === 'VN30') || indices[0];
     });
     const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
+    const [selectedPositionsFilter, setSelectedPositionsFilter] = useState<PositionsFilter>('all');
     const [selectedBookmarkGroupId, setSelectedBookmarkGroupId] = useState<number | null>(null);
     const [bookmarkRefreshKey, setBookmarkRefreshKey] = useState(0);
 
@@ -70,6 +72,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [bookmarkLoading, setBookmarkLoading] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [portfolioPositionTickers, setPortfolioPositionTickers] = useState<string[]>([]);
+    const [tradingPositionTickers, setTradingPositionTickers] = useState<string[]>([]);
     const [portfolioHoldings, setPortfolioHoldings] = useState<Record<string, PortfolioHoldingSummary>>({});
     const [openTradingPositions, setOpenTradingPositions] = useState<Record<string, TradingPositionSummary>>({});
 
@@ -86,8 +90,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [dateRange, setDateRange] = useState<DateRange>(dateRangeDomain.defaultRange);
     const [appliedDateRange, setAppliedDateRange] = useState<DateRange>(dateRangeDomain.defaultRange);
 
-    const isIndexContextActive = !selectedIndustryName && !selectedBookmarkGroupId;
+    const hasPortfolioPositions = portfolioPositionTickers.length > 0;
+    const hasTradingPositions = tradingPositionTickers.length > 0;
+    const isIndexContextActive = selectedPositionsFilter === 'all' && !selectedIndustryName && !selectedBookmarkGroupId;
     const shouldShowDateRangeControls = viewMode !== 'comparison';
+    const selectedPositionsLabel = selectedPositionsFilter === 'portfolio'
+        ? 'Portfolio Positions'
+        : selectedPositionsFilter === 'trading'
+            ? 'Trading Positions'
+            : null;
 
     // --- Effects ---
 
@@ -141,6 +152,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     useEffect(() => {
         if (!user) {
+            setPortfolioPositionTickers([]);
             setPortfolioHoldings({});
             return;
         }
@@ -152,6 +164,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 const uniqueTickers = Array.from(
                     new Set(response.positions.map((position) => position.ticker.toUpperCase()))
                 );
+                setPortfolioPositionTickers(uniqueTickers);
 
                 if (uniqueTickers.length === 0) {
                     setPortfolioHoldings({});
@@ -222,6 +235,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 setPortfolioHoldings(nextPortfolioHoldings);
             } catch {
                 if (!isMounted) return;
+                setPortfolioPositionTickers([]);
                 setPortfolioHoldings({});
             }
         };
@@ -235,6 +249,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     useEffect(() => {
         if (!user) {
+            setTradingPositionTickers([]);
             setOpenTradingPositions({});
             return;
         }
@@ -243,6 +258,10 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         stockApi.getTradingPositions()
             .then((response) => {
                 if (!isMounted) return;
+                const uniqueTickers = Array.from(
+                    new Set(response.positions.map((position) => position.ticker.toUpperCase()))
+                );
+                setTradingPositionTickers(uniqueTickers);
                 const aggregatedPositions = response.positions.reduce<Record<string, TradingPositionSummary>>((accumulator, position) => {
                     const ticker = position.ticker.toUpperCase();
                     const quantity = Number(position.quantity);
@@ -270,6 +289,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             })
             .catch(() => {
                 if (!isMounted) return;
+                setTradingPositionTickers([]);
                 setOpenTradingPositions({});
             });
 
@@ -283,6 +303,16 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             setSelectedBookmarkGroupId(null);
         }
     }, [bookmarkGroups, selectedBookmarkGroupId]);
+
+    useEffect(() => {
+        if (selectedPositionsFilter === 'portfolio' && !hasPortfolioPositions) {
+            setSelectedPositionsFilter('all');
+            return;
+        }
+        if (selectedPositionsFilter === 'trading' && !hasTradingPositions) {
+            setSelectedPositionsFilter('all');
+        }
+    }, [hasPortfolioPositions, hasTradingPositions, selectedPositionsFilter]);
 
     useEffect(() => {
         if (!isIndexContextActive) {
@@ -327,16 +357,17 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         [indexUniverseStocks, industries]
     );
     const industriesForSelector = useMemo(() => {
-        if (selectedBookmarkGroupId || !selectedIndex) {
+        if (selectedPositionsFilter !== 'all' || selectedBookmarkGroupId || !selectedIndex) {
             return industries;
         }
         return selectorIndustries;
-    }, [industries, selectedBookmarkGroupId, selectedIndex, selectorIndustries]);
+    }, [industries, selectedBookmarkGroupId, selectedIndex, selectedPositionsFilter, selectorIndustries]);
 
     useEffect(() => {
         if (
             !selectedIndustryName ||
             !selectedIndex ||
+            selectedPositionsFilter !== 'all' ||
             selectedBookmarkGroupId ||
             loading ||
             indexUniverseIndexId !== selectedIndex.id
@@ -346,7 +377,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         if (!allowedIndustryNames.has(selectedIndustryName)) {
             setSelectedIndustryName(null);
         }
-    }, [allowedIndustryNames, indexUniverseIndexId, loading, selectedBookmarkGroupId, selectedIndex, selectedIndustryName]);
+    }, [allowedIndustryNames, indexUniverseIndexId, loading, selectedBookmarkGroupId, selectedIndex, selectedIndustryName, selectedPositionsFilter]);
 
     // Fetch Stocks Data
     useEffect(() => {
@@ -355,7 +386,25 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 setLoading(true);
                 setError(null);
 
-                if (selectedBookmarkGroupId) {
+                if (selectedPositionsFilter !== 'all') {
+                    const tickers = selectedPositionsFilter === 'portfolio'
+                        ? portfolioPositionTickers
+                        : tradingPositionTickers;
+                    if (tickers.length === 0) {
+                        setStocks([]);
+                        setIndexUniverseStocks([]);
+                        setIndexUniverseIndexId(null);
+                        return;
+                    }
+
+                    const response = await stockApi.getStockQuotes(tickers, {
+                        rangeStart: appliedDateRange.startDate,
+                        rangeEnd: appliedDateRange.endDate,
+                    });
+                    setStocks(response.stocks);
+                    setIndexUniverseStocks([]);
+                    setIndexUniverseIndexId(null);
+                } else if (selectedBookmarkGroupId) {
                     // Bookmark overrides everything
                     const response = await stockApi.getBookmarkGroupStocks(selectedBookmarkGroupId, {
                         rangeStart: appliedDateRange.startDate,
@@ -409,11 +458,11 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                     setIndexUniverseIndexId(selectedIndex.id);
                 }
             } catch (err: unknown) {
-                const label = selectedBookmarkGroupId
+                const label = selectedPositionsLabel || (selectedBookmarkGroupId
                     ? 'bookmark group'
                     : (selectedIndustryName && selectedIndex
                         ? `${selectedIndex.label} + ${selectedIndustryName}`
-                        : (selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks')));
+                        : (selectedIndustryName || (selectedIndex ? selectedIndex.label : 'stocks'))));
 
                 // If it's a rate limit error (429) or if we can check global status
                 try {
@@ -441,9 +490,13 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         bookmarkRefreshKey,
         appliedDateRange.endDate,
         appliedDateRange.startDate,
+        portfolioPositionTickers,
         selectedBookmarkGroupId,
         selectedIndex,
         selectedIndustryName,
+        selectedPositionsFilter,
+        selectedPositionsLabel,
+        tradingPositionTickers,
     ]);
 
     // --- Handlers ---
@@ -693,6 +746,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         if (!selectedBookmarkGroupId) return null;
         return bookmarkGroups.find(group => group.id === selectedBookmarkGroupId) || null;
     }, [bookmarkGroups, selectedBookmarkGroupId]);
+    const title = selectedPositionsLabel || selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex?.title || 'Indices';
 
     // --- Render ---
 
@@ -707,7 +761,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 {/* Row 1: Title */}
                 <div>
                     <h2 className="text-2xl font-bold text-base-content">
-                        {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.title}
+                        {title}
                     </h2>
                 </div>
 
@@ -730,6 +784,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </div>
+                    <PositionsSelector
+                        selectedFilter={selectedPositionsFilter}
+                        onFilterChange={setSelectedPositionsFilter}
+                        hasPortfolioPositions={hasPortfolioPositions}
+                        hasTradingPositions={hasTradingPositions}
+                    />
                     {user ? (
                         <BookmarkSelector
                             groups={bookmarkGroups}
@@ -855,7 +915,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             {loading ? (
                 <div className="flex flex-col items-center justify-center h-64 gap-4 card bg-base-100 shadow-md border border-base-300">
                     <span className="loading loading-spinner loading-lg text-primary"></span>
-                    <p className="text-base-content/70">Loading {selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex.label} stocks...</p>
+                    <p className="text-base-content/70">Loading {title} stocks...</p>
                 </div>
             ) : error ? (
                 <div className="alert alert-error shadow-lg">

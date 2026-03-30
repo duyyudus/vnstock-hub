@@ -1,5 +1,7 @@
 import React from 'react';
 import { type IndexInfo, type HistoryAuditActionResponse, type HistoryJobStatus } from '../../../api/stockApi';
+import { SyncCollectionSelector } from '../components/SyncCollectionSelector';
+import type { SyncCollectionScope } from '../adminUtils';
 import { FailedTickerList } from '../components/FailedTickerList';
 import { formatDateTime } from '../adminUtils';
 
@@ -13,6 +15,8 @@ interface HistorySyncTabProps {
     indexOptions: IndexInfo[];
     syncIndexSymbol: string;
     onSyncIndexSymbolChange: (value: string) => void;
+    syncCollectionScope: SyncCollectionScope;
+    onSyncCollectionScopeChange: (value: SyncCollectionScope) => void;
     syncSymbols: string;
     onSyncSymbolsChange: (value: string) => void;
     forceRestart: boolean;
@@ -21,6 +25,8 @@ interface HistorySyncTabProps {
     syncActive: boolean;
     auditIndexSymbol: string;
     onAuditIndexSymbolChange: (value: string) => void;
+    auditCollectionScope: SyncCollectionScope;
+    onAuditCollectionScopeChange: (value: SyncCollectionScope) => void;
     auditSymbols: string;
     onAuditSymbolsChange: (value: string) => void;
     auditStartDate: string;
@@ -33,6 +39,8 @@ interface HistorySyncTabProps {
     auditActive: boolean;
     repairIndexSymbol: string;
     onRepairIndexSymbolChange: (value: string) => void;
+    repairCollectionScope: SyncCollectionScope;
+    onRepairCollectionScopeChange: (value: SyncCollectionScope) => void;
     repairSymbols: string;
     onRepairSymbolsChange: (value: string) => void;
     repairStartDate: string;
@@ -44,6 +52,8 @@ interface HistorySyncTabProps {
     anyJobActive: boolean;
     actionDisabled: boolean;
     auditResult: HistoryAuditActionResponse | null;
+    portfolioCollectionCount: number;
+    tradingCollectionCount: number;
 }
 
 export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
@@ -56,6 +66,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     indexOptions,
     syncIndexSymbol,
     onSyncIndexSymbolChange,
+    syncCollectionScope,
+    onSyncCollectionScopeChange,
     syncSymbols,
     onSyncSymbolsChange,
     forceRestart,
@@ -64,6 +76,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     syncActive,
     auditIndexSymbol,
     onAuditIndexSymbolChange,
+    auditCollectionScope,
+    onAuditCollectionScopeChange,
     auditSymbols,
     onAuditSymbolsChange,
     auditStartDate,
@@ -76,6 +90,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     auditActive,
     repairIndexSymbol,
     onRepairIndexSymbolChange,
+    repairCollectionScope,
+    onRepairCollectionScopeChange,
     repairSymbols,
     onRepairSymbolsChange,
     repairStartDate,
@@ -87,6 +103,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     anyJobActive,
     actionDisabled,
     auditResult,
+    portfolioCollectionCount,
+    tradingCollectionCount,
 }) => {
     return (
         <>
@@ -145,12 +163,19 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body space-y-3">
                         <h2 className="card-title">Run History Sync</h2>
+                        <SyncCollectionSelector
+                            value={syncCollectionScope}
+                            onChange={onSyncCollectionScopeChange}
+                            portfolioCount={portfolioCollectionCount}
+                            tradingCount={tradingCollectionCount}
+                        />
                         <label className="form-control">
                             <span className="label-text">Index scope (optional)</span>
                             <select
                                 className="select select-bordered"
                                 value={syncIndexSymbol}
                                 onChange={(event) => onSyncIndexSymbolChange(event.target.value)}
+                                disabled={syncCollectionScope !== 'manual'}
                             >
                                 <option value="">All indices</option>
                                 {indexOptions.map((index) => (
@@ -168,6 +193,7 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                                 value={syncSymbols}
                                 onChange={(event) => onSyncSymbolsChange(event.target.value)}
                                 placeholder="All symbols if empty"
+                                disabled={syncCollectionScope !== 'manual'}
                             />
                         </label>
                         <label className="label cursor-pointer justify-start gap-3">
@@ -197,12 +223,19 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body space-y-3">
                         <h2 className="card-title">Run History Audit</h2>
+                        <SyncCollectionSelector
+                            value={auditCollectionScope}
+                            onChange={onAuditCollectionScopeChange}
+                            portfolioCount={portfolioCollectionCount}
+                            tradingCount={tradingCollectionCount}
+                        />
                         <label className="form-control">
                             <span className="label-text">Index scope (optional)</span>
                             <select
                                 className="select select-bordered"
                                 value={auditIndexSymbol}
                                 onChange={(event) => onAuditIndexSymbolChange(event.target.value)}
+                                disabled={auditCollectionScope !== 'manual'}
                             >
                                 <option value="">All indices</option>
                                 {indexOptions.map((index) => (
@@ -220,6 +253,7 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                                 value={auditSymbols}
                                 onChange={(event) => onAuditSymbolsChange(event.target.value)}
                                 placeholder="All symbols if empty"
+                                disabled={auditCollectionScope !== 'manual'}
                             />
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -269,12 +303,19 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                 <div className="card bg-base-100 shadow-lg">
                     <div className="card-body space-y-3">
                         <h2 className="card-title">Run Repair</h2>
+                        <SyncCollectionSelector
+                            value={repairCollectionScope}
+                            onChange={onRepairCollectionScopeChange}
+                            portfolioCount={portfolioCollectionCount}
+                            tradingCount={tradingCollectionCount}
+                        />
                         <label className="form-control">
                             <span className="label-text">Index scope (optional)</span>
                             <select
                                 className="select select-bordered"
                                 value={repairIndexSymbol}
                                 onChange={(event) => onRepairIndexSymbolChange(event.target.value)}
+                                disabled={repairCollectionScope !== 'manual'}
                             >
                                 <option value="">All indices</option>
                                 {indexOptions.map((index) => (
@@ -292,6 +333,7 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                                 value={repairSymbols}
                                 onChange={(event) => onRepairSymbolsChange(event.target.value)}
                                 placeholder="All symbols in selected index if empty"
+                                disabled={repairCollectionScope !== 'manual'}
                             />
                         </label>
                         <div className="grid grid-cols-2 gap-2">

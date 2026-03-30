@@ -383,7 +383,11 @@ async def get_stocks_by_industry(
 
 
 @router.post("/quotes", response_model=StockQuotesResponse)
-async def get_stock_quotes(request: StockQuotesRequest):
+async def get_stock_quotes(
+    request: StockQuotesRequest,
+    range_start: Optional[date] = None,
+    range_end: Optional[date] = None,
+):
     """
     Get latest quotes for multiple stock symbols.
     """
@@ -391,7 +395,11 @@ async def get_stock_quotes(request: StockQuotesRequest):
     if not symbols:
         return StockQuotesResponse(stocks=[], count=0)
     unique_symbols = list(dict.fromkeys(symbols))
-    stocks = await vnstock_service.get_symbol_stocks(unique_symbols)
+    stocks = await vnstock_service.get_symbol_stocks(
+        unique_symbols,
+        range_start=range_start,
+        range_end=range_end,
+    )
     return StockQuotesResponse(
         stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks)
