@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
@@ -36,6 +37,55 @@ def _semantic_payload(*, event_type: str, story_key: str, display_topics: list[s
     if display_topics is not None:
         payload["display_topics"] = display_topics
     return payload
+
+
+async def _seed_discussion_article(db_session, *, content_text: str | None = "ABC earnings and revenue growth."):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example News",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    article = NewsArticle(
+        canonical_url="https://example.com/articles/discussion",
+        title="ABC posts strong earnings",
+        excerpt="Quarterly earnings improved.",
+        content_text=content_text,
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="hash-discussion",
+    )
+    db_session.add(article)
+    await db_session.flush()
+    db_session.add(NewsArticleSource(article_id=article.id, site_feed_id=feed.id, article_url=article.canonical_url))
+    db_session.add(
+        NewsArticleSemantic(
+            article_id=article.id,
+            topics=["earnings"],
+            tickers=["ABC"],
+            sectors=["technology"],
+            importance="high",
+            sentiment="positive",
+            raw_payload={},
+        )
+    )
+    await db_session.commit()
+    return article, feed
 
 
 @pytest.mark.asyncio
@@ -767,6 +817,399 @@ async def test_refresh_news_article_content_returns_updated_detail(client, db_se
     assert payload["excerpt"] == "Updated excerpt"
     assert payload["content_text"] == "Updated content"
     assert payload["source_urls"] == [article.canonical_url]
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_requires_authentication(client, db_session):
+    article, _ = await _seed_discussion_article(db_session)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "What matters here?"}],
+            "search_web": False,
+        },
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_returns_article_grounded_answer_without_web_search(client, db_session, monkeypatch):
+    headers, user_id = await _register_and_auth(client, "news-discuss@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is False
+        assert article_context["title"] == article.title
+        assert messages == [{"role": "user", "content": "What changed?"}]
+        assert [item["source_type"] for item in evidence_items] == ["article"]
+        return {
+            "assistant_message": "The article says earnings improved.",
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: pytest.fail("web search should not run"))
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "What changed?"}],
+            "search_web": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["assistant_message"] == "The article says earnings improved."
+    assert payload["search_mode"] == "off"
+    assert payload["effective_search_mode"] == "off"
+    assert payload["used_web_search"] is False
+    assert payload["web_results_count"] == 0
+    assert payload["citations"][0]["source_type"] == "article"
+    assert payload["citations"][0]["title"] == article.title
+    assert user_id > 0
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_uses_web_search_when_requested(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-web@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+    search_queries: list[str] = []
+
+    class _FakeSearchProvider:
+        async def search(self, query: str, *, limit: int = 5):
+            search_queries.append(query)
+            assert limit == 5
+            return [
+                SimpleNamespace(
+                    title="Outside context",
+                    url="https://outside.example.com/story",
+                    snippet="Fresh outside coverage.",
+                    domain="outside.example.com",
+                )
+            ]
+
+    async def _fake_fetch_text(client, url: str):
+        assert url == "https://outside.example.com/story"
+        return """
+        <html>
+          <head>
+            <meta property="og:title" content="Outside context" />
+            <meta property="og:description" content="Fresh outside coverage." />
+          </head>
+          <body><article><p>Fresh outside coverage with more context.</p></article></body>
+        </html>
+        """
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is True
+        assert article_context["title"] == article.title
+        assert any(item["source_type"] == "web" for item in evidence_items)
+        return {
+            "assistant_message": "Outside coverage adds more context.",
+            "cited_source_ids": ["web:1"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: _FakeSearchProvider())
+    monkeypatch.setattr("app.services.news.service.fetch_text", _fake_fetch_text)
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "What else is relevant?"}],
+            "search_mode": "on",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["search_mode"] == "on"
+    assert payload["effective_search_mode"] == "on"
+    assert payload["used_web_search"] is True
+    assert payload["web_results_count"] == 1
+    assert payload["citations"][0]["source_type"] == "web"
+    assert payload["citations"][0]["domain"] == "outside.example.com"
+    assert search_queries
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_warns_when_full_article_body_is_unavailable(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-missing-body@example.com")
+    article, _ = await _seed_discussion_article(db_session, content_text=None)
+
+    async def _fake_repair(session, article, *, force_refresh: bool = False):
+        assert article.id > 0
+        assert force_refresh is True
+        return False
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert article_context["content_text"] is None
+        assert search_web is False
+        return {
+            "assistant_message": "Only the headline and excerpt were available.",
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr(news_service, "_repair_article_content_if_needed", _fake_repair)
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "Summarize the situation."}],
+            "search_web": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "Full article body was unavailable" in payload["warning"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_auto_mode_triggers_web_search_for_overview_questions(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-auto-overview@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+
+    class _FakeSearchProvider:
+        async def search(self, query: str, *, limit: int = 5):
+            return [
+                SimpleNamespace(
+                    title="Company profile",
+                    url="https://example.com/profile",
+                    snippet="Profile snippet with company overview and products.",
+                    domain="example.com",
+                ),
+                SimpleNamespace(
+                    title="Ownership overview",
+                    url="https://example.com/ownership",
+                    snippet="Ownership and company background for Home Credit.",
+                    domain="example.com",
+                ),
+            ]
+
+    async def _fake_fetch_text(client, url: str):
+        if url == "https://example.com/profile":
+            return """
+            <html>
+              <head>
+                <meta property="og:title" content="Company profile" />
+                <meta property="og:description" content="Profile snippet with company overview and products." />
+              </head>
+              <body><article><p>Company profile overview and products.</p></article></body>
+            </html>
+            """
+        return """
+        <html>
+          <head>
+            <meta property="og:title" content="Ownership overview" />
+            <meta property="og:description" content="Ownership and company background for Home Credit." />
+          </head>
+          <body><article><p>Ownership and company background for Home Credit.</p></article></body>
+        </html>
+        """
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is True
+        assert any(item["source_type"] == "web" for item in evidence_items)
+        return {
+            "assistant_message": "Here is the company overview.",
+            "cited_source_ids": ["web:1"],
+            "warning": None,
+        }
+
+    async def _fake_decision(*, article_context, messages, article_content_strength):
+        assert article_content_strength in {"weak", "medium", "strong"}
+        return {
+            "intent": "overview",
+            "subject": "Home Credit",
+            "needs_web_search": True,
+            "reason": "Overview needs broader context.",
+            "confidence": 0.9,
+        }
+
+    monkeypatch.setattr("app.services.news.service.decide_discussion_search", _fake_decision)
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: _FakeSearchProvider())
+    monkeypatch.setattr("app.services.news.service.fetch_text", _fake_fetch_text)
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "giới thiệu sơ về home credit"}],
+            "search_mode": "auto",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["search_mode"] == "auto"
+    assert payload["effective_search_mode"] == "on"
+    assert payload["used_web_search"] is True
+    assert [item["source_type"] for item in payload["citations"]] == ["web", "web"]
+    assert {item["title"] for item in payload["citations"]} == {"Company profile", "Ownership overview"}
+    assert "Additional web citations were attached" in payload["warning"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_auto_mode_stays_article_only_for_recap_questions(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-auto-recap@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is False
+        assert [item["source_type"] for item in evidence_items] == ["article"]
+        return {
+            "assistant_message": "Here is the recap.",
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    async def _fake_decision(*, article_context, messages, article_content_strength):
+        return {
+            "intent": "recap",
+            "subject": None,
+            "needs_web_search": False,
+            "reason": "Recap can be answered from the article.",
+            "confidence": 0.96,
+        }
+
+    monkeypatch.setattr("app.services.news.service.decide_discussion_search", _fake_decision)
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: pytest.fail("web search should not run"))
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "tóm tắt bài này"}],
+            "search_mode": "auto",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["search_mode"] == "auto"
+    assert payload["effective_search_mode"] == "off"
+    assert payload["used_web_search"] is False
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_auto_mode_falls_back_to_heuristics_when_decision_llm_is_unavailable(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-auto-fallback@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+
+    class _FakeSearchProvider:
+        async def search(self, query: str, *, limit: int = 5):
+            return [
+                SimpleNamespace(
+                    title="Ownership profile",
+                    url="https://example.com/ownership",
+                    snippet="Ownership profile for F88.",
+                    domain="example.com",
+                )
+            ]
+
+    async def _fake_fetch_text(client, url: str):
+        return """
+        <html>
+          <head>
+            <meta property="og:title" content="Ownership profile" />
+            <meta property="og:description" content="Ownership profile for F88." />
+          </head>
+          <body><article><p>Ownership profile for F88.</p></article></body>
+        </html>
+        """
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is True
+        return {
+            "assistant_message": "Here is the ownership context.",
+            "cited_source_ids": ["web:1"],
+            "warning": None,
+        }
+
+    async def _fake_decision(*, article_context, messages, article_content_strength):
+        return None
+
+    monkeypatch.setattr("app.services.news.service.decide_discussion_search", _fake_decision)
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: _FakeSearchProvider())
+    monkeypatch.setattr("app.services.news.service.fetch_text", _fake_fetch_text)
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "giới thiệu sơ về home credit"}],
+            "search_mode": "auto",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["effective_search_mode"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_returns_controlled_failure_when_search_provider_is_unconfigured(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-no-search@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+
+    monkeypatch.setattr("app.services.news.service.get_news_search_provider", lambda client: None)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "Search for broader coverage."}],
+            "search_web": True,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "Web search is not configured" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_news_article_truncates_long_histories(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-history@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+    history = []
+    for index in range(8):
+        history.append({"role": "user", "content": f"user-{index}"})
+        history.append({"role": "assistant", "content": f"assistant-{index}"})
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert len(messages) == 12
+        assert messages[0]["content"] == "user-2"
+        assert messages[-1]["content"] == "assistant-7"
+        return {
+            "assistant_message": "History was truncated correctly.",
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={"messages": history, "search_web": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["assistant_message"] == "History was truncated correctly."
 
 
 @pytest.mark.asyncio

@@ -740,6 +740,37 @@ export interface NewsArticleDetail extends NewsFeedItem {
     related_articles: NewsRelatedArticle[];
 }
 
+export interface NewsDiscussionMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+export type NewsDiscussionSearchMode = 'off' | 'auto' | 'on';
+
+export interface NewsDiscussionCitation {
+    source_type: 'article' | 'web';
+    title: string;
+    url: string | null;
+    snippet: string;
+    domain: string | null;
+}
+
+export interface NewsArticleDiscussionRequest {
+    messages: NewsDiscussionMessage[];
+    search_mode: NewsDiscussionSearchMode;
+    search_query_override?: string | null;
+}
+
+export interface NewsArticleDiscussionResponse {
+    assistant_message: string;
+    citations: NewsDiscussionCitation[];
+    search_mode: NewsDiscussionSearchMode;
+    effective_search_mode: 'off' | 'on';
+    used_web_search: boolean;
+    web_results_count: number;
+    warning: string | null;
+}
+
 export interface NewsArticleSummaryResponse {
     id: number;
     excerpt: string | null;
@@ -1224,6 +1255,11 @@ export const stockApi = {
 
     async getNewsArticle(articleId: number | string): Promise<NewsArticleDetail> {
         const response = await apiClient.get<NewsArticleDetail>(`/news/articles/${articleId}`);
+        return response.data;
+    },
+
+    async discussNewsArticle(articleId: number | string, payload: NewsArticleDiscussionRequest): Promise<NewsArticleDiscussionResponse> {
+        const response = await apiClient.post<NewsArticleDiscussionResponse>(`/news/articles/${articleId}/discussion`, payload);
         return response.data;
     },
 

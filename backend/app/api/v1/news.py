@@ -21,6 +21,8 @@ NewsValidationStatus = Literal["pending", "valid", "invalid"]
 NewsSortMode = Literal["latest", "relevance"]
 NewsScopeMode = Literal["all", "portfolio", "bookmarks"]
 NewsGroupMode = Literal["article", "story"]
+NewsDiscussionRole = Literal["user", "assistant"]
+NewsDiscussionSearchMode = Literal["off", "auto", "on"]
 NewsEventType = Literal[
     "earnings",
     "dividend",
@@ -128,6 +130,43 @@ class NewsArticleDetailResponse(NewsFeedItemResponse):
     source_urls: list[str] = Field(default_factory=list)
     related_article_ids: list[int] = Field(default_factory=list)
     related_articles: list[NewsRelatedArticleResponse] = Field(default_factory=list)
+
+
+class NewsDiscussionMessageRequest(BaseModel):
+    role: NewsDiscussionRole
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class NewsDiscussionRequest(BaseModel):
+    messages: list[NewsDiscussionMessageRequest] = Field(default_factory=list)
+    search_mode: NewsDiscussionSearchMode | None = None
+    search_web: bool | None = None
+    search_query_override: str | None = Field(default=None, max_length=240)
+
+    def resolved_search_mode(self) -> NewsDiscussionSearchMode:
+        if self.search_mode in {"off", "auto", "on"}:
+            return self.search_mode
+        if self.search_web is True:
+            return "on"
+        return "off"
+
+
+class NewsDiscussionCitationResponse(BaseModel):
+    source_type: Literal["article", "web"]
+    title: str
+    url: str | None = None
+    snippet: str
+    domain: str | None = None
+
+
+class NewsArticleDiscussionResponse(BaseModel):
+    assistant_message: str
+    citations: list[NewsDiscussionCitationResponse] = Field(default_factory=list)
+    search_mode: NewsDiscussionSearchMode
+    effective_search_mode: Literal["off", "on"]
+    used_web_search: bool
+    web_results_count: int
+    warning: str | None = None
 
 
 class NewsFeedResponse(BaseModel):
@@ -392,6 +431,28 @@ def _serialize_article_detail(payload: dict[str, Any]) -> NewsArticleDetailRespo
     )
 
 
+def _serialize_discussion_response(payload: dict[str, Any]) -> NewsArticleDiscussionResponse:
+    return NewsArticleDiscussionResponse(
+        assistant_message=str(payload["assistant_message"]),
+        citations=[
+            NewsDiscussionCitationResponse(
+                source_type="web" if item.get("source_type") == "web" else "article",
+                title=str(item.get("title") or "Untitled source"),
+                url=str(item.get("url")) if item.get("url") else None,
+                snippet=str(item.get("snippet") or ""),
+                domain=str(item.get("domain")) if item.get("domain") else None,
+            )
+            for item in payload.get("citations", [])
+            if isinstance(item, dict) and str(item.get("snippet") or item.get("title") or "").strip()
+        ],
+        search_mode=payload.get("search_mode") if payload.get("search_mode") in {"off", "auto", "on"} else "off",
+        effective_search_mode="on" if payload.get("effective_search_mode") == "on" else "off",
+        used_web_search=bool(payload.get("used_web_search")),
+        web_results_count=int(payload.get("web_results_count") or 0),
+        warning=payload.get("warning"),
+    )
+
+
 def _serialize_rss_source(item: dict[str, Any]) -> NewsRssSourceResponse:
     last_validated_at = item.get("last_success_at") or item.get("last_failure_at")
     return NewsRssSourceResponse(
@@ -527,6 +588,27 @@ async def get_news_article(article_id: int, current_user=Depends(get_current_use
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News article not found")
     return _serialize_article_detail(payload)
+
+
+@router.post("/articles/{article_id}/discussion", response_model=NewsArticleDiscussionResponse)
+async def discuss_news_article(
+    article_id: int,
+    payload: NewsDiscussionRequest,
+    current_user=Depends(get_current_user),
+):
+    try:
+        response_payload = await news_service.discuss_article(
+            article_id,
+            user_id=current_user.id,
+            messages=[item.model_dump() for item in payload.messages],
+            search_mode=payload.resolved_search_mode(),
+            search_query_override=payload.search_query_override,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if response_payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News article not found")
+    return _serialize_discussion_response(response_payload)
 
 
 @router.post("/articles/{article_id}/summary", response_model=NewsFeedItemResponse)

@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -200,6 +201,182 @@ def test_matches_topic_filter_supports_case_insensitive_partial_phrases():
     assert news_service_module._matches_topic_filter("interest rates", ["global interest rates"]) is True
     assert news_service_module._matches_topic_filter("interest rates", ["interest", "rates"]) is False
     assert news_service_module._matches_topic_filter("commodities", ["banking", "interest rates"]) is False
+
+
+def test_discussion_search_queries_prioritize_subject_queries_for_background_requests():
+    article = NewsArticle(
+        canonical_url="https://vietnambiz.vn/example.htm",
+        title="Chấm dứt thương vụ với đại gia Thái, Home Credit đang kinh doanh ra sao?",
+        excerpt="Excerpt",
+        content_text="Content",
+    )
+
+    queries = news_service._heuristic_discussion_search_queries(
+        article,
+        None,
+        [{"role": "user", "content": "giới thiệu sơ về home credit"}],
+        override=None,
+    )
+
+    assert queries[0].startswith('"home credit"')
+    assert "Chấm dứt thương vụ" not in queries[0]
+
+
+def test_discussion_search_queries_fall_back_to_article_anchor_for_specific_follow_up():
+    article = NewsArticle(
+        canonical_url="https://vietnambiz.vn/example.htm",
+        title="Chấm dứt thương vụ với đại gia Thái, Home Credit đang kinh doanh ra sao?",
+        excerpt="Excerpt",
+        content_text="Content",
+    )
+
+    queries = news_service._heuristic_discussion_search_queries(
+        article,
+        None,
+        [{"role": "user", "content": "thương vụ này đổ vỡ vì sao"}],
+        override=None,
+    )
+
+    assert queries[0] == "thương vụ này đổ vỡ vì sao"
+    assert any(query.startswith("Chấm dứt thương vụ") for query in queries)
+
+
+def test_should_auto_search_discussion_for_overview_questions():
+    article_context = {
+        "title": "Home Credit story",
+        "excerpt": "Short excerpt",
+        "content_text": "This article body is detailed enough to stand on its own for article recap questions.",
+    }
+
+    should_search = news_service._should_auto_search_discussion(
+        intent="overview",
+        article_context=article_context,
+        latest_user_message="giới thiệu sơ về home credit",
+    )
+
+    assert should_search is True
+
+
+def test_should_auto_search_discussion_stays_off_for_recap_when_article_is_strong():
+    article_context = {
+        "title": "Home Credit story",
+        "excerpt": "Short excerpt",
+        "content_text": "This article body is detailed enough to stand on its own for article recap questions. " * 12,
+    }
+
+    should_search = news_service._should_auto_search_discussion(
+        intent="recap",
+        article_context=article_context,
+        latest_user_message="tóm tắt bài này",
+    )
+
+    assert should_search is False
+
+
+@pytest.mark.asyncio
+async def test_discussion_search_queries_merge_llm_and_heuristic_queries(monkeypatch):
+    article = NewsArticle(
+        canonical_url="https://vietnambiz.vn/example.htm",
+        title="Chấm dứt thương vụ với đại gia Thái, Home Credit đang kinh doanh ra sao?",
+        excerpt="Excerpt",
+        content_text="Content",
+    )
+    article_context = {"title": article.title, "canonical_url": article.canonical_url}
+
+    async def _fake_generate_discussion_search_queries(*, article_context, messages, fallback_queries):
+        assert article_context["title"] == article.title
+        assert messages[-1]["content"] == "giới thiệu sơ về home credit"
+        assert fallback_queries
+        return [
+            "\"home credit\" vietnam consumer finance overview",
+            "\"home credit\" viet nam la cong ty gi",
+        ]
+
+    monkeypatch.setattr(news_service_module, "generate_discussion_search_queries", _fake_generate_discussion_search_queries)
+
+    queries = await news_service._discussion_search_queries(
+        article,
+        None,
+        [{"role": "user", "content": "giới thiệu sơ về home credit"}],
+        override=None,
+        article_context=article_context,
+    )
+
+    assert queries[0] == "\"home credit\" vietnam consumer finance overview"
+    assert any(query.startswith('"home credit" Việt Nam') for query in queries)
+
+
+@pytest.mark.asyncio
+async def test_build_web_discussion_evidence_retries_and_promotes_profile_result(monkeypatch):
+    article = NewsArticle(
+        canonical_url="https://vietnambiz.vn/example.htm",
+        title="Chấm dứt thương vụ với đại gia Thái, Home Credit đang kinh doanh ra sao?",
+        excerpt="Excerpt",
+        content_text="Content",
+    )
+    article_context = {"title": article.title, "canonical_url": article.canonical_url}
+    observed_queries: list[str] = []
+
+    class _FakeSearchProvider:
+        async def search(self, query: str, *, limit: int = 5):
+            observed_queries.append(query)
+            if "company overview official" in query or "giới thiệu công ty" in query:
+                return [
+                    SimpleNamespace(
+                        title="Home Credit Vietnam overview",
+                        url="https://homecredit.vn/about",
+                        snippet="Company overview and official introduction.",
+                        domain="homecredit.vn",
+                    )
+                ]
+            return [
+                SimpleNamespace(
+                    title="Ngân hàng Thái Lan hủy thương vụ mua Home Credit Việt Nam",
+                    url="https://znews.vn/home-credit-deal-post.html",
+                    snippet="Deal coverage about the failed transaction.",
+                    domain="znews.vn",
+                )
+            ]
+
+    async def _fake_generate_discussion_search_queries(*, article_context, messages, fallback_queries):
+        return ['"home credit" overview']
+
+    async def _fake_fetch_text(client, url: str):
+        if url == "https://homecredit.vn/about":
+            return """
+            <html>
+              <head>
+                <meta property="og:title" content="Home Credit Vietnam overview" />
+                <meta property="og:description" content="Company overview and official introduction." />
+              </head>
+              <body><article><p>Home Credit Vietnam is a consumer finance company offering lending products and digital services.</p></article></body>
+            </html>
+            """
+        return """
+        <html>
+          <head>
+            <meta property="og:title" content="Ngân hàng Thái Lan hủy thương vụ mua Home Credit Việt Nam" />
+            <meta property="og:description" content="Deal coverage about the failed transaction." />
+          </head>
+          <body><article><p>Deal coverage about the failed transaction.</p></article></body>
+        </html>
+        """
+
+    monkeypatch.setattr(news_service_module, "generate_discussion_search_queries", _fake_generate_discussion_search_queries)
+    monkeypatch.setattr(news_service_module, "get_news_search_provider", lambda client: _FakeSearchProvider())
+    monkeypatch.setattr(news_service_module, "fetch_text", _fake_fetch_text)
+
+    evidence_items, result_count = await news_service._build_web_discussion_evidence(
+        article,
+        None,
+        [{"role": "user", "content": "giới thiệu sơ về home credit"}],
+        search_query_override=None,
+        article_context=article_context,
+    )
+
+    assert result_count >= 2
+    assert evidence_items[0]["url"] == "https://homecredit.vn/about"
+    assert any("company overview official" in query or "giới thiệu công ty" in query for query in observed_queries)
 
 
 @pytest.mark.asyncio

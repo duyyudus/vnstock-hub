@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     news_poll_interval_seconds: float = 120.0
     news_default_poll_interval_minutes: int = 30
     news_ingestion_batch_size: int = 5
+    news_search_provider: str = ""
+    news_search_api_key: str | None = None
+    news_search_base_url: str = "https://api.search.brave.com/res/v1/web/search"
+    news_search_timeout_seconds: int = 15
 
     # Build number (set via BUILD_NUMBER env var in CI/Docker; falls back to git hash)
     build_number: str | None = None

@@ -12,6 +12,9 @@ import httpx
 from app.core.config import settings
 from app.services.llm import (
     NEWS_ARTICLE_CLASSIFICATION_TASK,
+    NEWS_ARTICLE_DISCUSSION_TASK,
+    NEWS_ARTICLE_DISCUSSION_DECISION_TASK,
+    NEWS_ARTICLE_DISCUSSION_QUERY_TASK,
     NEWS_ARTICLE_SUMMARY_TASK,
     NEWS_BLOCKED_LABEL_COMPILATION_TASK,
 )
@@ -230,6 +233,20 @@ def _display_labels(values: list[str]) -> list[str]:
 
 def _normalize_summary_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_discussion_text(text: str, *, limit: int) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: max(0, limit - 1)].rstrip()}…"
+
+
+def _normalize_discussion_query(text: str, *, limit: int = 240) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: max(0, limit - 1)].rstrip()}…"
 
 
 def _provider_key(provider: dict[str, Any]) -> str:
@@ -498,6 +515,205 @@ async def summarize_article(
     if not summary:
         return None
     return summary
+
+
+async def discuss_article_with_context(
+    *,
+    article_context: dict[str, Any],
+    messages: list[dict[str, str]],
+    evidence_items: list[dict[str, Any]],
+    search_web: bool,
+) -> dict[str, Any] | None:
+    if not messages:
+        return None
+
+    compact_messages = [
+        {
+            "role": str(item.get("role") or "").strip().lower(),
+            "content": _normalize_discussion_text(str(item.get("content") or ""), limit=1500),
+        }
+        for item in messages
+        if str(item.get("role") or "").strip().lower() in {"user", "assistant"} and str(item.get("content") or "").strip()
+    ]
+    compact_evidence = [
+        {
+            "source_id": str(item.get("source_id") or "").strip(),
+            "source_type": str(item.get("source_type") or "").strip(),
+            "title": _normalize_discussion_text(str(item.get("title") or ""), limit=220),
+            "domain": _normalize_discussion_text(str(item.get("domain") or ""), limit=120) or None,
+            "url": _normalize_discussion_text(str(item.get("url") or ""), limit=500) or None,
+            "snippet": _normalize_discussion_text(str(item.get("snippet") or ""), limit=700),
+        }
+        for item in evidence_items
+        if str(item.get("source_id") or "").strip() and str(item.get("snippet") or item.get("title") or "").strip()
+    ]
+    if not compact_messages or not compact_evidence:
+        return None
+
+    prompt = (
+        "Return strict JSON with keys: "
+        "{\"assistant_message\": string, \"cited_source_ids\": string[], \"warning\": string|null}. "
+        "You are a grounded discussion assistant for financial news. "
+        "Answer only from the supplied article context and evidence. "
+        "Treat earlier assistant messages in the conversation as already delivered context. "
+        "For follow-up questions, answer incrementally and avoid repeating points already covered unless the user explicitly asks for a recap or the repeated point is necessary to clarify/correct the answer. "
+        "Keep overlap with prior assistant answers minimal. "
+        "Never invent facts, dates, quotes, or sources. "
+        "If search_web is false, do not imply you searched the internet. "
+        "If search_web is true and relevant web evidence exists, prefer citing at least one web source for outside context rather than defaulting back to the article alone. "
+        "If multiple strong web evidence items are provided for a broad background question, cite more than one distinct web source_id instead of relying on a single outside citation. "
+        "If the available evidence is insufficient, say so plainly. "
+        "Avoid investment-advice phrasing and do not tell the user to buy, sell, or hold. "
+        "Every substantive factual answer must cite at least one source_id from the provided evidence. "
+        "Prefer article citations for article-grounded points and web citations for outside context. "
+        "Keep the answer concise and directly responsive to the latest user message."
+    )
+    llm_payload = await _call_json_llm(
+        NEWS_ARTICLE_DISCUSSION_TASK,
+        "You discuss a news article using only provided evidence and return JSON only.",
+        (
+            f"{prompt}\n\n"
+            f"search_web: {json.dumps(bool(search_web))}\n\n"
+            f"article_context:\n{json.dumps(article_context, ensure_ascii=False)}\n\n"
+            f"conversation:\n{json.dumps(compact_messages, ensure_ascii=False)}\n\n"
+            f"evidence:\n{json.dumps(compact_evidence, ensure_ascii=False)}"
+        ),
+    )
+    if not llm_payload:
+        return None
+
+    assistant_message = _normalize_discussion_text(str(llm_payload.get("assistant_message") or ""), limit=4000)
+    if not assistant_message:
+        return None
+    cited_source_ids = [
+        str(item).strip()
+        for item in llm_payload.get("cited_source_ids", [])
+        if str(item).strip()
+    ]
+    warning = _normalize_discussion_text(str(llm_payload.get("warning") or ""), limit=500) or None
+    return {
+        "assistant_message": assistant_message,
+        "cited_source_ids": cited_source_ids,
+        "warning": warning,
+    }
+
+
+async def generate_discussion_search_queries(
+    *,
+    article_context: dict[str, Any],
+    messages: list[dict[str, str]],
+    fallback_queries: list[str],
+) -> list[str] | None:
+    compact_messages = [
+        {
+            "role": str(item.get("role") or "").strip().lower(),
+            "content": _normalize_discussion_text(str(item.get("content") or ""), limit=800),
+        }
+        for item in messages
+        if str(item.get("role") or "").strip().lower() in {"user", "assistant"} and str(item.get("content") or "").strip()
+    ]
+    if not compact_messages:
+        return None
+
+    prompt = (
+        "Return strict JSON with one key: {\"queries\": string[]}. "
+        "Generate 2-4 web-search queries to gather evidence for the user's latest question about the article topic. "
+        "First infer the intent from the latest user message, such as overview, background, reason/causal, ownership, business model, financial performance, comparison, or recent updates. "
+        "Use concise search-engine-friendly queries, not full sentences. "
+        "Prefer entity-focused queries for overview/background requests instead of repeating the full article headline. "
+        "Use article/event-anchored queries for causal or follow-up questions tied to the specific story. "
+        "When useful, include both Vietnamese and English variants, entity aliases, or company-overview phrasing. "
+        "Do not invent unsupported entities. Do not include search operators unless clearly useful. "
+        "Queries should complement each other rather than being near-duplicates."
+    )
+    llm_payload = await _call_json_llm(
+        NEWS_ARTICLE_DISCUSSION_QUERY_TASK,
+        "You generate web-search queries for grounded article discussion and return JSON only.",
+        (
+            f"{prompt}\n\n"
+            f"article_context:\n{json.dumps(article_context, ensure_ascii=False)}\n\n"
+            f"conversation:\n{json.dumps(compact_messages, ensure_ascii=False)}\n\n"
+            f"fallback_queries:\n{json.dumps(fallback_queries, ensure_ascii=False)}"
+        ),
+    )
+    if not llm_payload:
+        return None
+
+    queries = [
+        _normalize_discussion_query(str(item))
+        for item in llm_payload.get("queries", [])
+        if _normalize_discussion_query(str(item))
+    ]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        key = query.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(query)
+        if len(deduped) >= 4:
+            break
+    return deduped or None
+
+
+async def decide_discussion_search(
+    *,
+    article_context: dict[str, Any],
+    messages: list[dict[str, str]],
+    article_content_strength: str,
+) -> dict[str, Any] | None:
+    compact_messages = [
+        {
+            "role": str(item.get("role") or "").strip().lower(),
+            "content": _normalize_discussion_text(str(item.get("content") or ""), limit=800),
+        }
+        for item in messages
+        if str(item.get("role") or "").strip().lower() in {"user", "assistant"} and str(item.get("content") or "").strip()
+    ]
+    if not compact_messages:
+        return None
+
+    prompt = (
+        "Return strict JSON with keys: "
+        "{\"intent\": string, \"subject\": string|null, \"needs_web_search\": boolean, \"reason\": string, \"confidence\": number}. "
+        "Classify the latest user message for grounded article discussion. "
+        "Allowed intents: recap, overview, ownership, business, financials, comparison, latest, event, generic. "
+        "Set needs_web_search=true when the user is asking for broader background, ownership, company profile, comparison, latest updates, or other context that likely exceeds the article alone. "
+        "Set needs_web_search=false when the question is mainly a recap or directly answerable from the article body. "
+        "Infer a concise subject/entity when possible. "
+        "Use the provided article_content_strength as a hint, but do not let strong article text prevent web search for clear background/ownership/profile questions."
+    )
+    llm_payload = await _call_json_llm(
+        NEWS_ARTICLE_DISCUSSION_DECISION_TASK,
+        "You decide whether grounded article discussion should trigger web search and return JSON only.",
+        (
+            f"{prompt}\n\n"
+            f"article_content_strength: {article_content_strength}\n\n"
+            f"article_context:\n{json.dumps(article_context, ensure_ascii=False)}\n\n"
+            f"conversation:\n{json.dumps(compact_messages, ensure_ascii=False)}"
+        ),
+    )
+    if not llm_payload:
+        return None
+
+    intent = _normalize_discussion_query(str(llm_payload.get("intent") or ""), limit=40).lower()
+    if intent not in {"recap", "overview", "ownership", "business", "financials", "comparison", "latest", "event", "generic"}:
+        intent = "generic"
+    subject = _normalize_discussion_query(str(llm_payload.get("subject") or ""), limit=120) or None
+    reason = _normalize_discussion_text(str(llm_payload.get("reason") or ""), limit=300)
+    try:
+        confidence = float(llm_payload.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(confidence, 1.0))
+    return {
+        "intent": intent,
+        "subject": subject,
+        "needs_web_search": bool(llm_payload.get("needs_web_search")),
+        "reason": reason or "",
+        "confidence": confidence,
+    }
 
 
 async def compile_blocked_labels(blocked_topics_text: str | None) -> list[str]:

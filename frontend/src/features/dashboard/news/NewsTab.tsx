@@ -1,14 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateTime, getErrorMessage } from '../../admin/adminUtils';
 import { useAuthUser } from '../../auth/useAuthUser';
+import NewsArticleDetailModal, {
+    type DetailView,
+    type DiscussionThreadMessage,
+} from './NewsArticleDetailModal';
 import {
     type BookmarkGroup,
     stockApi,
     type NewsArticleDetail,
+    type NewsArticleDiscussionResponse,
     type NewsArticleSummaryResponse,
     type NewsCrawlDiscoveryCandidate,
     type NewsCrawlSource,
     type NewsCrawlSourceCreateRequest,
+    type NewsDiscussionMessage,
+    type NewsDiscussionSearchMode,
     type NewsEventType,
     type NewsFeedItem,
     type NewsFeedQuery,
@@ -255,9 +262,16 @@ export const NewsTab: React.FC = () => {
     const [bookmarkGroups, setBookmarkGroups] = useState<BookmarkGroup[]>([]);
 
     const [newsDetail, setNewsDetail] = useState<NewsArticleDetail | null>(null);
+    const [detailView, setDetailView] = useState<DetailView>('article');
     const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
     const [detailError, setDetailError] = useState<string | null>(null);
     const [detailRefreshLoading, setDetailRefreshLoading] = useState(false);
+    const [discussionMessages, setDiscussionMessages] = useState<DiscussionThreadMessage[]>([]);
+    const [discussionDraft, setDiscussionDraft] = useState('');
+    const [discussionSearchMode, setDiscussionSearchMode] = useState<NewsDiscussionSearchMode>('auto');
+    const [discussionQueryOverride, setDiscussionQueryOverride] = useState('');
+    const [discussionLoading, setDiscussionLoading] = useState(false);
+    const [discussionError, setDiscussionError] = useState<string | null>(null);
     const [summaryLoadingById, setSummaryLoadingById] = useState<Record<number, boolean>>({});
     const [summaryErrorById, setSummaryErrorById] = useState<Record<number, string | null>>({});
     const [isUtilityRailOpen, setIsUtilityRailOpen] = useState<boolean>(() => {
@@ -281,7 +295,6 @@ export const NewsTab: React.FC = () => {
         blockedTopics: true,
         sources: true,
     });
-    const detailDialogRef = useRef<HTMLDialogElement>(null);
     const appliedFeedRef = useRef(appliedFeed);
 
     const activeNewsSources = useMemo(() => {
@@ -344,22 +357,6 @@ export const NewsTab: React.FC = () => {
             // Ignore storage failures and keep the in-memory toggle working.
         }
     }, [isUtilityRailOpen]);
-
-    useEffect(() => {
-        const dialog = detailDialogRef.current;
-        if (!dialog) {
-            return;
-        }
-        if (newsDetail) {
-            if (!dialog.open) {
-                dialog.showModal();
-            }
-            return;
-        }
-        if (dialog.open) {
-            dialog.close();
-        }
-    }, [newsDetail]);
 
     const buildFeedQuery = useCallback((draft: FeedDraft, cursor?: string | null): NewsFeedQuery => {
         return {
@@ -777,12 +774,49 @@ export const NewsTab: React.FC = () => {
         }
     };
 
-    const handleOpenArticle = async (item: NewsFeedItem) => {
+    const resetDiscussionState = useCallback((view: DetailView = 'article') => {
+        setDetailView(view);
+        setDiscussionMessages([]);
+        setDiscussionDraft('');
+        setDiscussionSearchMode('auto');
+        setDiscussionQueryOverride('');
+        setDiscussionLoading(false);
+        setDiscussionError(null);
+    }, []);
+
+    const buildDiscussionThreadMessage = useCallback((
+        role: DiscussionThreadMessage['role'],
+        content: string,
+        response?: NewsArticleDiscussionResponse,
+    ): DiscussionThreadMessage => {
+        return {
+            id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            role,
+            content,
+            citations: response?.citations ?? [],
+            warning: response?.warning ?? null,
+            searchMode: response?.search_mode ?? 'off',
+            effectiveSearchMode: response?.effective_search_mode ?? 'off',
+            usedWebSearch: response?.used_web_search ?? false,
+            webResultsCount: response?.web_results_count ?? 0,
+        };
+    }, []);
+
+    const toDiscussionRequestMessages = useCallback((thread: DiscussionThreadMessage[]): NewsDiscussionMessage[] => {
+        return thread.map((item) => ({
+            role: item.role,
+            content: item.content,
+        }));
+    }, []);
+
+    const handleOpenArticle = async (item: NewsFeedItem, view: DetailView = 'article') => {
         setDetailLoadingId(item.id);
         setDetailError(null);
+        resetDiscussionState(view);
         try {
             const response = await stockApi.getNewsArticle(item.id);
             setNewsDetail(response);
+            setDetailView(view);
         } catch (error) {
             setDetailError(getErrorMessage(error));
         } finally {
@@ -790,12 +824,14 @@ export const NewsTab: React.FC = () => {
         }
     };
 
-    const handleOpenRelatedArticle = async (articleId: number) => {
+    const handleOpenRelatedArticle = async (articleId: number, view: DetailView = 'article') => {
         setDetailLoadingId(articleId);
         setDetailError(null);
+        resetDiscussionState(view);
         try {
             const response = await stockApi.getNewsArticle(articleId);
             setNewsDetail(response);
+            setDetailView(view);
         } catch (error) {
             setDetailError(getErrorMessage(error));
         } finally {
@@ -904,6 +940,48 @@ export const NewsTab: React.FC = () => {
         setNewsDetail(null);
         setDetailError(null);
         setDetailRefreshLoading(false);
+        resetDiscussionState('article');
+    };
+
+    const handleSubmitDiscussion = async () => {
+        if (!newsDetail || !isSignedIn) {
+            return;
+        }
+        const nextPrompt = discussionDraft.trim();
+        if (!nextPrompt) {
+            return;
+        }
+
+        const userMessage = buildDiscussionThreadMessage('user', nextPrompt);
+        const nextThread = [...discussionMessages, userMessage];
+        setDiscussionMessages(nextThread);
+        setDiscussionDraft('');
+        setDiscussionError(null);
+        setDiscussionLoading(true);
+
+        try {
+            const response = await stockApi.discussNewsArticle(newsDetail.id, {
+                messages: toDiscussionRequestMessages(nextThread),
+                search_mode: discussionSearchMode,
+                search_query_override: discussionSearchMode !== 'off' ? discussionQueryOverride.trim() || null : null,
+            });
+            setDiscussionMessages([
+                ...nextThread,
+                buildDiscussionThreadMessage('assistant', response.assistant_message, response),
+            ]);
+        } catch (error) {
+            setDiscussionError(getErrorMessage(error));
+        } finally {
+            setDiscussionLoading(false);
+        }
+    };
+
+    const handleDiscussionInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+            return;
+        }
+        event.preventDefault();
+        void handleSubmitDiscussion();
     };
 
     const renderSourceCard = (source: NewsSourceSummary) => {
@@ -1240,6 +1318,16 @@ export const NewsTab: React.FC = () => {
                                                     >
                                                         {detailLoadingId === item.id ? 'Opening...' : 'Open detail'}
                                                     </button>
+                                                    {isSignedIn ? (
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-outline"
+                                                            onClick={() => void handleOpenArticle(item, 'discussion')}
+                                                            disabled={detailLoadingId === item.id}
+                                                        >
+                                                            {detailLoadingId === item.id ? 'Opening...' : 'Discuss'}
+                                                        </button>
+                                                    ) : null}
                                                     <button
                                                         type="button"
                                                         className="btn btn-sm btn-outline"
@@ -1791,134 +1879,29 @@ export const NewsTab: React.FC = () => {
                 </div>
             ) : null}
 
-            <dialog ref={detailDialogRef} className="modal" onClose={closeDetailModal}>
-                <div className="modal-box max-w-4xl">
-                    {newsDetail ? (
-                        <div className="space-y-4">
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                <div className="space-y-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <h3 className="card-title text-2xl">{newsDetail.title}</h3>
-                                        {newsDetail.source_kind ? <span className="badge badge-ghost">{newsDetail.source_kind}</span> : null}
-                                    </div>
-                                    <p className="text-sm text-base-content/70">
-                                        {newsDetail.source_title || joinTags(newsDetail.source_labels)}
-                                        {newsDetail.published_at ? ` · ${formatDateTime(newsDetail.published_at)}` : ''}
-                                    </p>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline btn-sm"
-                                        onClick={() => void handleRefreshArticleContent()}
-                                        disabled={detailRefreshLoading}
-                                    >
-                                        {detailRefreshLoading ? 'Refreshing...' : 'Refresh content'}
-                                    </button>
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={closeDetailModal}>
-                                        Close
-                                    </button>
-                                </div>
-                            </div>
-
-                            {detailError ? (
-                                <div className="alert alert-error">
-                                    <span>{detailError}</span>
-                                </div>
-                            ) : null}
-
-                            {newsDetail.content_text ? (
-                                <div className="max-h-[55vh] overflow-y-auto rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                                    <p className="whitespace-pre-wrap leading-7 text-base-content/85">{newsDetail.content_text}</p>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-base-content/60">No article body was returned.</p>
-                            )}
-
-                            {newsDetail.why_relevant.length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                    {newsDetail.why_relevant.map((reason) => (
-                                        <span key={reason} className="badge badge-primary badge-outline">{reason}</span>
-                                    ))}
-                                </div>
-                            ) : null}
-
-                            <div className="flex flex-wrap gap-2">
-                                {newsDetail.event_labels.map((label) => (
-                                    <span key={label} className="badge badge-warning badge-outline">{label}</span>
-                                ))}
-                                {newsDetail.topics.map((topic) => (
-                                    <span key={topic} className="badge badge-outline">{topic}</span>
-                                ))}
-                                {newsDetail.matched_tickers.map((ticker) => (
-                                    <span key={`matched-${ticker}`} className="badge badge-primary">{ticker}</span>
-                                ))}
-                                {newsDetail.tickers.map((ticker) => (
-                                    <span key={ticker} className="badge badge-secondary badge-outline">{ticker}</span>
-                                ))}
-                                {newsDetail.sectors.map((sector) => (
-                                    <span key={sector} className="badge badge-accent badge-outline">{sector}</span>
-                                ))}
-                            </div>
-
-                            <div className="flex flex-wrap gap-3 text-xs text-base-content/60">
-                                {newsDetail.importance ? <span>Importance: {newsDetail.importance}</span> : null}
-                                {newsDetail.sentiment ? <span>Sentiment: {newsDetail.sentiment}</span> : null}
-                                {newsDetail.story_source_count > 1 ? <span>Story coverage: {newsDetail.story_source_count} sources</span> : null}
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-3">
-                                <a href={newsDetail.canonical_url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">
-                                    Open source article
-                                </a>
-                                <div className="text-xs text-base-content/60">
-                                    Source URLs: {newsDetail.source_urls.join(' · ')}
-                                </div>
-                            </div>
-
-                            {newsDetail.related_articles.length > 0 ? (
-                                <div className="space-y-3 rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <h4 className="font-semibold text-base-content">Related Coverage</h4>
-                                        <span className="badge badge-outline">{newsDetail.related_articles.length}</span>
-                                    </div>
-                                    <div className="space-y-2">
-                                        {newsDetail.related_articles.map((related) => (
-                                            <div key={related.id} className="flex flex-col gap-2 rounded-xl border border-base-300 p-3 md:flex-row md:items-center md:justify-between">
-                                                <div className="min-w-0">
-                                                    <p className="font-medium text-base-content">{related.title}</p>
-                                                    <p className="text-xs text-base-content/60">
-                                                        {related.source_title || 'Unknown source'}
-                                                        {related.published_at ? ` · ${formatDateTime(related.published_at)}` : ''}
-                                                    </p>
-                                                </div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-sm btn-outline"
-                                                        onClick={() => void handleOpenRelatedArticle(related.id)}
-                                                        disabled={detailLoadingId === related.id}
-                                                    >
-                                                        {detailLoadingId === related.id ? 'Opening...' : 'Open detail'}
-                                                    </button>
-                                                    <a href={related.canonical_url} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">
-                                                        Open source
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : (
-                        <div className="py-6 text-sm text-base-content/60">No article detail loaded.</div>
-                    )}
-                </div>
-                <form method="dialog" className="modal-backdrop">
-                    <button onClick={closeDetailModal}>close</button>
-                </form>
-            </dialog>
+            <NewsArticleDetailModal
+                article={newsDetail}
+                isSignedIn={isSignedIn}
+                detailView={detailView}
+                detailLoadingId={detailLoadingId}
+                detailError={detailError}
+                detailRefreshLoading={detailRefreshLoading}
+                discussionMessages={discussionMessages}
+                discussionDraft={discussionDraft}
+                discussionSearchMode={discussionSearchMode}
+                discussionQueryOverride={discussionQueryOverride}
+                discussionLoading={discussionLoading}
+                discussionError={discussionError}
+                onClose={closeDetailModal}
+                onRefreshArticleContent={handleRefreshArticleContent}
+                onDetailViewChange={setDetailView}
+                onOpenRelatedArticle={handleOpenRelatedArticle}
+                onDiscussionSearchModeChange={setDiscussionSearchMode}
+                onDiscussionQueryOverrideChange={setDiscussionQueryOverride}
+                onDiscussionDraftChange={setDiscussionDraft}
+                onDiscussionInputKeyDown={handleDiscussionInputKeyDown}
+                onSubmitDiscussion={handleSubmitDiscussion}
+            />
         </div>
     );
 };

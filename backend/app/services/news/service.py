@@ -43,7 +43,17 @@ from .discovery import (
     validate_crawl_source,
     validate_feed,
 )
-from .semantics import _display_labels, classify_article, compile_blocked_labels, matches_blocked_labels, summarize_article
+from .search import get_news_search_provider
+from .semantics import (
+    _display_labels,
+    classify_article,
+    compile_blocked_labels,
+    decide_discussion_search,
+    discuss_article_with_context,
+    generate_discussion_search_queries,
+    matches_blocked_labels,
+    summarize_article,
+)
 
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -93,6 +103,101 @@ STORY_TITLE_STOPWORDS = {
 }
 IMPORTANCE_WEIGHTS = {"high": 60, "medium": 30, "low": 10}
 SOURCE_MULTIPLIER_CAP = 4
+DISCUSSION_MAX_TURNS = 6
+DISCUSSION_MAX_MESSAGES = DISCUSSION_MAX_TURNS * 2
+DISCUSSION_MAX_MESSAGE_CHARS = 1500
+DISCUSSION_MAX_ARTICLE_CHARS = 6000
+DISCUSSION_MAX_SNIPPET_CHARS = 700
+DISCUSSION_WEB_RESULT_LIMIT = 5
+DISCUSSION_WEB_EVIDENCE_LIMIT = 3
+DISCUSSION_WEB_QUERY_LIMIT = 3
+DISCUSSION_WEB_UNIQUE_RESULT_LIMIT = 8
+DISCUSSION_WEB_RETRY_QUERY_LIMIT = 2
+DISCUSSION_BACKGROUND_INTENTS = {"overview", "ownership", "business", "financials", "comparison"}
+DISCUSSION_RESULT_MIN_SCORE_FOR_BACKGROUND = 25
+DISCUSSION_PROFILE_KEYWORDS = (
+    "gioi thieu",
+    "giới thiệu",
+    "about",
+    "overview",
+    "company",
+    "profile",
+    "trang chu",
+    "trang chủ",
+    "homepage",
+    "official",
+    "consumer finance",
+    "tai chinh tieu dung",
+    "tài chính tiêu dùng",
+)
+DISCUSSION_OWNERSHIP_KEYWORDS = (
+    "thuoc ai",
+    "thuộc ai",
+    "owner",
+    "ownership",
+    "shareholder",
+    "parent company",
+    "belongs to",
+)
+DISCUSSION_BUSINESS_KEYWORDS = (
+    "san pham",
+    "sản phẩm",
+    "dich vu",
+    "dịch vụ",
+    "business model",
+    "hoat dong",
+    "hoạt động",
+    "product",
+    "service",
+)
+DISCUSSION_FINANCIAL_KEYWORDS = (
+    "ket qua kinh doanh",
+    "kết quả kinh doanh",
+    "profit",
+    "revenue",
+    "financial results",
+    "earnings",
+    "annual report",
+)
+DISCUSSION_LATEST_KEYWORDS = ("moi nhat", "mới nhất", "latest", "recent", "news today", "tin moi")
+DISCUSSION_EVENT_CAUSAL_KEYWORDS = ("vi sao", "vì sao", "tai sao", "tại sao", "reason", "why", "collapse", "deal")
+DISCUSSION_RECAP_KEYWORDS = (
+    "tom tat",
+    "tóm tắt",
+    "summarize",
+    "summary",
+    "what happened",
+    "dieu gi da xay ra",
+    "điều gì đã xảy ra",
+    "why relevant",
+    "vi sao lien quan",
+    "vì sao liên quan",
+)
+
+
+def _compact_whitespace(value: str | None) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _truncate_text(value: str | None, *, limit: int) -> str:
+    cleaned = _compact_whitespace(value)
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[: max(0, limit - 1)].rstrip()}…"
+
+
+def _normalized_search_text(value: str | None) -> str:
+    return _ascii_fold(_compact_whitespace(value)).lower()
+
+
+def _significant_search_tokens(value: str | None) -> set[str]:
+    lowered = _normalized_search_text(value)
+    tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", lowered)
+        if len(token) >= 3 and token not in STORY_TITLE_STOPWORDS
+    }
+    return tokens
 
 
 def utc_now() -> datetime:
@@ -968,6 +1073,695 @@ class NewsIngestionService:
             }
             for item in related_items[:6]
         ]
+
+    def _normalize_discussion_messages(self, messages: list[dict[str, Any]] | None) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        for item in messages or []:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            if role not in {"user", "assistant"}:
+                continue
+            content = _truncate_text(item.get("content"), limit=DISCUSSION_MAX_MESSAGE_CHARS)
+            if not content:
+                continue
+            normalized.append({"role": role, "content": content})
+        if len(normalized) > DISCUSSION_MAX_MESSAGES:
+            normalized = normalized[-DISCUSSION_MAX_MESSAGES:]
+        return normalized
+
+    def _discussion_article_context(
+        self,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        *,
+        content_repaired: bool,
+    ) -> dict[str, Any]:
+        return {
+            "title": article.title,
+            "excerpt": _truncate_text(article.excerpt, limit=DISCUSSION_MAX_SNIPPET_CHARS) or None,
+            "content_text": _truncate_text(article.content_text, limit=DISCUSSION_MAX_ARTICLE_CHARS) or None,
+            "canonical_url": article.canonical_url,
+            "language": article.language,
+            "published_at": article.published_at.isoformat() if article.published_at else None,
+            "topics": _display_topics(semantics),
+            "tickers": [str(item) for item in (semantics.tickers if semantics else [])],
+            "sectors": [str(item) for item in (semantics.sectors if semantics else [])],
+            "event_labels": _semantic_event_labels(semantics),
+            "content_repaired": content_repaired,
+        }
+
+    def _article_citation(self, article: NewsArticle) -> dict[str, Any]:
+        return {
+            "source_id": "article:primary",
+            "source_type": "article",
+            "title": article.title,
+            "url": article.canonical_url,
+            "domain": extract_domain(article.canonical_url),
+            "snippet": _truncate_text(article.excerpt or article.content_text or article.title, limit=DISCUSSION_MAX_SNIPPET_CHARS),
+        }
+
+    def _discussion_search_query(
+        self,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        messages: list[dict[str, str]],
+        *,
+        override: str | None,
+    ) -> str:
+        queries = self._heuristic_discussion_search_queries(
+            article,
+            semantics,
+            messages,
+            override=override,
+        )
+        return queries[0] if queries else _truncate_text(article.title, limit=240)
+
+    def _discussion_query_subject(self, latest_user_message: str) -> str | None:
+        normalized_message = _compact_whitespace(latest_user_message).strip(" ?!.,;:")
+        if not normalized_message:
+            return None
+
+        folded_message = _ascii_fold(normalized_message).lower()
+        for marker in (" ve ", " about "):
+            index = folded_message.rfind(marker)
+            if index != -1:
+                subject = normalized_message[index + len(marker) :].strip(" ?!.,;:")
+                return _truncate_text(subject, limit=120) or None
+
+        for prefix in ("who is ", "what is ", "introduce ", "gioi thieu ", "giới thiệu "):
+            if folded_message.startswith(_ascii_fold(prefix).lower()):
+                subject = normalized_message[len(prefix) :].strip(" ?!.,;:")
+                return _truncate_text(subject, limit=120) or None
+        return None
+
+    def _discussion_search_intent(self, latest_user_message: str) -> str:
+        lowered = _normalized_search_text(latest_user_message)
+        if any(keyword in lowered for keyword in DISCUSSION_RECAP_KEYWORDS):
+            return "recap"
+        if any(keyword in lowered for keyword in ("gioi thieu", "giới thiệu", "la gi", "là gì", "about", "overview", "who is", "what is")):
+            return "overview"
+        if any(keyword in lowered for keyword in ("thuoc ai", "thuộc ai", "owner", "ownership", "co dong", "cổ đông", "parent company")):
+            return "ownership"
+        if any(keyword in lowered for keyword in ("san pham", "sản phẩm", "dich vu", "dịch vụ", "hoat dong", "hoạt động", "business model", "product", "service")):
+            return "business"
+        if any(keyword in lowered for keyword in ("ket qua kinh doanh", "kết quả kinh doanh", "doanh thu", "loi nhuan", "lợi nhuận", "profit", "revenue", "financial")):
+            return "financials"
+        if any(keyword in lowered for keyword in ("so voi", "so với", "compare", "comparison", "khac gi", "khác gì")):
+            return "comparison"
+        if any(keyword in lowered for keyword in DISCUSSION_LATEST_KEYWORDS):
+            return "latest"
+        if any(keyword in lowered for keyword in DISCUSSION_EVENT_CAUSAL_KEYWORDS):
+            return "event"
+        return "generic"
+
+    def _discussion_article_content_strength(self, article_context: dict[str, Any]) -> str:
+        content_text = _compact_whitespace(article_context.get("content_text"))
+        excerpt = _compact_whitespace(article_context.get("excerpt"))
+        if len(content_text) >= 500:
+            return "strong"
+        if len(content_text) >= 180 or len(excerpt) >= 120:
+            return "medium"
+        return "weak"
+
+    def _should_auto_search_discussion(
+        self,
+        *,
+        intent: str,
+        article_context: dict[str, Any],
+        latest_user_message: str,
+    ) -> bool:
+        del latest_user_message
+        content_strength = self._discussion_article_content_strength(article_context)
+        if intent in DISCUSSION_BACKGROUND_INTENTS or intent == "latest":
+            return True
+        if intent == "recap":
+            return False
+        if intent == "event":
+            return content_strength == "weak"
+        return content_strength == "weak"
+
+    def _minimum_web_citations_for_discussion(
+        self,
+        *,
+        intent: str,
+        available_web_evidence: list[dict[str, Any]],
+    ) -> int:
+        if intent not in DISCUSSION_BACKGROUND_INTENTS:
+            return 0
+        return 2 if len(available_web_evidence) >= 2 else 0
+
+    async def _resolve_auto_discussion_search(
+        self,
+        *,
+        article_context: dict[str, Any],
+        messages: list[dict[str, str]],
+    ) -> tuple[str, bool]:
+        latest_user_message = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+        article_content_strength = self._discussion_article_content_strength(article_context)
+        llm_decision = await decide_discussion_search(
+            article_context=article_context,
+            messages=messages,
+            article_content_strength=article_content_strength,
+        )
+        if llm_decision:
+            return (
+                str(llm_decision.get("intent") or "generic"),
+                bool(llm_decision.get("needs_web_search")),
+            )
+        fallback_intent = self._discussion_search_intent(latest_user_message)
+        fallback_search = self._should_auto_search_discussion(
+            intent=fallback_intent,
+            article_context=article_context,
+            latest_user_message=latest_user_message,
+        )
+        return fallback_intent, fallback_search
+
+    def _heuristic_discussion_search_queries(
+        self,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        messages: list[dict[str, str]],
+        *,
+        override: str | None,
+    ) -> list[str]:
+        custom_query = _truncate_text(override, limit=240)
+        if custom_query:
+            return [custom_query]
+        latest_user_message = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+        tickers = " ".join(
+            sorted({str(item).strip().upper() for item in (semantics.tickers if semantics else []) if str(item).strip()})[:3]
+        )
+        subject = self._discussion_query_subject(latest_user_message)
+        intent = self._discussion_search_intent(latest_user_message)
+
+        queries: list[str] = []
+        if subject:
+            queries.extend(
+                [
+                    _truncate_text(f"\"{subject}\" Việt Nam giới thiệu công ty hoạt động sản phẩm", limit=240),
+                    _truncate_text(f"\"{subject}\" Vietnam company overview products", limit=240),
+                    _truncate_text(subject, limit=240),
+                ]
+            )
+            if intent == "ownership":
+                queries.append(_truncate_text(f"\"{subject}\" thuộc ai owner ownership", limit=240))
+            if intent == "business":
+                queries.append(_truncate_text(f"\"{subject}\" sản phẩm dịch vụ business model", limit=240))
+            if intent == "financials":
+                queries.append(_truncate_text(f"\"{subject}\" kết quả kinh doanh revenue profit", limit=240))
+            if intent == "latest":
+                queries.append(_truncate_text(f"\"{subject}\" tin mới nhất latest news", limit=240))
+
+        message_query = _truncate_text(" ".join(part for part in [latest_user_message, tickers] if part), limit=240)
+        article_query = _truncate_text(" ".join(part for part in [article.title, tickers, latest_user_message] if part), limit=240)
+        article_title_query = _truncate_text(article.title, limit=240)
+        queries.extend([message_query, article_query, article_title_query])
+
+        deduped_queries: list[str] = []
+        seen: set[str] = set()
+        for query in queries:
+            normalized_query = _compact_whitespace(query)
+            if not normalized_query:
+                continue
+            dedupe_key = normalized_query.casefold()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            deduped_queries.append(normalized_query)
+            if len(deduped_queries) >= DISCUSSION_WEB_QUERY_LIMIT:
+                break
+        return deduped_queries or [article_title_query]
+
+    def _discussion_retry_queries(
+        self,
+        *,
+        intent: str,
+        subject: str | None,
+        latest_user_message: str,
+    ) -> list[str]:
+        if not subject:
+            return []
+
+        query_pool: list[str] = []
+        if intent == "overview":
+            query_pool.extend(
+                [
+                    f"\"{subject}\" company overview official",
+                    f"\"{subject}\" giới thiệu công ty",
+                ]
+            )
+        elif intent == "ownership":
+            query_pool.extend(
+                [
+                    f"\"{subject}\" owner parent company",
+                    f"\"{subject}\" thuộc ai cổ đông",
+                ]
+            )
+        elif intent == "business":
+            query_pool.extend(
+                [
+                    f"\"{subject}\" product service business model",
+                    f"\"{subject}\" hoạt động sản phẩm dịch vụ",
+                ]
+            )
+        elif intent == "financials":
+            query_pool.extend(
+                [
+                    f"\"{subject}\" financial results revenue profit",
+                    f"\"{subject}\" kết quả kinh doanh lợi nhuận doanh thu",
+                ]
+            )
+        elif intent == "comparison":
+            query_pool.extend(
+                [
+                    latest_user_message,
+                    f"\"{subject}\" comparison overview",
+                ]
+            )
+        else:
+            query_pool.extend(
+                [
+                    f"\"{subject}\" overview",
+                    f"\"{subject}\" {latest_user_message}",
+                ]
+            )
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for query in query_pool:
+            normalized_query = _truncate_text(query, limit=240)
+            if not normalized_query:
+                continue
+            key = normalized_query.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized_query)
+            if len(deduped) >= DISCUSSION_WEB_RETRY_QUERY_LIMIT:
+                break
+        return deduped
+
+    def _discussion_result_text(self, *, title: str | None, snippet: str | None, url: str | None) -> str:
+        return " ".join(part for part in [title or "", snippet or "", url or ""] if part).strip()
+
+    def _is_profile_like_result(self, *, title: str | None, snippet: str | None, url: str | None) -> bool:
+        lowered = _normalized_search_text(self._discussion_result_text(title=title, snippet=snippet, url=url))
+        return any(keyword in lowered for keyword in DISCUSSION_PROFILE_KEYWORDS)
+
+    def _discussion_overlap_with_article(self, article: NewsArticle, *, title: str | None, snippet: str | None) -> int:
+        article_tokens = _significant_search_tokens(article.title)
+        result_tokens = _significant_search_tokens(self._discussion_result_text(title=title, snippet=snippet, url=None))
+        return len(article_tokens.intersection(result_tokens))
+
+    def _score_discussion_search_result(
+        self,
+        result: Any,
+        *,
+        article: NewsArticle,
+        intent: str,
+        subject: str | None,
+    ) -> int:
+        title = str(getattr(result, "title", "") or "")
+        snippet = str(getattr(result, "snippet", "") or "")
+        url = str(getattr(result, "url", "") or "")
+        lowered = _normalized_search_text(self._discussion_result_text(title=title, snippet=snippet, url=url))
+
+        score = 0
+        if subject:
+            lowered_subject = _normalized_search_text(subject)
+            if lowered_subject and lowered_subject in lowered:
+                score += 35
+
+        overlap = self._discussion_overlap_with_article(article, title=title, snippet=snippet)
+        if intent == "event":
+            score += overlap * 8
+        elif intent in DISCUSSION_BACKGROUND_INTENTS:
+            score -= max(0, overlap - 1) * 8
+        else:
+            score += overlap * 3
+
+        if self._is_profile_like_result(title=title, snippet=snippet, url=url):
+            score += 30 if intent in {"overview", "business"} else 10
+        if any(keyword in lowered for keyword in DISCUSSION_OWNERSHIP_KEYWORDS):
+            score += 35 if intent == "ownership" else 5
+        if any(keyword in lowered for keyword in DISCUSSION_BUSINESS_KEYWORDS):
+            score += 35 if intent == "business" else 8
+        if any(keyword in lowered for keyword in DISCUSSION_FINANCIAL_KEYWORDS):
+            score += 35 if intent == "financials" else 8
+        if any(keyword in lowered for keyword in DISCUSSION_LATEST_KEYWORDS):
+            score += 20 if intent == "latest" else 0
+        if len(_compact_whitespace(snippet)) < 60:
+            score -= 10
+        return score
+
+    def _rank_discussion_search_results(
+        self,
+        results: list[Any],
+        *,
+        article: NewsArticle,
+        intent: str,
+        subject: str | None,
+    ) -> list[Any]:
+        return sorted(
+            results,
+            key=lambda result: (
+                self._score_discussion_search_result(
+                    result,
+                    article=article,
+                    intent=intent,
+                    subject=subject,
+                ),
+                len(_compact_whitespace(str(getattr(result, "snippet", "") or ""))),
+            ),
+            reverse=True,
+        )
+
+    def _should_retry_discussion_search(
+        self,
+        ranked_results: list[Any],
+        *,
+        article: NewsArticle,
+        intent: str,
+        subject: str | None,
+    ) -> bool:
+        if not ranked_results:
+            return True
+        if intent not in DISCUSSION_BACKGROUND_INTENTS or not subject:
+            return False
+
+        top_results = ranked_results[:3]
+        for result in top_results:
+            score = self._score_discussion_search_result(
+                result,
+                article=article,
+                intent=intent,
+                subject=subject,
+            )
+            if score >= DISCUSSION_RESULT_MIN_SCORE_FOR_BACKGROUND and self._is_profile_like_result(
+                title=getattr(result, "title", None),
+                snippet=getattr(result, "snippet", None),
+                url=getattr(result, "url", None),
+            ):
+                return False
+        return True
+
+    async def _collect_discussion_search_results(
+        self,
+        provider,
+        queries: list[str],
+        *,
+        seen_urls: set[str],
+        limit: int,
+    ) -> list[Any]:
+        unique_results: list[Any] = []
+        for query in queries:
+            query_results = await provider.search(query, limit=DISCUSSION_WEB_RESULT_LIMIT)
+            for result in query_results:
+                url = str(getattr(result, "url", "")).strip()
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                unique_results.append(result)
+                if len(unique_results) >= limit:
+                    return unique_results
+        return unique_results
+
+    async def _discussion_search_queries(
+        self,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        messages: list[dict[str, str]],
+        *,
+        override: str | None,
+        article_context: dict[str, Any],
+    ) -> list[str]:
+        fallback_queries = self._heuristic_discussion_search_queries(
+            article,
+            semantics,
+            messages,
+            override=override,
+        )
+        if override:
+            return fallback_queries
+
+        llm_queries = await generate_discussion_search_queries(
+            article_context=article_context,
+            messages=messages,
+            fallback_queries=fallback_queries,
+        )
+        merged_queries: list[str] = []
+        seen: set[str] = set()
+        for query in [*(llm_queries or []), *fallback_queries]:
+            normalized_query = _compact_whitespace(query)
+            if not normalized_query:
+                continue
+            dedupe_key = normalized_query.casefold()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            merged_queries.append(normalized_query)
+            if len(merged_queries) >= DISCUSSION_WEB_QUERY_LIMIT:
+                break
+        return merged_queries or fallback_queries
+
+    async def _build_web_discussion_evidence(
+        self,
+        article: NewsArticle,
+        semantics: NewsArticleSemantic | None,
+        messages: list[dict[str, str]],
+        *,
+        search_query_override: str | None,
+        article_context: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], int]:
+        provider = get_news_search_provider(self._client)
+        if provider is None:
+            raise ValueError("Web search is not configured for article discussion")
+
+        latest_user_message = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+        intent = self._discussion_search_intent(latest_user_message)
+        subject = self._discussion_query_subject(latest_user_message)
+        queries = await self._discussion_search_queries(
+            article,
+            semantics,
+            messages,
+            override=search_query_override,
+            article_context=article_context,
+        )
+        seen_urls: set[str] = {article.canonical_url}
+        unique_results = await self._collect_discussion_search_results(
+            provider,
+            queries,
+            seen_urls=seen_urls,
+            limit=DISCUSSION_WEB_UNIQUE_RESULT_LIMIT,
+        )
+
+        ranked_results = self._rank_discussion_search_results(
+            unique_results,
+            article=article,
+            intent=intent,
+            subject=subject,
+        )
+        if self._should_retry_discussion_search(
+            ranked_results,
+            article=article,
+            intent=intent,
+            subject=subject,
+        ):
+            retry_queries = self._discussion_retry_queries(
+                intent=intent,
+                subject=subject,
+                latest_user_message=latest_user_message,
+            )
+            retry_results = await self._collect_discussion_search_results(
+                provider,
+                retry_queries,
+                seen_urls=seen_urls,
+                limit=max(0, DISCUSSION_WEB_UNIQUE_RESULT_LIMIT - len(unique_results)),
+            )
+            ranked_results = self._rank_discussion_search_results(
+                [*unique_results, *retry_results],
+                article=article,
+                intent=intent,
+                subject=subject,
+            )
+
+        if not ranked_results:
+            return [], 0
+
+        evidence_items: list[dict[str, Any]] = []
+        for result in ranked_results:
+            snippet = _truncate_text(result.snippet, limit=DISCUSSION_MAX_SNIPPET_CHARS)
+            try:
+                html_text = await fetch_text(self._client, result.url)
+                extracted = extract_article_payload(result.url, html_text)
+                snippet = _truncate_text(
+                    extracted.get("excerpt") or extracted.get("content_text") or result.snippet,
+                    limit=DISCUSSION_MAX_SNIPPET_CHARS,
+                )
+                title = _truncate_text(extracted.get("title") or result.title, limit=220) or result.title
+            except Exception:
+                title = result.title
+            if not snippet:
+                continue
+            evidence_items.append(
+                {
+                    "source_id": f"web:{len(evidence_items) + 1}",
+                    "source_type": "web",
+                    "title": title,
+                    "url": result.url,
+                    "domain": result.domain or extract_domain(result.url),
+                    "snippet": snippet,
+                }
+            )
+            if len(evidence_items) >= DISCUSSION_WEB_EVIDENCE_LIMIT:
+                break
+        return evidence_items, len(ranked_results)
+
+    async def discuss_article(
+        self,
+        article_id: int,
+        *,
+        user_id: int,
+        messages: list[dict[str, Any]] | None,
+        search_mode: str = "off",
+        search_query_override: str | None = None,
+    ) -> dict[str, Any] | None:
+        normalized_messages = self._normalize_discussion_messages(messages)
+        if not normalized_messages:
+            raise ValueError("Discussion requires at least one message")
+
+        async with async_session() as session:
+            article = await session.get(NewsArticle, article_id)
+            if article is None:
+                return None
+            sources = await self._load_article_sources(session, article_id, user_id=user_id)
+            if not sources:
+                return None
+
+            repaired = False
+            if not (article.content_text or "").strip():
+                repaired = await self._repair_article_content_if_needed(session, article, force_refresh=True)
+                if repaired:
+                    await self._upsert_article_semantics(session, article)
+                    article.llm_summary = None
+                    await session.commit()
+                    await session.refresh(article)
+
+            semantic_map = await self._load_semantics_map(session, [article_id])
+            semantics = semantic_map.get(article_id)
+
+        article_context = self._discussion_article_context(
+            article,
+            semantics,
+            content_repaired=repaired,
+        )
+        latest_user_message = next((item["content"] for item in reversed(normalized_messages) if item["role"] == "user"), "")
+        intent = self._discussion_search_intent(latest_user_message)
+        effective_search_mode = "off"
+        if search_mode == "on":
+            effective_search_mode = "on"
+        elif search_mode == "auto":
+            intent, should_search = await self._resolve_auto_discussion_search(
+                article_context=article_context,
+                messages=normalized_messages,
+            )
+            if should_search:
+                effective_search_mode = "on"
+
+        evidence_items = [self._article_citation(article)]
+        warning_parts: list[str] = []
+        if not article_context.get("content_text"):
+            warning_parts.append("Full article body was unavailable, so the answer is grounded in the title and excerpt.")
+
+        web_result_count = 0
+        web_evidence: list[dict[str, Any]] = []
+        if effective_search_mode == "on":
+            web_evidence, web_result_count = await self._build_web_discussion_evidence(
+                article,
+                semantics,
+                normalized_messages,
+                search_query_override=search_query_override,
+                article_context=article_context,
+            )
+            evidence_items.extend(web_evidence)
+            if web_result_count == 0:
+                warning_parts.append("No relevant web results were found for this discussion.")
+            elif not web_evidence:
+                warning_parts.append("Web search found results, but readable supporting material could not be extracted.")
+
+        llm_payload = await discuss_article_with_context(
+            article_context=article_context,
+            messages=normalized_messages,
+            evidence_items=evidence_items,
+            search_web=effective_search_mode == "on",
+        )
+        if not llm_payload:
+            raise ValueError("Unable to generate discussion response for this article")
+
+        evidence_by_id = {
+            str(item["source_id"]): item
+            for item in evidence_items
+            if isinstance(item, dict) and item.get("source_id")
+        }
+        minimum_web_citations = self._minimum_web_citations_for_discussion(
+            intent=intent,
+            available_web_evidence=web_evidence,
+        )
+        citation_ids = [
+            citation_id
+            for citation_id in llm_payload.get("cited_source_ids", [])
+            if citation_id in evidence_by_id
+        ]
+        if minimum_web_citations > 1:
+            cited_web_ids = [
+                citation_id
+                for citation_id in citation_ids
+                if evidence_by_id[citation_id].get("source_type") == "web"
+            ]
+            if 0 < len(cited_web_ids) < minimum_web_citations:
+                for item in web_evidence:
+                    source_id = str(item.get("source_id") or "")
+                    if not source_id or source_id in cited_web_ids:
+                        continue
+                    citation_ids.append(source_id)
+                    cited_web_ids.append(source_id)
+                    if len(cited_web_ids) >= minimum_web_citations:
+                        warning_parts.append(
+                            "Additional web citations were attached because multiple outside sources were available for this question."
+                        )
+                        break
+        if not citation_ids:
+            citation_ids = ["article:primary"]
+            if effective_search_mode == "on" and web_result_count > 0:
+                warning_parts.append("Fallback article citation attached because the model did not return explicit source references.")
+
+        citations = [evidence_by_id[citation_id] for citation_id in citation_ids]
+        used_web_search = any(item.get("source_type") == "web" for item in citations)
+        llm_warning = _compact_whitespace(llm_payload.get("warning"))
+        if llm_warning:
+            warning_parts.append(llm_warning)
+        if effective_search_mode == "on" and web_result_count > 0 and not used_web_search:
+            warning_parts.append("Web search ran, but the answer stayed grounded in the article because outside evidence was not selected.")
+
+        deduped_warning_parts: list[str] = []
+        seen_warning_parts: set[str] = set()
+        for part in warning_parts:
+            normalized_part = _compact_whitespace(part)
+            if not normalized_part or normalized_part in seen_warning_parts:
+                continue
+            seen_warning_parts.add(normalized_part)
+            deduped_warning_parts.append(normalized_part)
+
+        return {
+            "assistant_message": str(llm_payload["assistant_message"]),
+            "citations": citations,
+            "search_mode": search_mode if search_mode in {"off", "auto", "on"} else "off",
+            "effective_search_mode": effective_search_mode,
+            "used_web_search": used_web_search,
+            "web_results_count": web_result_count,
+            "warning": " ".join(deduped_warning_parts) if deduped_warning_parts else None,
+        }
 
     async def get_feed(
         self,

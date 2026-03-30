@@ -6,7 +6,10 @@ import pytest
 from app.core import config
 from app.services.llm import (
     NEWS_ARTICLE_CLASSIFICATION_TASK,
+    NEWS_ARTICLE_DISCUSSION_TASK,
+    NEWS_ARTICLE_DISCUSSION_DECISION_TASK,
     NEWS_ARTICLE_SUMMARY_TASK,
+    NEWS_ARTICLE_DISCUSSION_QUERY_TASK,
     NEWS_BLOCKED_LABEL_COMPILATION_TASK,
 )
 from app.services.news import semantics
@@ -211,6 +214,152 @@ async def test_summarize_article_preserves_overlong_summary_when_model_exceeds_h
 
     assert len(summary.split()) > 70
     assert summary == expected_summary
+
+
+@pytest.mark.asyncio
+async def test_generate_discussion_search_queries_uses_query_task_key(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return {
+            "queries": [
+                "\"home credit\" viet nam cong ty tai chinh",
+                "\"home credit\" vietnam company overview",
+            ]
+        }
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    queries = await semantics.generate_discussion_search_queries(
+        article_context={"title": "Home Credit story", "canonical_url": "https://example.com/a"},
+        messages=[{"role": "user", "content": "giới thiệu sơ về home credit"}],
+        fallback_queries=["home credit overview"],
+    )
+
+    assert queries == [
+        "\"home credit\" viet nam cong ty tai chinh",
+        "\"home credit\" vietnam company overview",
+    ]
+    assert captured["task_key"] == NEWS_ARTICLE_DISCUSSION_QUERY_TASK
+    assert "Generate 2-4 web-search queries" in captured["user_prompt"]
+    assert "Prefer entity-focused queries" in captured["user_prompt"]
+    assert "fallback_queries" in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_generate_discussion_search_queries_returns_none_when_llm_unavailable(monkeypatch):
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        return None
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    queries = await semantics.generate_discussion_search_queries(
+        article_context={"title": "Home Credit story"},
+        messages=[{"role": "user", "content": "giới thiệu sơ về home credit"}],
+        fallback_queries=["home credit overview"],
+    )
+
+    assert queries is None
+
+
+@pytest.mark.asyncio
+async def test_decide_discussion_search_uses_decision_task_key(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return {
+            "intent": "ownership",
+            "subject": "F88",
+            "needs_web_search": True,
+            "reason": "Ownership usually needs outside context.",
+            "confidence": 0.93,
+        }
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.decide_discussion_search(
+        article_context={"title": "F88 article", "canonical_url": "https://example.com/a"},
+        messages=[{"role": "user", "content": "ai là chủ nhân của f88"}],
+        article_content_strength="strong",
+    )
+
+    assert payload == {
+        "intent": "ownership",
+        "subject": "F88",
+        "needs_web_search": True,
+        "reason": "Ownership usually needs outside context.",
+        "confidence": 0.93,
+    }
+    assert captured["task_key"] == NEWS_ARTICLE_DISCUSSION_DECISION_TASK
+    assert "Allowed intents: recap, overview, ownership" in captured["user_prompt"]
+    assert "article_content_strength: strong" in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_decide_discussion_search_returns_none_when_llm_unavailable(monkeypatch):
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        return None
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.decide_discussion_search(
+        article_context={"title": "F88 article"},
+        messages=[{"role": "user", "content": "ai là chủ nhân của f88"}],
+        article_content_strength="strong",
+    )
+
+    assert payload is None
+
+
+@pytest.mark.asyncio
+async def test_discuss_article_with_context_prompt_instructs_incremental_follow_up_answers(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def _fake_call_json_llm(task_key: str, system_prompt: str, user_prompt: str):
+        captured["task_key"] = task_key
+        captured["system_prompt"] = system_prompt
+        captured["user_prompt"] = user_prompt
+        return {
+            "assistant_message": "Only the new follow-up detail is answered here.",
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.discuss_article_with_context(
+        article_context={"title": "Home Credit story", "canonical_url": "https://example.com/a"},
+        messages=[
+            {"role": "user", "content": "Giới thiệu sơ về Home Credit"},
+            {"role": "assistant", "content": "Home Credit là công ty tài chính tiêu dùng."},
+            {"role": "user", "content": "Còn sản phẩm chính là gì?"},
+        ],
+        evidence_items=[
+            {
+                "source_id": "article:primary",
+                "source_type": "article",
+                "title": "Home Credit story",
+                "url": "https://example.com/a",
+                "snippet": "Home Credit là công ty tài chính tiêu dùng.",
+                "domain": "example.com",
+            }
+        ],
+        search_web=False,
+    )
+
+    assert payload is not None
+    assert payload["assistant_message"] == "Only the new follow-up detail is answered here."
+    assert captured["task_key"] == NEWS_ARTICLE_DISCUSSION_TASK
+    assert "Treat earlier assistant messages in the conversation as already delivered context." in captured["user_prompt"]
+    assert "answer incrementally and avoid repeating points already covered" in captured["user_prompt"]
+    assert "Keep overlap with prior assistant answers minimal." in captured["user_prompt"]
+    assert "cite more than one distinct web source_id instead of relying on a single outside citation" in captured["user_prompt"]
 
 
 def test_normalize_summary_text_collapses_whitespace():
