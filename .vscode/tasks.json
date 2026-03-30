@@ -21,6 +21,18 @@
 				"cwd": "${workspaceFolder}/backend"
 			},
 			"problemMatcher": []
+		},
+		{
+			"label": "Run docker-build-push-prod",
+			"type": "shell",
+			"command": "./docker-build-push-prod",
+			"problemMatcher": []
+		},
+		{
+			"label": "Run docker-build-push-prod-mac",
+			"type": "shell",
+			"command": "./docker-build-push-prod-mac",
+			"problemMatcher": []
 		}
 	]
 }
