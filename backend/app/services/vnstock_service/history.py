@@ -1074,9 +1074,23 @@ class HistoryService:
             if record.volume is not None and record.close is not None:
                 value = round((record.volume * record.close) / 1e6, 2)
 
+            foreign_net_value = self._vnd_to_billion_vnd(record.foreign_net_value)
+            if foreign_net_value is None:
+                foreign_net_value = self._derive_net_value(
+                    record.foreign_buy_value,
+                    record.foreign_sell_value,
+                )
+
+            prop_net_value = self._derive_net_value(
+                record.prop_buy_value,
+                record.prop_sell_value,
+            )
+
             series_by_symbol.setdefault(record.symbol, []).append({
                 "date": record.date.strftime("%Y-%m-%d"),
                 "value": value,
+                "foreign_net_value": foreign_net_value,
+                "prop_net_value": prop_net_value,
             })
 
         stale_check_payload = {

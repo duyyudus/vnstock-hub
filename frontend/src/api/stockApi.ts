@@ -523,6 +523,8 @@ export interface StocksWeeklyPricesResponse {
 export interface VolumeSeriesPoint {
     date: string;
     value: number | null;
+    foreign_net_value: number | null;
+    prop_net_value: number | null;
 }
 
 export interface StockVolumeSeriesData {

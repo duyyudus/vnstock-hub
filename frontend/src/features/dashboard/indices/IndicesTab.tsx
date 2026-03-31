@@ -10,6 +10,7 @@ import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
+import { StocksTradeFlowChart } from './StocksTradeFlowChart';
 import { StocksTable } from './StocksTable';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
@@ -38,7 +39,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'performance_table' | 'growth' | 'comparison' | 'risk_return' | 'volume';
+type ViewMode = 'performance_table' | 'growth' | 'comparison' | 'risk_return' | 'volume' | 'trade_flow';
 
 interface ExportNotice {
     kind: 'success' | 'warning';
@@ -907,6 +908,15 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             </svg>
                             Volume
                         </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'trade_flow' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('trade_flow')}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12h16M6 8l4 4-4 4m12-8l-4 4 4 4" />
+                            </svg>
+                            Trade Flow
+                        </button>
                     </div>
                 </div>
             </div>
@@ -944,6 +954,11 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                             />
                         ) : viewMode === 'volume' ? (
                             <StocksVolumeChart
+                                stocks={filteredStocks}
+                                dateRange={appliedDateRange}
+                            />
+                        ) : viewMode === 'trade_flow' ? (
+                            <StocksTradeFlowChart
                                 stocks={filteredStocks}
                                 dateRange={appliedDateRange}
                             />

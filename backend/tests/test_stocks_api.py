@@ -199,8 +199,8 @@ async def test_get_stocks_volume_series(client):
                 "ticker": "TCB",
                 "company_name": "Techcombank",
                 "data": [
-                    {"date": "2026-02-10", "value": 25.1},
-                    {"date": "2026-02-11", "value": 27.3},
+                    {"date": "2026-02-10", "value": 25.1, "foreign_net_value": 1.4, "prop_net_value": -0.8},
+                    {"date": "2026-02-11", "value": 27.3, "foreign_net_value": None, "prop_net_value": 0.3},
                 ],
             },
             {
@@ -233,6 +233,10 @@ async def test_get_stocks_volume_series(client):
     assert data["is_syncing"] is True
     assert data["stocks"][0]["symbol"] == "TCB"
     assert data["stocks"][0]["data"][0]["value"] == 25.1
+    assert data["stocks"][0]["data"][0]["foreign_net_value"] == 1.4
+    assert data["stocks"][0]["data"][0]["prop_net_value"] == -0.8
+    assert data["stocks"][0]["data"][1]["foreign_net_value"] is None
+    assert data["stocks"][0]["data"][1]["prop_net_value"] == 0.3
     assert data["stocks"][1]["symbol"] == "VCB"
     assert data["stocks"][1]["data"] == []
 

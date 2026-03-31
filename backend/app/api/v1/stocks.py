@@ -203,6 +203,8 @@ class VolumeSeriesPoint(BaseModel):
     """A single daily volume-value point."""
     date: str
     value: Optional[float] = None
+    foreign_net_value: Optional[float] = None
+    prop_net_value: Optional[float] = None
 
 
 class StockVolumeSeriesData(BaseModel):

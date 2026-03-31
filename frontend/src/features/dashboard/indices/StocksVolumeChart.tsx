@@ -10,7 +10,7 @@ import {
     YAxis,
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
-import type { Stock, StocksVolumeSeriesResponse } from '../../../api/stockApi';
+import type { Stock, StocksVolumeSeriesResponse, VolumeSeriesPoint } from '../../../api/stockApi';
 import type { DateRange } from './dateRange';
 
 interface StocksVolumeChartProps {
@@ -26,7 +26,7 @@ interface RankedSeries {
     ticker: string;
     company_name: string;
     latestValue: number;
-    data: Array<{ date: string; value: number | null }>;
+    data: VolumeSeriesPoint[];
 }
 
 interface ChartRow {

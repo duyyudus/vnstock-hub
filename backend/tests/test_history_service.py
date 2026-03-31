@@ -1751,6 +1751,10 @@ async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(mon
             low=19.8,
             close=20.0,
             volume=1_500_000,
+            foreign_buy_value=9_000_000_000,
+            foreign_sell_value=10_500_000_000,
+            prop_buy_value=2_750_000_000,
+            prop_sell_value=750_000_000,
         )
     )
     db_session.add(
@@ -1762,6 +1766,9 @@ async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(mon
             low=19.9,
             close=20.2,
             volume=None,
+            foreign_net_value=1_200_000_000,
+            prop_buy_value=None,
+            prop_sell_value=500_000_000,
         )
     )
     await db_session.commit()
@@ -1785,8 +1792,12 @@ async def test_get_stocks_volume_series_normalizes_inputs_and_computes_value(mon
     assert stock["company_name"] == "Techcombank"
     assert stock["data"][0]["date"] == "2026-02-10"
     assert stock["data"][0]["value"] == 30.0
+    assert stock["data"][0]["foreign_net_value"] == -1.5
+    assert stock["data"][0]["prop_net_value"] == 2.0
     assert stock["data"][1]["date"] == "2026-02-11"
     assert stock["data"][1]["value"] is None
+    assert stock["data"][1]["foreign_net_value"] == 1.2
+    assert stock["data"][1]["prop_net_value"] is None
 
 
 @pytest.mark.asyncio
