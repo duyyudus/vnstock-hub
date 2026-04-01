@@ -46,6 +46,31 @@ interface ExportNotice {
     message: string;
 }
 
+const DEFAULT_INDEX_ID = 'VN30';
+const INDICES_SELECTED_INDEX_STORAGE_KEY = 'vnstock_indices_selected_index_id';
+
+const getDefaultSelectedIndex = (indices: IndexConfig[]) => {
+    if (indices.length === 0) {
+        return null;
+    }
+
+    return indices.find((idx) => idx.id === DEFAULT_INDEX_ID) || indices[0];
+};
+
+const getStoredSelectedIndex = (indices: IndexConfig[]) => {
+    const defaultIndex = getDefaultSelectedIndex(indices);
+    if (!defaultIndex || typeof window === 'undefined') {
+        return defaultIndex;
+    }
+
+    const storedIndexId = window.localStorage.getItem(INDICES_SELECTED_INDEX_STORAGE_KEY);
+    if (!storedIndexId) {
+        return defaultIndex;
+    }
+
+    return indices.find((idx) => idx.id === storedIndexId) || defaultIndex;
+};
+
 /**
  * Indices Tab - Main container for Index/Industry stock views.
  * Manages state for selection, fetching, and view switching.
@@ -54,11 +79,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const user = useAuthUser();
 
     // --- Selection State ---
-    // Default to VN30 if available, otherwise first index
-    const [selectedIndex, setSelectedIndex] = useState<IndexConfig | null>(() => {
-        if (indices.length === 0) return null;
-        return indices.find(idx => idx.id === 'VN30') || indices[0];
-    });
+    const [selectedIndex, setSelectedIndex] = useState<IndexConfig | null>(() => getStoredSelectedIndex(indices));
     const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
     const [selectedPositionsFilter, setSelectedPositionsFilter] = useState<PositionsFilter>('all');
     const [selectedBookmarkGroupId, setSelectedBookmarkGroupId] = useState<number | null>(null);
@@ -103,13 +124,38 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
 
     // --- Effects ---
 
-    // Update selected index if indices prop changes and we don't have a selection yet
+    // Keep the selected index aligned with the latest indices list.
     useEffect(() => {
-        if (indices.length > 0 && !selectedIndex) {
-            const defaultIndex = indices.find(idx => idx.id === 'VN30') || indices[0];
-            setSelectedIndex(defaultIndex);
+        if (indices.length === 0) {
+            if (selectedIndex) {
+                setSelectedIndex(null);
+            }
+            return;
+        }
+
+        if (!selectedIndex) {
+            setSelectedIndex(getStoredSelectedIndex(indices));
+            return;
+        }
+
+        const nextSelectedIndex = indices.find((idx) => idx.id === selectedIndex.id);
+        if (!nextSelectedIndex) {
+            setSelectedIndex(getStoredSelectedIndex(indices));
+            return;
+        }
+
+        if (nextSelectedIndex !== selectedIndex) {
+            setSelectedIndex(nextSelectedIndex);
         }
     }, [indices, selectedIndex]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !selectedIndex) {
+            return;
+        }
+
+        window.localStorage.setItem(INDICES_SELECTED_INDEX_STORAGE_KEY, selectedIndex.id);
+    }, [selectedIndex]);
 
     // Fetch industries on mount
     useEffect(() => {
