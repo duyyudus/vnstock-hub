@@ -58,6 +58,65 @@ interface ExportNotice {
     message: string;
 }
 
+interface IndustrySection {
+    industry: string;
+    totalMarketCap: number;
+    stocks: Stock[];
+}
+
+const normalizeIndustryLabel = (industry: string | null | undefined): string => {
+    const normalized = industry?.trim() || '';
+    return normalized || 'Other';
+};
+
+const getRemainingRoomRatioValue = (
+    currentRoom: number | null | undefined,
+    totalRoom: number | null | undefined
+): number | null => {
+    if (currentRoom == null || totalRoom == null || totalRoom <= 0) {
+        return null;
+    }
+    return currentRoom / totalRoom;
+};
+
+const getStockSortValue = (stock: Stock, key: SortKey) => {
+    if (key === 'foreign_net_value') {
+        return stock.foreign_buy_value != null && stock.foreign_sell_value != null
+            ? stock.foreign_buy_value - stock.foreign_sell_value
+            : null;
+    }
+    if (key === 'room_ratio') {
+        return getRemainingRoomRatioValue(stock.current_room, stock.total_room);
+    }
+    return stock[key as keyof Stock];
+};
+
+const compareStocksForSort = (a: Stock, b: Stock, sortConfig: SortConfig) => {
+    const aValue = getStockSortValue(a, sortConfig.key);
+    const bValue = getStockSortValue(b, sortConfig.key);
+
+    if (aValue == null && bValue == null) {
+        return 0;
+    }
+    if (aValue == null) {
+        return 1;
+    }
+    if (bValue == null) {
+        return -1;
+    }
+
+    let comparison = 0;
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+        comparison = aValue.localeCompare(bValue);
+    } else if (aValue < bValue) {
+        comparison = -1;
+    } else if (aValue > bValue) {
+        comparison = 1;
+    }
+
+    return sortConfig.direction === 'asc' ? comparison : comparison * -1;
+};
+
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     bookmarkGroups = [],
@@ -70,6 +129,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         direction: 'desc'
     });
     const [isCompanyCollapsed, setIsCompanyCollapsed] = useState(true);
+    const [groupByIndustry, setGroupByIndustry] = useState(false);
     const user = useAuthUser();
     const isLoggedIn = Boolean(user);
     const dialogRef = useRef<HTMLDialogElement>(null);
@@ -259,10 +319,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         currentRoom: number | null | undefined,
         totalRoom: number | null | undefined
     ): number | null => {
-        if (currentRoom == null || totalRoom == null || totalRoom <= 0) {
-            return null;
-        }
-        return currentRoom / totalRoom;
+        return getRemainingRoomRatioValue(currentRoom, totalRoom);
     };
 
     const formatRemainingRoomRatio = (
@@ -583,37 +640,38 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     };
 
     const sortedStocks = useMemo(() => {
-        const sortableStocks = [...stocks];
-        if (sortConfig.key) {
-            sortableStocks.sort((a, b) => {
-                const aValue = sortConfig.key === 'foreign_net_value'
-                    ? (a.foreign_buy_value != null && a.foreign_sell_value != null
-                        ? a.foreign_buy_value - a.foreign_sell_value
-                        : null)
-                    : sortConfig.key === 'room_ratio'
-                        ? getRemainingRoomRatio(a.current_room, a.total_room)
-                    : a[sortConfig.key as keyof Stock];
-                const bValue = sortConfig.key === 'foreign_net_value'
-                    ? (b.foreign_buy_value != null && b.foreign_sell_value != null
-                        ? b.foreign_buy_value - b.foreign_sell_value
-                        : null)
-                    : sortConfig.key === 'room_ratio'
-                        ? getRemainingRoomRatio(b.current_room, b.total_room)
-                    : b[sortConfig.key as keyof Stock];
+        return [...stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig));
+    }, [stocks, sortConfig]);
 
-                if (aValue == null) return 1;
-                if (bValue == null) return -1;
+    const industrySections = useMemo<IndustrySection[]>(() => {
+        const groupedStocks = new Map<string, { totalMarketCap: number; stocks: Stock[] }>();
 
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'asc' ? -1 : 1;
+        stocks.forEach((stock) => {
+            const industry = normalizeIndustryLabel(stock.industry);
+            const currentSection = groupedStocks.get(industry) ?? {
+                totalMarketCap: 0,
+                stocks: [],
+            };
+            const marketCap = Number(stock.market_cap);
+            currentSection.stocks.push(stock);
+            if (Number.isFinite(marketCap)) {
+                currentSection.totalMarketCap += marketCap;
+            }
+            groupedStocks.set(industry, currentSection);
+        });
+
+        return Array.from(groupedStocks.entries())
+            .map(([industry, section]) => ({
+                industry,
+                totalMarketCap: section.totalMarketCap,
+                stocks: [...section.stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig)),
+            }))
+            .sort((a, b) => {
+                if (b.totalMarketCap !== a.totalMarketCap) {
+                    return b.totalMarketCap - a.totalMarketCap;
                 }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'asc' ? 1 : -1;
-                }
-                return 0;
+                return a.industry.localeCompare(b.industry);
             });
-        }
-        return sortableStocks;
     }, [stocks, sortConfig]);
 
     const renderSortIcon = (key: SortKey) => {
@@ -637,379 +695,419 @@ export const StocksTable: React.FC<StocksTableProps> = ({
 
     const totalColumns = isLoggedIn ? 17 : 16;
 
-    return (
+    const renderTableHeader = () => (
+        <thead className="sticky top-0 z-20 bg-base-200">
+            <tr>
+                <th className="text-base-content font-bold">#</th>
+                {isLoggedIn ? (
+                    <th className="text-base-content font-bold text-center w-12">
+                        Fav
+                    </th>
+                ) : null}
+                <th
+                    className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => setIsCompanyCollapsed(!isCompanyCollapsed)}
+                >
+                    <div className="flex items-center">
+                        {isCompanyCollapsed ? (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                                Company
+                            </>
+                        )}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors w-16"
+                    onClick={() => handleSort('ticker')}
+                >
+                    <div className="flex items-center">
+                        Ticker
+                        {renderSortIcon('ticker')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('price')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Price<br />(VND)
+                        </div>
+                        {renderSortIcon('price')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('market_cap')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Market Cap<br />(B VND)
+                        </div>
+                        {renderSortIcon('market_cap')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('charter_capital')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Charter Cap<br />(B VND)
+                        </div>
+                        {renderSortIcon('charter_capital')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('pe_ratio')}
+                >
+                    <div className="flex items-center justify-end">
+                        P/E
+                        {renderSortIcon('pe_ratio')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('accumulated_value')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Vol<br />(B VND)
+                        </div>
+                        {renderSortIcon('accumulated_value')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('foreign_net_value')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Foreign<br />(B VND)
+                        </div>
+                        {renderSortIcon('foreign_net_value')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('room_ratio')}
+                >
+                    <div className="flex items-center justify-end">
+                        <div className="text-right">
+                            Room<br />(%)
+                        </div>
+                        {renderSortIcon('room_ratio')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('price_change_24h')}
+                >
+                    <div className="flex items-center justify-end">
+                        24h
+                        {renderSortIcon('price_change_24h')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('price_change_1w')}
+                >
+                    <div className="flex items-center justify-end">
+                        1W
+                        {renderSortIcon('price_change_1w')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('price_change_1m')}
+                >
+                    <div className="flex items-center justify-end">
+                        1M
+                        {renderSortIcon('price_change_1m')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('price_change_6m')}
+                >
+                    <div className="flex items-center justify-end">
+                        6M
+                        {renderSortIcon('price_change_6m')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('atl_diff_pct')}
+                >
+                    <div className="flex items-center justify-end">
+                        ATL
+                        {renderSortIcon('atl_diff_pct')}
+                    </div>
+                </th>
+                <th
+                    className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
+                    onClick={() => handleSort('ath_diff_pct')}
+                >
+                    <div className="flex items-center justify-end">
+                        ATH
+                        {renderSortIcon('ath_diff_pct')}
+                    </div>
+                </th>
+            </tr>
+        </thead>
+    );
+
+    const renderTableBody = (tableStocks: Stock[]) => (
+        <tbody>
+            {tableStocks.length === 0 ? (
+                <tr>
+                    <td colSpan={totalColumns} className="text-center py-8 text-base-content/60 italic">
+                        No stocks found
+                    </td>
+                </tr>
+            ) : (
+                tableStocks.map((stock, index) => {
+                    const change24h = formatPriceChange(stock.price_change_24h);
+                    const change1w = formatPriceChange(stock.price_change_1w);
+                    const change1m = formatPriceChange(stock.price_change_1m);
+                    const change6m = formatPriceChange(stock.price_change_6m ?? null);
+                    const atlMetric = formatExtremeMetric(stock.atl_price, stock.atl_diff_pct);
+                    const athMetric = formatExtremeMetric(stock.ath_price, stock.ath_diff_pct);
+                    const fullNameWithExchange = stock.exchange
+                        ? `${stock.exchange} - ${stock.company_name}`
+                        : stock.company_name;
+                    const normalizedTicker = stock.ticker.toUpperCase();
+                    const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
+                    const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
+                    const isInOpenTradingPosition = isLoggedIn && openTradingTickerSet.has(normalizedTicker);
+                    const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
+                    const tradingPosition = isInOpenTradingPosition ? openTradingPositions[normalizedTicker] : undefined;
+                    const tradingValue = tradingPosition ? stock.price * tradingPosition.quantity : undefined;
+                    const tradingPnl = tradingPosition?.costBasis != null && tradingValue != null
+                        ? tradingValue - tradingPosition.costBasis
+                        : undefined;
+                    const tickerTooltipText = formatTickerTooltip(
+                        fullNameWithExchange,
+                        portfolioHolding,
+                        tradingPosition,
+                        tradingValue,
+                        tradingPnl,
+                    );
+                    const hasRoomData = stock.current_room != null || stock.total_room != null;
+                    const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
+                    const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
+                    const atlTooltipText = stock.atl_date ? `Recorded on ${stock.atl_date}` : '';
+                    const athTooltipText = stock.ath_date ? `Recorded on ${stock.ath_date}` : '';
+
+                    return (
+                        <tr key={stock.ticker} className="hover">
+                            <td className="text-base-content/60">{index + 1}</td>
+                            {isLoggedIn ? (
+                                <td className="text-center w-12">
+                                    <button
+                                        className={`btn btn-ghost btn-xs ${isBookmarked ? 'text-warning' : ''}`}
+                                        onClick={() => openBookmarkDialog(stock)}
+                                        title={isBookmarked ? 'Manage bookmark groups' : 'Add to bookmark group'}
+                                    >
+                                        <svg className="w-4 h-4" fill={isBookmarked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l2.036 6.27h6.588c.969 0 1.371 1.24.588 1.81l-5.333 3.874 2.036 6.27c.3.921-.755 1.688-1.539 1.118L12 17.77l-5.327 3.869c-.784.57-1.838-.197-1.539-1.118l2.036-6.27-5.333-3.874c-.783-.57-.38-1.81.588-1.81h6.588l2.036-6.27z" />
+                                        </svg>
+                                    </button>
+                                </td>
+                            ) : null}
+                            <td
+                                className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`}
+                                title={isCompanyCollapsed ? '' : fullNameWithExchange}
+                            >
+                                {!isCompanyCollapsed && stock.company_name}
+                            </td>
+                            <td className="w-20">
+                                <div className="flex items-center gap-1">
+                                    <div
+                                        className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
+                                        data-tip={tickerTooltipText}
+                                    >
+                                        <button
+                                            className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
+                                                isInPortfolio ? 'text-accent' : 'text-primary'
+                                            }`}
+                                            onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
+                                            onContextMenu={(event) => handleTickerContextMenu(event, stock)}
+                                            aria-label={`View financial details for ${stock.ticker}`}
+                                        >
+                                            {stock.ticker.slice(0, 3)}
+                                        </button>
+                                    </div>
+                                    {isInOpenTradingPosition ? (
+                                        <span
+                                            className="inline-flex text-warning"
+                                            title="Open trading position"
+                                            aria-label={`${stock.ticker} has an open trading position`}
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v4m0 4h.01M10.29 3.86l-8.18 14A2 2 0 003.82 21h16.36a2 2 0 001.71-3.14l-8.18-14a2 2 0 00-3.42 0z" />
+                                            </svg>
+                                        </span>
+                                    ) : null}
+                                </div>
+                            </td>
+                            <td className="text-right font-mono text-base-content">
+                                <button
+                                    className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
+                                    onClick={() => (window as Window & { onPriceClick?: (ticker: string, companyName: string) => void }).onPriceClick?.(stock.ticker, stock.company_name)}
+                                    title={`View 90-day (calendar) price chart for ${stock.ticker}`}
+                                >
+                                    {formatPrice(stock.price)}
+                                </button>
+                            </td>
+                            <td className="text-right font-mono text-base-content">
+                                {formatMarketCap(stock.market_cap)}
+                            </td>
+                            <td className="text-right font-mono text-base-content">
+                                {formatCharterCapital(stock.charter_capital)}
+                            </td>
+                            <td className="text-right font-mono text-base-content">
+                                {formatPE(stock.pe_ratio)}
+                            </td>
+                            <td className="text-right font-mono text-base-content">
+                                <button
+                                    className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
+                                    onClick={() => (window as Window & { onVolumeClick?: (ticker: string, companyName: string) => void }).onVolumeClick?.(stock.ticker, stock.company_name)}
+                                    title={`View 90-day (calendar) volume chart for ${stock.ticker}`}
+                                >
+                                    {formatAccumulatedValue(stock.accumulated_value)}
+                                </button>
+                            </td>
+                            <td className="text-right font-mono whitespace-nowrap">
+                                {stock.foreign_buy_value != null && stock.foreign_sell_value != null ? (
+                                    <>
+                                        <span className="text-success">{formatForeignValue(stock.foreign_buy_value)}</span>
+                                        <span className="text-base-content">|</span>
+                                        <span className="text-error">{formatForeignValue(stock.foreign_sell_value)}</span>
+                                    </>
+                                ) : (
+                                    <span className="text-base-content/50">-|-</span>
+                                )}
+                            </td>
+                            <td className="text-right font-mono whitespace-nowrap text-base-content">
+                                {hasRoomData ? (
+                                    <div
+                                        className="tooltip z-30 [&:before]:z-30 [&:before]:whitespace-pre-line [&:after]:z-30"
+                                        data-tip={roomTooltipText}
+                                    >
+                                        <span className="cursor-help">{roomRatioText}</span>
+                                    </div>
+                                ) : (
+                                    roomRatioText
+                                )}
+                            </td>
+                            <td className={`text-right font-mono ${change24h.className}`}>
+                                {change24h.text}
+                            </td>
+                            <td className={`text-right font-mono ${change1w.className}`}>
+                                {change1w.text}
+                            </td>
+                            <td className={`text-right font-mono ${change1m.className}`}>
+                                {change1m.text}
+                            </td>
+                            <td className={`text-right font-mono ${change6m.className}`}>
+                                {change6m.text}
+                            </td>
+                            <td className="text-right font-mono whitespace-nowrap text-xs">
+                                {stock.atl_date ? (
+                                    <div
+                                        className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
+                                        data-tip={atlTooltipText}
+                                    >
+                                        <div className="cursor-help leading-tight">
+                                            <div className="text-base-content">{atlMetric.priceText}</div>
+                                            <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="leading-tight">
+                                        <div className="text-base-content">{atlMetric.priceText}</div>
+                                        <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
+                                    </div>
+                                )}
+                            </td>
+                            <td className="text-right font-mono whitespace-nowrap text-xs">
+                                {stock.ath_date ? (
+                                    <div
+                                        className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
+                                        data-tip={athTooltipText}
+                                    >
+                                        <div className="cursor-help leading-tight">
+                                            <div className="text-base-content">{athMetric.priceText}</div>
+                                            <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="leading-tight">
+                                        <div className="text-base-content">{athMetric.priceText}</div>
+                                        <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
+                                    </div>
+                                )}
+                            </td>
+                        </tr>
+                    );
+                })
+            )}
+        </tbody>
+    );
+
+    const renderTable = (tableStocks: Stock[]) => (
         <div className="dashboard-adaptive-table-wrap rounded-xl">
+            <table className="table table-zebra table-sm w-max min-w-full">
+                {renderTableHeader()}
+                {renderTableBody(tableStocks)}
+            </table>
+        </div>
+    );
+
+    return (
+        <div className="space-y-3">
             {exportNotice ? (
                 <div className={`alert mb-2 text-sm ${exportNotice.kind === 'warning' ? 'alert-warning' : 'alert-success'}`}>
                     <span>{exportNotice.message}</span>
                 </div>
             ) : null}
-            <table className="table table-zebra table-sm w-max min-w-full">
-                <thead className="sticky top-0 z-20 bg-base-200">
-                    <tr>
-                        <th className="text-base-content font-bold">#</th>
-                        {isLoggedIn ? (
-                            <th className="text-base-content font-bold text-center w-12">
-                                Fav
-                            </th>
-                        ) : null}
-                        <th
-                            className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => setIsCompanyCollapsed(!isCompanyCollapsed)}
-                        >
-                            <div className="flex items-center">
-                                {isCompanyCollapsed ? (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                                    </svg>
-                                ) : (
-                                    <>
-                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                        Company
-                                    </>
-                                )}
+            <div className="flex justify-end">
+                <label className="inline-flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm font-medium">
+                    <span>Group by industry</span>
+                    <input
+                        type="checkbox"
+                        className="toggle toggle-sm"
+                        checked={groupByIndustry}
+                        onChange={(event) => setGroupByIndustry(event.target.checked)}
+                        aria-label="Group stocks by industry"
+                    />
+                </label>
+            </div>
+            {groupByIndustry && stocks.length > 0 ? (
+                <div className="space-y-4">
+                    {industrySections.map((section) => (
+                        <section key={section.industry} className="space-y-2">
+                            <div className="px-1">
+                                <h3 className="text-sm font-semibold uppercase tracking-wide text-base-content/80">
+                                    {section.industry}
+                                </h3>
                             </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold cursor-pointer hover:bg-base-300 transition-colors w-16"
-                            onClick={() => handleSort('ticker')}
-                        >
-                            <div className="flex items-center">
-                                Ticker
-                                {renderSortIcon('ticker')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                    Price<br />(VND)
-                                </div>
-                                {renderSortIcon('price')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('market_cap')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                    Market Cap<br />(B VND)
-                                </div>
-                                {renderSortIcon('market_cap')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('charter_capital')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                    Charter Cap<br />(B VND)
-                                </div>
-                                {renderSortIcon('charter_capital')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('pe_ratio')}
-                        >
-                            <div className="flex items-center justify-end">
-                                P/E
-                                {renderSortIcon('pe_ratio')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('accumulated_value')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                    Vol<br />(B VND)
-                                </div>
-                                {renderSortIcon('accumulated_value')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('foreign_net_value')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                    Foreign<br />(B VND)
-                                </div>
-                                {renderSortIcon('foreign_net_value')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('room_ratio')}
-                        >
-                            <div className="flex items-center justify-end">
-                                <div className="text-right">
-                                Room<br />(%)
-                                </div>
-                                {renderSortIcon('room_ratio')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_24h')}
-                        >
-                            <div className="flex items-center justify-end">
-                                24h
-                                {renderSortIcon('price_change_24h')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_1w')}
-                        >
-                            <div className="flex items-center justify-end">
-                                1W
-                                {renderSortIcon('price_change_1w')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_1m')}
-                        >
-                            <div className="flex items-center justify-end">
-                                1M
-                                {renderSortIcon('price_change_1m')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('price_change_6m')}
-                        >
-                            <div className="flex items-center justify-end">
-                                6M
-                                {renderSortIcon('price_change_6m')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('atl_diff_pct')}
-                        >
-                            <div className="flex items-center justify-end">
-                                ATL
-                                {renderSortIcon('atl_diff_pct')}
-                            </div>
-                        </th>
-                        <th
-                            className="text-base-content font-bold text-right cursor-pointer hover:bg-base-300 transition-colors"
-                            onClick={() => handleSort('ath_diff_pct')}
-                        >
-                            <div className="flex items-center justify-end">
-                                ATH
-                                {renderSortIcon('ath_diff_pct')}
-                            </div>
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {sortedStocks.length === 0 ? (
-                        <tr>
-                            <td colSpan={totalColumns} className="text-center py-8 text-base-content/60 italic">
-                                No stocks found
-                            </td>
-                        </tr>
-                    ) : (
-                        sortedStocks.map((stock, index) => {
-                            const change24h = formatPriceChange(stock.price_change_24h);
-                            const change1w = formatPriceChange(stock.price_change_1w);
-                            const change1m = formatPriceChange(stock.price_change_1m);
-                            const change6m = formatPriceChange(stock.price_change_6m ?? null);
-                            const atlMetric = formatExtremeMetric(stock.atl_price, stock.atl_diff_pct);
-                            const athMetric = formatExtremeMetric(stock.ath_price, stock.ath_diff_pct);
-                            const fullNameWithExchange = stock.exchange 
-                                ? `${stock.exchange} - ${stock.company_name}`
-                                : stock.company_name;
-                            const normalizedTicker = stock.ticker.toUpperCase();
-                            const isBookmarked = isLoggedIn && bookmarkedTickers.has(normalizedTicker);
-                            const isInPortfolio = isLoggedIn && portfolioTickerSet.has(normalizedTicker);
-                            const isInOpenTradingPosition = isLoggedIn && openTradingTickerSet.has(normalizedTicker);
-                            const portfolioHolding = isInPortfolio ? portfolioHoldings[normalizedTicker] : undefined;
-                            const tradingPosition = isInOpenTradingPosition ? openTradingPositions[normalizedTicker] : undefined;
-                            const tradingValue = tradingPosition ? stock.price * tradingPosition.quantity : undefined;
-                            const tradingPnl = tradingPosition?.costBasis != null && tradingValue != null
-                                ? tradingValue - tradingPosition.costBasis
-                                : undefined;
-                            const tickerTooltipText = formatTickerTooltip(
-                                fullNameWithExchange,
-                                portfolioHolding,
-                                tradingPosition,
-                                tradingValue,
-                                tradingPnl,
-                            );
-                            const hasRoomData = stock.current_room != null || stock.total_room != null;
-                            const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
-                            const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
-                            const atlTooltipText = stock.atl_date ? `Recorded on ${stock.atl_date}` : '';
-                            const athTooltipText = stock.ath_date ? `Recorded on ${stock.ath_date}` : '';
-
-                            return (
-                                <tr key={stock.ticker} className="hover">
-                                    <td className="text-base-content/60">{index + 1}</td>
-                                    {isLoggedIn ? (
-                                        <td className="text-center w-12">
-                                            <button
-                                                className={`btn btn-ghost btn-xs ${isBookmarked ? 'text-warning' : ''}`}
-                                                onClick={() => openBookmarkDialog(stock)}
-                                                title={isBookmarked ? 'Manage bookmark groups' : 'Add to bookmark group'}
-                                            >
-                                                <svg className="w-4 h-4" fill={isBookmarked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l2.036 6.27h6.588c.969 0 1.371 1.24.588 1.81l-5.333 3.874 2.036 6.27c.3.921-.755 1.688-1.539 1.118L12 17.77l-5.327 3.869c-.784.57-1.838-.197-1.539-1.118l2.036-6.27-5.333-3.874c-.783-.57-.38-1.81.588-1.81h6.588l2.036-6.27z" />
-                                                </svg>
-                                            </button>
-                                        </td>
-                                    ) : null}
-                                    <td
-                                        className={`${isCompanyCollapsed ? 'w-0 p-0 overflow-hidden opacity-0' : 'whitespace-nowrap'} transition-all duration-200`}
-                                        title={isCompanyCollapsed ? "" : fullNameWithExchange}
-                                    >
-                                        {!isCompanyCollapsed && stock.company_name}
-                                    </td>
-                                    <td className="w-20">
-                                        <div className="flex items-center gap-1">
-                                            <div
-                                                className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
-                                                data-tip={tickerTooltipText}
-                                            >
-                                                <button
-                                                    className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
-                                                        isInPortfolio ? 'text-accent' : 'text-primary'
-                                                    }`}
-                                                    onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
-                                                    onContextMenu={(event) => handleTickerContextMenu(event, stock)}
-                                                    aria-label={`View financial details for ${stock.ticker}`}
-                                                >
-                                                    {stock.ticker.slice(0, 3)}
-                                                </button>
-                                            </div>
-                                            {isInOpenTradingPosition ? (
-                                                <span
-                                                    className="inline-flex text-warning"
-                                                    title="Open trading position"
-                                                    aria-label={`${stock.ticker} has an open trading position`}
-                                                >
-                                                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v4m0 4h.01M10.29 3.86l-8.18 14A2 2 0 003.82 21h16.36a2 2 0 001.71-3.14l-8.18-14a2 2 0 00-3.42 0z" />
-                                                    </svg>
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        <button
-                                            className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
-                                            onClick={() => (window as Window & { onPriceClick?: (ticker: string, companyName: string) => void }).onPriceClick?.(stock.ticker, stock.company_name)}
-                                            title={`View 90-day (calendar) price chart for ${stock.ticker}`}
-                                        >
-                                            {formatPrice(stock.price)}
-                                        </button>
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatMarketCap(stock.market_cap)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatCharterCapital(stock.charter_capital)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        {formatPE(stock.pe_ratio)}
-                                    </td>
-                                    <td className="text-right font-mono text-base-content">
-                                        <button
-                                            className="cursor-pointer hover:text-primary hover:underline focus:outline-none"
-                                            onClick={() => (window as Window & { onVolumeClick?: (ticker: string, companyName: string) => void }).onVolumeClick?.(stock.ticker, stock.company_name)}
-                                            title={`View 90-day (calendar) volume chart for ${stock.ticker}`}
-                                        >
-                                            {formatAccumulatedValue(stock.accumulated_value)}
-                                        </button>
-                                    </td>
-                                    <td className="text-right font-mono whitespace-nowrap">
-                                        {stock.foreign_buy_value != null && stock.foreign_sell_value != null ? (
-                                            <>
-                                                <span className="text-success">{formatForeignValue(stock.foreign_buy_value)}</span>
-                                                <span className="text-base-content">|</span>
-                                                <span className="text-error">{formatForeignValue(stock.foreign_sell_value)}</span>
-                                            </>
-                                        ) : (
-                                            <span className="text-base-content/50">-|-</span>
-                                        )}
-                                    </td>
-                                    <td className="text-right font-mono whitespace-nowrap text-base-content">
-                                        {hasRoomData ? (
-                                            <div
-                                                className="tooltip z-30 [&:before]:z-30 [&:before]:whitespace-pre-line [&:after]:z-30"
-                                                data-tip={roomTooltipText}
-                                            >
-                                                <span className="cursor-help">{roomRatioText}</span>
-                                            </div>
-                                        ) : (
-                                            roomRatioText
-                                        )}
-                                    </td>
-                                    <td className={`text-right font-mono ${change24h.className}`}>
-                                        {change24h.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change1w.className}`}>
-                                        {change1w.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change1m.className}`}>
-                                        {change1m.text}
-                                    </td>
-                                    <td className={`text-right font-mono ${change6m.className}`}>
-                                        {change6m.text}
-                                    </td>
-                                    <td className="text-right font-mono whitespace-nowrap text-xs">
-                                        {stock.atl_date ? (
-                                            <div
-                                                className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
-                                                data-tip={atlTooltipText}
-                                            >
-                                                <div className="cursor-help leading-tight">
-                                                    <div className="text-base-content">{atlMetric.priceText}</div>
-                                                    <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="leading-tight">
-                                                <div className="text-base-content">{atlMetric.priceText}</div>
-                                                <div className={atlMetric.diffClassName}>{atlMetric.diffText}</div>
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="text-right font-mono whitespace-nowrap text-xs">
-                                        {stock.ath_date ? (
-                                            <div
-                                                className="tooltip tooltip-left [&:before]:whitespace-pre-line [&:after]:z-30"
-                                                data-tip={athTooltipText}
-                                            >
-                                                <div className="cursor-help leading-tight">
-                                                    <div className="text-base-content">{athMetric.priceText}</div>
-                                                    <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="leading-tight">
-                                                <div className="text-base-content">{athMetric.priceText}</div>
-                                                <div className={athMetric.diffClassName}>{athMetric.diffText}</div>
-                                            </div>
-                                        )}
-                                    </td>
-                                </tr>
-                            );
-                        })
-                    )}
-                </tbody>
-            </table>
+                            {renderTable(section.stocks)}
+                        </section>
+                    ))}
+                </div>
+            ) : (
+                renderTable(sortedStocks)
+            )}
 
             {contextMenu ? (
                 <div
