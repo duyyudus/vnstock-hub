@@ -118,6 +118,8 @@ DISCUSSION_WEB_RETRY_QUERY_LIMIT = 2
 QUICK_GLANCE_EVIDENCE_LIMIT = 12
 QUICK_GLANCE_HIGHLIGHT_LIMIT = 5
 QUICK_GLANCE_KEY_ARTICLE_LIMIT = 5
+QUICK_GLANCE_REFRESH_COOLDOWN_MINUTES = 30
+QUICK_GLANCE_MIN_CHANGED_STORIES = 2
 DISCUSSION_BACKGROUND_INTENTS = {"overview", "ownership", "business", "financials", "comparison"}
 DISCUSSION_RESULT_MIN_SCORE_FOR_BACKGROUND = 25
 DISCUSSION_PROFILE_KEYWORDS = (
@@ -1078,6 +1080,65 @@ class NewsIngestionService:
             ],
         }
         return hashlib.sha256(repr(signature_payload).encode("utf-8")).hexdigest()
+
+    def _parse_iso_timestamp_to_utc_naive(self, value: Any) -> datetime | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            try:
+                parsed = datetime.fromisoformat(str(value))
+            except ValueError:
+                return None
+        if parsed.tzinfo is None:
+            return parsed
+        return parsed.astimezone(UTC).replace(tzinfo=None)
+
+    def _quick_glance_story_activity_at(self, item: dict[str, Any]) -> datetime | None:
+        timestamps = [
+            self._parse_iso_timestamp_to_utc_naive(item.get("published_at")),
+            self._parse_iso_timestamp_to_utc_naive(item.get("_article_updated_at")),
+            self._parse_iso_timestamp_to_utc_naive(item.get("_semantic_updated_at")),
+        ]
+        candidates = [timestamp for timestamp in timestamps if timestamp is not None]
+        return max(candidates) if candidates else None
+
+    def _quick_glance_story_delta(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        since: datetime,
+    ) -> tuple[int, bool]:
+        changed_story_keys: set[str] = set()
+        high_importance_story_keys: set[str] = set()
+
+        for item in items:
+            story_activity_at = self._quick_glance_story_activity_at(item)
+            if story_activity_at is None or story_activity_at <= since:
+                continue
+            story_key = str(item.get("story_key") or f"article:{int(item.get('id') or 0)}")
+            changed_story_keys.add(story_key)
+            if str(item.get("importance") or "").strip().lower() == "high":
+                high_importance_story_keys.add(story_key)
+
+        return len(changed_story_keys), bool(changed_story_keys & high_importance_story_keys)
+
+    def _should_regenerate_quick_glance_digest(
+        self,
+        *,
+        now: datetime,
+        cached_digest: NewsQuickGlanceDigest,
+        items: list[dict[str, Any]],
+    ) -> bool:
+        changed_story_count, has_high_importance_story = self._quick_glance_story_delta(
+            items,
+            since=cached_digest.generated_at,
+        )
+        if has_high_importance_story:
+            return True
+        cooldown_elapsed = now - cached_digest.generated_at >= timedelta(minutes=QUICK_GLANCE_REFRESH_COOLDOWN_MINUTES)
+        return cooldown_elapsed and changed_story_count >= QUICK_GLANCE_MIN_CHANGED_STORIES
 
     def _serialize_quick_glance_key_article(self, item: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -2089,6 +2150,17 @@ class NewsIngestionService:
             evidence_fingerprint = self._build_quick_glance_fingerprint(items, evidence_items)
             viewer_key = self._quick_glance_viewer_key(user_id)
 
+            latest_cached_digest = (
+                await session.execute(
+                    select(NewsQuickGlanceDigest)
+                    .where(
+                        NewsQuickGlanceDigest.viewer_key == viewer_key,
+                        NewsQuickGlanceDigest.window_hours == window_hours,
+                    )
+                    .order_by(NewsQuickGlanceDigest.generated_at.desc(), NewsQuickGlanceDigest.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
             cached_digest = (
                 await session.execute(
                     select(NewsQuickGlanceDigest)
@@ -2103,6 +2175,16 @@ class NewsIngestionService:
             ).scalar_one_or_none()
             if cached_digest is not None and not force_refresh:
                 return self._hydrate_quick_glance_payload(cached_digest, cache_hit=True)
+            if (
+                latest_cached_digest is not None
+                and not force_refresh
+                and not self._should_regenerate_quick_glance_digest(
+                    now=now,
+                    cached_digest=latest_cached_digest,
+                    items=items,
+                )
+            ):
+                return self._hydrate_quick_glance_payload(latest_cached_digest, cache_hit=True)
 
             llm_payload = await generate_quick_glance_digest(
                 window_hours=window_hours,
@@ -2133,7 +2215,7 @@ class NewsIngestionService:
             if cached_digest is not None:
                 cache_row = cached_digest
                 cache_row.payload = payload
-                cache_row.generated_at = utc_now()
+                cache_row.generated_at = now
             else:
                 cache_row = NewsQuickGlanceDigest(
                     user_id=user_id,
@@ -2141,6 +2223,7 @@ class NewsIngestionService:
                     window_hours=window_hours,
                     evidence_fingerprint=evidence_fingerprint,
                     payload=payload,
+                    generated_at=now,
                 )
                 session.add(cache_row)
             await session.commit()
