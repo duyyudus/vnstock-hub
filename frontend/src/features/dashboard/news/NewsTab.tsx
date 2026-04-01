@@ -186,6 +186,11 @@ const sourceLabel = (source: NewsSourceSummary) => {
 
 const joinTags = (values: string[]) => values.join(' · ');
 
+const getDistinctArticleTickers = (tickers: string[], matchedTickers: string[]) => {
+    const matchedTickerSet = new Set(matchedTickers.map((ticker) => ticker.toUpperCase()));
+    return tickers.filter((ticker) => !matchedTickerSet.has(ticker.toUpperCase()));
+};
+
 const mergeNewsSources = (rssSources: NewsRssSource[], crawlSources: NewsCrawlSource[]) => {
     return [
         ...rssSources.map((source) => ({ ...source, type: 'rss' as const })),
@@ -1556,7 +1561,7 @@ export const NewsTab: React.FC = () => {
                                                 {item.matched_tickers.slice(0, 5).map((ticker) => (
                                                     <span key={`matched-${ticker}`} className="badge badge-primary">{ticker}</span>
                                                 ))}
-                                                {item.tickers.slice(0, 5).map((ticker) => (
+                                                {getDistinctArticleTickers(item.tickers, item.matched_tickers).slice(0, 5).map((ticker) => (
                                                     <span key={ticker} className="badge badge-secondary badge-outline">{ticker}</span>
                                                 ))}
                                                 {item.sectors.slice(0, 3).map((sector) => (
