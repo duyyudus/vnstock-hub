@@ -16,6 +16,7 @@ from app.services.llm import (
     NEWS_ARTICLE_DISCUSSION_DECISION_TASK,
     NEWS_ARTICLE_DISCUSSION_QUERY_TASK,
     NEWS_ARTICLE_SUMMARY_TASK,
+    NEWS_QUICK_GLANCE_TASK,
     NEWS_BLOCKED_LABEL_COMPILATION_TASK,
 )
 from app.services.llm.llm_client import _build_chat_url, _extract_json_payload
@@ -27,6 +28,8 @@ PROVIDER_CONFIGURATION_COOLDOWN_SECONDS = 1800.0
 ARTICLE_SUMMARY_TARGET_MIN_WORDS = 70
 ARTICLE_SUMMARY_TARGET_MAX_WORDS = 90
 ARTICLE_SUMMARY_SOFT_MAX_WORDS = 120
+QUICK_GLANCE_SUMMARY_SOFT_MAX_WORDS = 180
+QUICK_GLANCE_HIGHLIGHT_SOFT_MAX_WORDS = 80
 _provider_failure_until: dict[str, float] = {}
 _provider_last_success_at: dict[str, float] = {}
 PLACEHOLDER_PROVIDER_VALUES = {
@@ -515,6 +518,100 @@ async def summarize_article(
     if not summary:
         return None
     return summary
+
+
+async def generate_quick_glance_digest(
+    *,
+    window_hours: int,
+    article_count: int,
+    highlights_target: int,
+    evidence_items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not evidence_items:
+        return None
+
+    compact_evidence = [
+        {
+            "article_id": int(item["article_id"]),
+            "title": _normalize_discussion_text(str(item.get("title") or ""), limit=220),
+            "published_at": _normalize_discussion_text(str(item.get("published_at") or ""), limit=40) or None,
+            "source_title": _normalize_discussion_text(str(item.get("source_title") or ""), limit=120) or None,
+            "importance": _normalize_discussion_text(str(item.get("importance") or ""), limit=20) or None,
+            "sentiment": _normalize_discussion_text(str(item.get("sentiment") or ""), limit=20) or None,
+            "event_type": _normalize_discussion_text(str(item.get("event_type") or ""), limit=40) or None,
+            "topics": [str(topic) for topic in item.get("topics", [])][:6],
+            "tickers": [str(ticker) for ticker in item.get("tickers", [])][:6],
+            "story_source_count": int(item.get("story_source_count") or 1),
+            "why_relevant": [_normalize_discussion_text(str(reason), limit=160) for reason in item.get("why_relevant", [])[:3]],
+            "summary_text": _normalize_discussion_text(str(item.get("summary_text") or ""), limit=900),
+            "content_text": _normalize_discussion_text(str(item.get("content_text") or ""), limit=1200) or None,
+        }
+        for item in evidence_items
+        if item.get("article_id") and str(item.get("title") or "").strip()
+    ]
+    if not compact_evidence:
+        return None
+
+    prompt = (
+        "Return strict JSON with keys: "
+        "{\"summary\": string, \"highlights\": [{\"title\": string, \"body\": string, \"article_ids\": number[]}]}.\n"
+        "You are summarizing a financial news digest across multiple articles.\n"
+        "Use only the provided evidence. Do not invent facts, causes, entities, dates, or article ids.\n"
+        "Prioritize the most decision-relevant developments for investors: major company events, broad market or policy moves, "
+        "unusual importance or sentiment clusters, and stories repeated across multiple sources.\n"
+        f"Write one concise executive summary under {QUICK_GLANCE_SUMMARY_SOFT_MAX_WORDS} words.\n"
+        f"Return 3-{highlights_target} highlights when the evidence supports it. Each highlight body should stay under {QUICK_GLANCE_HIGHLIGHT_SOFT_MAX_WORDS} words.\n"
+        "For each highlight, article_ids must contain only article_id values from the evidence list below.\n"
+        "Prefer complete, grounded statements over vague market commentary.\n"
+        "Always write the summary and every highlight in Vietnamese."
+    )
+    llm_payload = await _call_json_llm(
+        NEWS_QUICK_GLANCE_TASK,
+        "You summarize multi-article financial news digests and return JSON only.",
+        (
+            f"{prompt}\n\n"
+            f"context:\n{json.dumps({'window_hours': window_hours, 'article_count': article_count}, ensure_ascii=False)}\n\n"
+            f"evidence:\n{json.dumps(compact_evidence, ensure_ascii=False)}"
+        ),
+    )
+    if not llm_payload:
+        return None
+
+    summary = _normalize_summary_text(str(llm_payload.get("summary") or ""))
+    if not summary:
+        return None
+
+    valid_article_ids = {int(item["article_id"]) for item in compact_evidence}
+    highlights: list[dict[str, Any]] = []
+    for raw_highlight in llm_payload.get("highlights", []):
+        if not isinstance(raw_highlight, dict):
+            continue
+        title = _normalize_discussion_text(str(raw_highlight.get("title") or ""), limit=140)
+        body = _normalize_discussion_text(str(raw_highlight.get("body") or ""), limit=420)
+        article_ids: list[int] = []
+        for raw_id in raw_highlight.get("article_ids", []):
+            try:
+                article_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if article_id in valid_article_ids and article_id not in article_ids:
+                article_ids.append(article_id)
+        if not title or not body or not article_ids:
+            continue
+        highlights.append(
+            {
+                "title": title,
+                "body": body,
+                "article_ids": article_ids,
+            }
+        )
+        if len(highlights) >= highlights_target:
+            break
+
+    return {
+        "summary": summary,
+        "highlights": highlights,
+    }
 
 
 async def discuss_article_with_context(

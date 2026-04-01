@@ -779,6 +779,37 @@ export interface NewsArticleSummaryResponse {
     llm_summary: string | null;
 }
 
+export type NewsQuickGlanceWindowHours = 24 | 48 | 72 | 168;
+
+export interface NewsQuickGlanceHighlight {
+    title: string;
+    body: string;
+    article_ids: number[];
+}
+
+export interface NewsQuickGlanceArticle {
+    id: number;
+    title: string;
+    published_at: string | null;
+    canonical_url: string;
+    source_title: string | null;
+    importance: string | null;
+    event_type: NewsEventType | null;
+    story_source_count: number;
+}
+
+export interface NewsQuickGlanceResponse {
+    window_hours: NewsQuickGlanceWindowHours;
+    article_count: number;
+    oldest_article_at: string | null;
+    newest_article_at: string | null;
+    generated_at: string | null;
+    cache_hit: boolean;
+    summary: string | null;
+    highlights: NewsQuickGlanceHighlight[];
+    key_articles: NewsQuickGlanceArticle[];
+}
+
 export interface NewsFeedResponse {
     items: NewsFeedItem[];
     count: number;
@@ -1252,6 +1283,19 @@ export const stockApi = {
         const params = buildNewsQueryParams(options);
         const query = params.toString();
         const response = await apiClient.get<NewsFeedResponse>(`/news/feed${query ? `?${query}` : ''}`);
+        return response.data;
+    },
+
+    async getNewsQuickGlance(
+        windowHours: NewsQuickGlanceWindowHours = 24,
+        options?: { forceRefresh?: boolean },
+    ): Promise<NewsQuickGlanceResponse> {
+        const params = new URLSearchParams();
+        params.set('window_hours', String(windowHours));
+        if (options?.forceRefresh) {
+            params.set('force_refresh', 'true');
+        }
+        const response = await apiClient.get<NewsQuickGlanceResponse>(`/news/quick-glance?${params.toString()}`);
         return response.data;
     },
 

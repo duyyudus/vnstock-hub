@@ -176,6 +176,35 @@ class NewsFeedResponse(BaseModel):
     is_personalized: bool
 
 
+class NewsQuickGlanceHighlightResponse(BaseModel):
+    title: str
+    body: str
+    article_ids: list[int] = Field(default_factory=list)
+
+
+class NewsQuickGlanceArticleResponse(BaseModel):
+    id: int
+    title: str
+    published_at: str | None = None
+    canonical_url: str
+    source_title: str | None = None
+    importance: str | None = None
+    event_type: NewsEventType | None = None
+    story_source_count: int = 1
+
+
+class NewsQuickGlanceResponse(BaseModel):
+    window_hours: int
+    article_count: int
+    oldest_article_at: str | None = None
+    newest_article_at: str | None = None
+    generated_at: str | None = None
+    cache_hit: bool
+    summary: str | None = None
+    highlights: list[NewsQuickGlanceHighlightResponse] = Field(default_factory=list)
+    key_articles: list[NewsQuickGlanceArticleResponse] = Field(default_factory=list)
+
+
 class NewsSourcesResponse(BaseModel):
     sites: list[NewsSiteResponse] = Field(default_factory=list)
     rss_sources: list[NewsRssSourceResponse] = Field(default_factory=list)
@@ -579,6 +608,59 @@ async def get_news_feed(
         count=int(payload["count"]),
         next_cursor=payload.get("next_cursor"),
         is_personalized=bool(current_user),
+    )
+
+
+@router.get("/quick-glance", response_model=NewsQuickGlanceResponse)
+async def get_news_quick_glance(
+    window_hours: int = Query(default=24),
+    force_refresh: bool = Query(default=False),
+    current_user=Depends(get_current_user_optional),
+):
+    if window_hours not in {24, 48, 72, 168}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="window_hours must be one of 24, 48, 72, or 168",
+        )
+    try:
+        payload = await news_service.get_quick_glance_digest(
+            user_id=current_user.id if current_user else None,
+            window_hours=int(window_hours),
+            force_refresh=force_refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return NewsQuickGlanceResponse(
+        window_hours=int(payload["window_hours"]),
+        article_count=int(payload["article_count"]),
+        oldest_article_at=payload.get("oldest_article_at"),
+        newest_article_at=payload.get("newest_article_at"),
+        generated_at=payload.get("generated_at"),
+        cache_hit=bool(payload.get("cache_hit")),
+        summary=payload.get("summary"),
+        highlights=[
+            NewsQuickGlanceHighlightResponse(
+                title=str(item.get("title") or ""),
+                body=str(item.get("body") or ""),
+                article_ids=[int(article_id) for article_id in item.get("article_ids", []) if article_id is not None],
+            )
+            for item in payload.get("highlights", [])
+            if isinstance(item, dict)
+        ],
+        key_articles=[
+            NewsQuickGlanceArticleResponse(
+                id=int(item["id"]),
+                title=str(item.get("title") or ""),
+                published_at=item.get("published_at"),
+                canonical_url=str(item.get("canonical_url") or ""),
+                source_title=item.get("source_title"),
+                importance=item.get("importance"),
+                event_type=item.get("event_type"),
+                story_source_count=int(item.get("story_source_count") or 1),
+            )
+            for item in payload.get("key_articles", [])
+            if isinstance(item, dict) and item.get("id") is not None
+        ],
     )
 
 

@@ -20,6 +20,7 @@ from app.db.models import (
     BookmarkGroup,
     BookmarkStock,
     NewsArticle,
+    NewsQuickGlanceDigest,
     NewsArticleSemantic,
     NewsArticleSource,
     NewsCrawlSource,
@@ -50,6 +51,7 @@ from .semantics import (
     compile_blocked_labels,
     decide_discussion_search,
     discuss_article_with_context,
+    generate_quick_glance_digest,
     generate_discussion_search_queries,
     matches_blocked_labels,
     summarize_article,
@@ -113,6 +115,9 @@ DISCUSSION_WEB_EVIDENCE_LIMIT = 3
 DISCUSSION_WEB_QUERY_LIMIT = 3
 DISCUSSION_WEB_UNIQUE_RESULT_LIMIT = 8
 DISCUSSION_WEB_RETRY_QUERY_LIMIT = 2
+QUICK_GLANCE_EVIDENCE_LIMIT = 12
+QUICK_GLANCE_HIGHLIGHT_LIMIT = 5
+QUICK_GLANCE_KEY_ARTICLE_LIMIT = 5
 DISCUSSION_BACKGROUND_INTENTS = {"overview", "ownership", "business", "financials", "comparison"}
 DISCUSSION_RESULT_MIN_SCORE_FOR_BACKGROUND = 25
 DISCUSSION_PROFILE_KEYWORDS = (
@@ -1011,6 +1016,237 @@ class NewsIngestionService:
             int(item.get("id") or 0),
         )
 
+    def _quick_glance_viewer_key(self, user_id: int | None) -> str:
+        return f"user:{user_id}" if user_id is not None else "public"
+
+    def _feed_item_source_title(self, item: dict[str, Any]) -> str | None:
+        source_title = _compact_whitespace(item.get("source_title"))
+        if source_title:
+            return source_title
+        source_labels = item.get("source_labels") or []
+        for label in source_labels:
+            normalized = _compact_whitespace(label)
+            if normalized:
+                return normalized
+        for source in item.get("sources") or []:
+            if not isinstance(source, dict):
+                continue
+            normalized = _compact_whitespace(source.get("label"))
+            if normalized:
+                return normalized
+        return None
+
+    def _build_quick_glance_evidence_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "article_id": int(item["id"]),
+            "title": item.get("title"),
+            "published_at": item.get("published_at"),
+            "source_title": self._feed_item_source_title(item),
+            "importance": item.get("importance"),
+            "sentiment": item.get("sentiment"),
+            "event_type": item.get("event_type"),
+            "topics": [str(topic) for topic in item.get("topics", [])],
+            "tickers": [str(ticker) for ticker in item.get("tickers", [])],
+            "story_source_count": int(item.get("story_source_count") or 1),
+            "why_relevant": [str(reason) for reason in item.get("why_relevant", [])],
+            "summary_text": item.get("llm_summary") or item.get("original_excerpt") or item.get("excerpt") or "",
+            "content_text": _truncate_text(item.get("content_text"), limit=1200),
+        }
+
+    def _build_quick_glance_fingerprint(
+        self,
+        items: list[dict[str, Any]],
+        evidence_items: list[dict[str, Any]],
+    ) -> str:
+        signature_payload = {
+            "article_ids": [
+                {
+                    "id": int(item["id"]),
+                    "article_updated_at": item.get("_article_updated_at"),
+                    "semantic_updated_at": item.get("_semantic_updated_at"),
+                    "story_key": item.get("story_key"),
+                }
+                for item in items
+            ],
+            "evidence_ids": [
+                {
+                    "article_id": int(item["article_id"]),
+                    "summary_text": item.get("summary_text"),
+                    "content_text": item.get("content_text"),
+                }
+                for item in evidence_items
+            ],
+        }
+        return hashlib.sha256(repr(signature_payload).encode("utf-8")).hexdigest()
+
+    def _serialize_quick_glance_key_article(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": int(item["id"]),
+            "title": str(item.get("title") or ""),
+            "published_at": item.get("published_at"),
+            "canonical_url": str(item.get("canonical_url") or ""),
+            "source_title": self._feed_item_source_title(item),
+            "importance": item.get("importance"),
+            "event_type": item.get("event_type"),
+            "story_source_count": int(item.get("story_source_count") or 1),
+        }
+
+    def _select_quick_glance_key_articles(
+        self,
+        story_items: list[dict[str, Any]],
+        *,
+        highlighted_article_ids: list[int],
+    ) -> list[dict[str, Any]]:
+        story_map = {
+            int(item["id"]): item
+            for item in story_items
+            if item.get("id") is not None
+        }
+        selected: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for article_id in highlighted_article_ids:
+            item = story_map.get(int(article_id))
+            if item is None or int(item["id"]) in seen:
+                continue
+            seen.add(int(item["id"]))
+            selected.append(self._serialize_quick_glance_key_article(item))
+            if len(selected) >= QUICK_GLANCE_KEY_ARTICLE_LIMIT:
+                return selected
+        for item in story_items:
+            article_id = int(item["id"])
+            if article_id in seen:
+                continue
+            seen.add(article_id)
+            selected.append(self._serialize_quick_glance_key_article(item))
+            if len(selected) >= QUICK_GLANCE_KEY_ARTICLE_LIMIT:
+                break
+        return selected
+
+    def _hydrate_quick_glance_payload(
+        self,
+        cache_row: NewsQuickGlanceDigest,
+        *,
+        cache_hit: bool,
+    ) -> dict[str, Any]:
+        payload = dict(cache_row.payload or {})
+        return {
+            "window_hours": int(payload.get("window_hours") or cache_row.window_hours),
+            "article_count": int(payload.get("article_count") or 0),
+            "oldest_article_at": payload.get("oldest_article_at"),
+            "newest_article_at": payload.get("newest_article_at"),
+            "generated_at": utc_naive_to_local_iso(cache_row.generated_at),
+            "cache_hit": cache_hit,
+            "summary": payload.get("summary"),
+            "highlights": [
+                {
+                    "title": str(item.get("title") or ""),
+                    "body": str(item.get("body") or ""),
+                    "article_ids": [int(article_id) for article_id in item.get("article_ids", []) if article_id is not None],
+                }
+                for item in payload.get("highlights", [])
+                if isinstance(item, dict)
+            ],
+            "key_articles": [
+                {
+                    "id": int(item["id"]),
+                    "title": str(item.get("title") or ""),
+                    "published_at": item.get("published_at"),
+                    "canonical_url": str(item.get("canonical_url") or ""),
+                    "source_title": item.get("source_title"),
+                    "importance": item.get("importance"),
+                    "event_type": item.get("event_type"),
+                    "story_source_count": int(item.get("story_source_count") or 1),
+                }
+                for item in payload.get("key_articles", [])
+                if isinstance(item, dict) and item.get("id") is not None
+            ],
+        }
+
+    async def _collect_feed_items(
+        self,
+        session,
+        *,
+        user_id: int | None,
+        source: str | None = None,
+        ticker: str | None = None,
+        topic: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        scope: str = "all",
+        bookmark_group_id: int | None = None,
+        event_type: str | None = None,
+        importance: str | None = None,
+        include_content: bool = False,
+    ) -> list[dict[str, Any]]:
+        source_filter = source.strip().lower() if source else None
+        ticker_filter = ticker.strip().upper() if ticker else None
+        topic_filter = topic.strip().lower() if topic else None
+        event_type_filter = event_type.strip().lower() if event_type else None
+        importance_filter = importance.strip().lower() if importance else None
+        scope_mode = scope if user_id is not None and scope in {"all", "portfolio", "bookmarks"} else "all"
+
+        blocked_labels = await self._load_blocked_labels(session, user_id)
+        interest_context = await self._load_user_interest_context(
+            session,
+            user_id=user_id,
+            bookmark_group_id=bookmark_group_id,
+        )
+        stmt = select(NewsArticle).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
+        if date_from:
+            stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at >= date_from)
+        if date_to:
+            stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at <= date_to)
+        articles = (await session.execute(stmt)).scalars().all()
+        semantic_map = await self._load_semantics_map(session, [article.id for article in articles])
+        source_map = await self._load_article_sources_map(session, [article.id for article in articles], user_id=user_id)
+
+        items: list[dict[str, Any]] = []
+        for article in articles:
+            sources = source_map.get(article.id, [])
+            if not sources:
+                continue
+            semantics = semantic_map.get(article.id)
+            normalized_topics = [str(item) for item in (semantics.topics if semantics else [])]
+            display_topics = _display_topics(semantics)
+            semantic_tickers = [str(item).strip().upper() for item in (semantics.tickers if semantics else []) if str(item).strip()]
+            matched_portfolio_tickers = sorted(set(semantic_tickers) & interest_context["portfolio_tickers"])
+            matched_bookmark_tickers = sorted(set(semantic_tickers) & interest_context["bookmark_tickers"])
+            semantic_event_type = _semantic_event_type(semantics)
+            if source_filter and not any(source_filter == str(item.get("domain") or "").lower() for item in sources):
+                continue
+            if ticker_filter and ticker_filter not in semantic_tickers:
+                continue
+            if not _matches_topic_filter(topic_filter, display_topics):
+                continue
+            if event_type_filter and semantic_event_type != event_type_filter:
+                continue
+            if importance_filter and str(semantics.importance if semantics else "").strip().lower() != importance_filter:
+                continue
+            if scope_mode == "portfolio" and not matched_portfolio_tickers:
+                continue
+            if scope_mode == "bookmarks" and not matched_bookmark_tickers:
+                continue
+            if matches_blocked_labels(
+                blocked_labels,
+                article_topics=normalized_topics,
+                article_tickers=semantic_tickers,
+                title=article.title,
+                excerpt=article.excerpt,
+                content_text=article.content_text,
+            ):
+                continue
+            payload = self._build_feed_payload(
+                article,
+                sources=sources,
+                semantics=semantics,
+                interest_context=interest_context,
+                include_content=include_content,
+            )
+            payload["_article_updated_at"] = utc_naive_to_local_iso(article.updated_at)
+            payload["_semantic_updated_at"] = utc_naive_to_local_iso(semantics.updated_at if semantics else None)
+            items.append(payload)
+        return items
+
     async def _load_related_articles(
         self,
         session,
@@ -1783,74 +2019,23 @@ class NewsIngestionService:
     ) -> dict[str, Any]:
         safe_limit = min(50, max(1, limit))
         offset = self._parse_offset_cursor(cursor)
-        source_filter = source.strip().lower() if source else None
-        ticker_filter = ticker.strip().upper() if ticker else None
-        topic_filter = topic.strip().lower() if topic else None
-        event_type_filter = event_type.strip().lower() if event_type else None
-        importance_filter = importance.strip().lower() if importance else None
         scope_mode = scope if user_id is not None and scope in {"all", "portfolio", "bookmarks"} else "all"
         sort_mode = sort if user_id is not None and sort == "relevance" else "latest"
         group_mode = "story" if group_by == "story" else "article"
         async with async_session() as session:
-            blocked_labels = await self._load_blocked_labels(session, user_id)
-            interest_context = await self._load_user_interest_context(
+            items = await self._collect_feed_items(
                 session,
                 user_id=user_id,
+                source=source,
+                ticker=ticker,
+                topic=topic,
+                date_from=date_from,
+                date_to=date_to,
+                scope=scope_mode,
                 bookmark_group_id=bookmark_group_id,
+                event_type=event_type,
+                importance=importance,
             )
-            stmt = select(NewsArticle).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
-            if date_from:
-                stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at >= date_from)
-            if date_to:
-                stmt = stmt.where(NewsArticle.published_at.is_not(None), NewsArticle.published_at <= date_to)
-            articles = (await session.execute(stmt)).scalars().all()
-            semantic_map = await self._load_semantics_map(session, [article.id for article in articles])
-            source_map = await self._load_article_sources_map(session, [article.id for article in articles], user_id=user_id)
-
-            items: list[dict[str, Any]] = []
-            for article in articles:
-                sources = source_map.get(article.id, [])
-                if not sources:
-                    continue
-                semantics = semantic_map.get(article.id)
-                normalized_topics = [str(item) for item in (semantics.topics if semantics else [])]
-                display_topics = _display_topics(semantics)
-                semantic_tickers = [str(item).strip().upper() for item in (semantics.tickers if semantics else []) if str(item).strip()]
-                matched_portfolio_tickers = sorted(set(semantic_tickers) & interest_context["portfolio_tickers"])
-                matched_bookmark_tickers = sorted(set(semantic_tickers) & interest_context["bookmark_tickers"])
-                semantic_event_type = _semantic_event_type(semantics)
-                if source_filter and not any(source_filter == str(item.get("domain") or "").lower() for item in sources):
-                    continue
-                if ticker_filter and ticker_filter not in semantic_tickers:
-                    continue
-                if not _matches_topic_filter(topic_filter, display_topics):
-                    continue
-                if event_type_filter and semantic_event_type != event_type_filter:
-                    continue
-                if importance_filter and str(semantics.importance if semantics else "").strip().lower() != importance_filter:
-                    continue
-                if scope_mode == "portfolio" and not matched_portfolio_tickers:
-                    continue
-                if scope_mode == "bookmarks" and not matched_bookmark_tickers:
-                    continue
-                if matches_blocked_labels(
-                    blocked_labels,
-                    article_topics=normalized_topics,
-                    article_tickers=semantic_tickers,
-                    title=article.title,
-                    excerpt=article.excerpt,
-                    content_text=article.content_text,
-                ):
-                    continue
-                items.append(
-                    self._build_feed_payload(
-                        article,
-                        sources=sources,
-                        semantics=semantics,
-                        interest_context=interest_context,
-                    )
-                )
-
             items.sort(
                 key=lambda item: (
                     self._story_sort_key(item) if sort_mode == "relevance" else (0, str(item.get("published_at") or ""), int(item.get("id") or 0))
@@ -1864,6 +2049,103 @@ class NewsIngestionService:
             if offset + safe_limit < total_count:
                 next_cursor = f"offset:{offset + safe_limit}"
             return {"items": paged_items, "count": total_count, "next_cursor": next_cursor}
+
+    async def get_quick_glance_digest(
+        self,
+        *,
+        user_id: int | None,
+        window_hours: int,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        window_start = now - timedelta(hours=window_hours)
+        async with async_session() as session:
+            items = await self._collect_feed_items(
+                session,
+                user_id=user_id,
+                date_from=window_start,
+                date_to=now,
+                include_content=True,
+            )
+            if not items:
+                return {
+                    "window_hours": window_hours,
+                    "article_count": 0,
+                    "oldest_article_at": None,
+                    "newest_article_at": None,
+                    "generated_at": utc_naive_to_local_iso(now),
+                    "cache_hit": False,
+                    "summary": None,
+                    "highlights": [],
+                    "key_articles": [],
+                }
+
+            newest_article_at = max(str(item.get("published_at") or "") for item in items) or None
+            oldest_article_at = min(str(item.get("published_at") or "") for item in items) or None
+            ranked_items = sorted(items, key=self._story_sort_key, reverse=True)
+            story_items = self._annotate_story_groups(ranked_items, group_by="story")
+            evidence_story_items = story_items[:QUICK_GLANCE_EVIDENCE_LIMIT]
+            evidence_items = [self._build_quick_glance_evidence_item(item) for item in evidence_story_items]
+            evidence_fingerprint = self._build_quick_glance_fingerprint(items, evidence_items)
+            viewer_key = self._quick_glance_viewer_key(user_id)
+
+            cached_digest = (
+                await session.execute(
+                    select(NewsQuickGlanceDigest)
+                    .where(
+                        NewsQuickGlanceDigest.viewer_key == viewer_key,
+                        NewsQuickGlanceDigest.window_hours == window_hours,
+                        NewsQuickGlanceDigest.evidence_fingerprint == evidence_fingerprint,
+                    )
+                    .order_by(NewsQuickGlanceDigest.generated_at.desc(), NewsQuickGlanceDigest.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if cached_digest is not None and not force_refresh:
+                return self._hydrate_quick_glance_payload(cached_digest, cache_hit=True)
+
+            llm_payload = await generate_quick_glance_digest(
+                window_hours=window_hours,
+                article_count=len(items),
+                highlights_target=QUICK_GLANCE_HIGHLIGHT_LIMIT,
+                evidence_items=evidence_items,
+            )
+            if not llm_payload:
+                raise ValueError("Unable to generate quick glance digest for this timeframe")
+
+            key_articles = self._select_quick_glance_key_articles(
+                story_items,
+                highlighted_article_ids=[
+                    article_id
+                    for highlight in llm_payload.get("highlights", [])
+                    for article_id in highlight.get("article_ids", [])
+                ],
+            )
+            payload = {
+                "window_hours": window_hours,
+                "article_count": len(items),
+                "oldest_article_at": oldest_article_at,
+                "newest_article_at": newest_article_at,
+                "summary": llm_payload["summary"],
+                "highlights": llm_payload.get("highlights", []),
+                "key_articles": key_articles,
+            }
+            if cached_digest is not None:
+                cache_row = cached_digest
+                cache_row.payload = payload
+                cache_row.generated_at = utc_now()
+            else:
+                cache_row = NewsQuickGlanceDigest(
+                    user_id=user_id,
+                    viewer_key=viewer_key,
+                    window_hours=window_hours,
+                    evidence_fingerprint=evidence_fingerprint,
+                    payload=payload,
+                )
+                session.add(cache_row)
+            await session.commit()
+            await session.refresh(cache_row)
+            return self._hydrate_quick_glance_payload(cache_row, cache_hit=False)
 
     async def get_article_detail(self, article_id: int, *, user_id: int | None) -> dict[str, Any] | None:
         async with async_session() as session:

@@ -494,6 +494,35 @@ class NewsArticleSemantic(Base):
     )
 
 
+class NewsQuickGlanceDigest(Base):
+    """Cached LLM digests for timeframe-based news summaries."""
+    __tablename__ = "news_quick_glance_digests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    viewer_key = Column(String(32), nullable=False)
+    window_hours = Column(Integer, nullable=False)
+    evidence_fingerprint = Column(String(64), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "viewer_key",
+            "window_hours",
+            "evidence_fingerprint",
+            name="uq_news_quick_glance_digest_viewer_window_fingerprint",
+        ),
+        Index(
+            "ix_news_quick_glance_digest_viewer_window_generated",
+            "viewer_key",
+            "window_hours",
+            "generated_at",
+        ),
+    )
+
+
 class NewsUserPreference(Base):
     """Per-user topic-block profile for personalized feed filtering."""
     __tablename__ = "news_user_preferences"

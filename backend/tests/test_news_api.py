@@ -13,6 +13,7 @@ from app.db.models import (
     NewsArticleSource,
     NewsSite,
     NewsSiteFeed,
+    NewsSourceSubscription,
     NewsUserPreference,
     PortfolioPosition,
 )
@@ -747,6 +748,299 @@ async def test_generate_news_article_summary_force_refresh_overwrites_existing_s
     payload = response.json()
     assert payload["excerpt"] == "Refreshed summary"
     assert payload["llm_summary"] == "Refreshed summary"
+
+
+@pytest.mark.asyncio
+async def test_get_news_quick_glance_rejects_unsupported_window(client):
+    response = await client.get("/api/v1/news/quick-glance?window_hours=12")
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_news_quick_glance_anonymous_only_sees_public_articles(client, db_session, monkeypatch):
+    headers, user_id = await _register_and_auth(client, "news-quick-glance@example.com")
+
+    public_site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example News",
+        is_public=True,
+    )
+    private_site = NewsSite(
+        domain="private.example.com",
+        homepage_url="https://private.example.com",
+        display_name="Private News",
+        is_public=False,
+    )
+    db_session.add_all([public_site, private_site])
+    await db_session.flush()
+
+    public_feed = NewsSiteFeed(
+        site_id=public_site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    private_feed = NewsSiteFeed(
+        site_id=private_site.id,
+        feed_url="https://private.example.com/rss.xml",
+        title="Private RSS",
+        kind="rss",
+        discovery_method="manual",
+        validation_status="valid",
+        is_public=False,
+    )
+    db_session.add_all([public_feed, private_feed])
+    await db_session.flush()
+    db_session.add(NewsSourceSubscription(user_id=user_id, site_feed_id=private_feed.id, enabled=True))
+    await db_session.flush()
+
+    public_article = NewsArticle(
+        canonical_url="https://example.com/articles/public",
+        title="ABC posts strong earnings",
+        excerpt="Public story",
+        content_text="ABC earnings and revenue growth.",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="hash-public",
+    )
+    private_article = NewsArticle(
+        canonical_url="https://private.example.com/articles/private",
+        title="XYZ signs private deal",
+        excerpt="Private story",
+        content_text="XYZ signs a private agreement.",
+        published_at=datetime(2026, 3, 26, 9, 0, 0),
+        language="en",
+        content_hash="hash-private",
+    )
+    db_session.add_all([public_article, private_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=public_article.id, site_feed_id=public_feed.id, article_url=public_article.canonical_url),
+            NewsArticleSource(article_id=private_article.id, site_feed_id=private_feed.id, article_url=private_article.canonical_url),
+            NewsArticleSemantic(
+                article_id=public_article.id,
+                topics=["earnings"],
+                tickers=["ABC"],
+                sectors=["technology"],
+                importance="high",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="earnings", story_key="ABC|quick|public", display_topics=["Earnings"]),
+            ),
+            NewsArticleSemantic(
+                article_id=private_article.id,
+                topics=["contracts"],
+                tickers=["XYZ"],
+                sectors=["industrials"],
+                importance="medium",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="other", story_key="XYZ|quick|private", display_topics=["Contracts"]),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr("app.services.news.service.utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+
+    async def _fake_generate_quick_glance_digest(*, article_count: int, evidence_items: list[dict], **kwargs):
+        return {
+            "summary": f"Digest over {article_count} accessible articles.",
+            "highlights": [
+                {
+                    "title": "Lead story",
+                    "body": "The digest stayed grounded in visible evidence.",
+                    "article_ids": [evidence_items[0]["article_id"]],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.services.news.service.generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    anonymous_response = await client.get("/api/v1/news/quick-glance?window_hours=24")
+    signed_in_response = await client.get("/api/v1/news/quick-glance?window_hours=24", headers=headers)
+
+    assert anonymous_response.status_code == 200
+    assert signed_in_response.status_code == 200
+    assert anonymous_response.json()["article_count"] == 1
+    assert signed_in_response.json()["article_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_news_quick_glance_respects_blocked_topics(client, db_session, monkeypatch):
+    headers, user_id = await _register_and_auth(client, "news-quick-blocked@example.com")
+
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example News",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    keep_article = NewsArticle(
+        canonical_url="https://example.com/articles/earnings",
+        title="ABC posts strong earnings",
+        excerpt="Earnings story",
+        content_text="ABC earnings and revenue growth.",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="hash-keep",
+    )
+    blocked_article = NewsArticle(
+        canonical_url="https://example.com/articles/dividend",
+        title="ABC declares dividend",
+        excerpt="Dividend story",
+        content_text="ABC declared a cash dividend.",
+        published_at=datetime(2026, 3, 26, 9, 30, 0),
+        language="en",
+        content_hash="hash-blocked",
+    )
+    db_session.add_all([keep_article, blocked_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=keep_article.id, site_feed_id=feed.id, article_url=keep_article.canonical_url),
+            NewsArticleSource(article_id=blocked_article.id, site_feed_id=feed.id, article_url=blocked_article.canonical_url),
+            NewsArticleSemantic(
+                article_id=keep_article.id,
+                topics=["earnings"],
+                tickers=["ABC"],
+                sectors=["technology"],
+                importance="high",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="earnings", story_key="ABC|quick|keep", display_topics=["Earnings"]),
+            ),
+            NewsArticleSemantic(
+                article_id=blocked_article.id,
+                topics=["dividend"],
+                tickers=["ABC"],
+                sectors=["technology"],
+                importance="medium",
+                sentiment="positive",
+                raw_payload=_semantic_payload(event_type="dividend", story_key="ABC|quick|blocked", display_topics=["Dividend"]),
+            ),
+            NewsUserPreference(user_id=user_id, blocked_topics_text="dividend", blocked_labels=["dividend"]),
+        ]
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr("app.services.news.service.utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+
+    async def _fake_generate_quick_glance_digest(*, article_count: int, evidence_items: list[dict], **kwargs):
+        assert article_count == 1
+        return {
+            "summary": "Only non-blocked articles were included.",
+            "highlights": [
+                {
+                    "title": "Visible story",
+                    "body": "The blocked dividend article was excluded.",
+                    "article_ids": [evidence_items[0]["article_id"]],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.services.news.service.generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    response = await client.get("/api/v1/news/quick-glance?window_hours=24", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["article_count"] == 1
+    assert payload["key_articles"][0]["id"] == keep_article.id
+
+
+@pytest.mark.asyncio
+async def test_get_news_quick_glance_force_refresh_regenerates_digest(client, db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example News",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Example RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    article = NewsArticle(
+        canonical_url="https://example.com/articles/refresh-digest",
+        title="ABC posts strong earnings",
+        excerpt="Quarterly earnings improved.",
+        content_text="ABC earnings and revenue growth.",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        language="en",
+        content_hash="hash-refresh-digest",
+    )
+    db_session.add(article)
+    await db_session.flush()
+    db_session.add(NewsArticleSource(article_id=article.id, site_feed_id=feed.id, article_url=article.canonical_url))
+    db_session.add(
+        NewsArticleSemantic(
+            article_id=article.id,
+            topics=["earnings"],
+            tickers=["ABC"],
+            sectors=["technology"],
+            importance="high",
+            sentiment="positive",
+            raw_payload=_semantic_payload(event_type="earnings", story_key="ABC|quick|refresh", display_topics=["Earnings"]),
+        )
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr("app.services.news.service.utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+    calls: list[int] = []
+
+    async def _fake_generate_quick_glance_digest(**kwargs):
+        calls.append(1)
+        return {
+            "summary": f"Digest version {len(calls)}",
+            "highlights": [
+                {
+                    "title": "Top story",
+                    "body": "ABC remained the lead story.",
+                    "article_ids": [article.id],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.services.news.service.generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    first_response = await client.get("/api/v1/news/quick-glance?window_hours=24")
+    second_response = await client.get("/api/v1/news/quick-glance?window_hours=24&force_refresh=true")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["summary"] == "Digest version 1"
+    assert second_response.json()["summary"] == "Digest version 2"
+    assert calls == [1, 1]
 
 
 @pytest.mark.asyncio

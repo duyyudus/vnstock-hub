@@ -7,6 +7,9 @@ import NewsArticleDetailModal, {
 } from './NewsArticleDetailModal';
 import {
     type BookmarkGroup,
+    type NewsQuickGlanceArticle,
+    type NewsQuickGlanceResponse,
+    type NewsQuickGlanceWindowHours,
     stockApi,
     type NewsArticleDetail,
     type NewsArticleDiscussionResponse,
@@ -66,6 +69,12 @@ type PanelKey = 'rssDiscovery' | 'manualRss' | 'crawlSource' | 'blockedTopics' |
 
 const FEED_PAGE_SIZE = 20;
 const NEWS_UTILITY_RAIL_STORAGE_KEY = 'news:utility-rail-open';
+const QUICK_GLANCE_WINDOW_OPTIONS: Array<{ value: NewsQuickGlanceWindowHours; label: string }> = [
+    { value: 24, label: '24h' },
+    { value: 48, label: '48h' },
+    { value: 72, label: '72h' },
+    { value: 168, label: '7d' },
+];
 
 const NEWS_EVENT_FILTER_OPTIONS: Array<{ value: NewsEventType; label: string }> = [
     { value: 'earnings', label: 'Earnings' },
@@ -231,6 +240,10 @@ export const NewsTab: React.FC = () => {
     const [feedPersonalized, setFeedPersonalized] = useState(false);
     const [feedLoading, setFeedLoading] = useState(true);
     const [feedError, setFeedError] = useState<string | null>(null);
+    const [quickGlanceWindowHours, setQuickGlanceWindowHours] = useState<NewsQuickGlanceWindowHours>(24);
+    const [quickGlanceDigest, setQuickGlanceDigest] = useState<NewsQuickGlanceResponse | null>(null);
+    const [quickGlanceLoading, setQuickGlanceLoading] = useState(true);
+    const [quickGlanceError, setQuickGlanceError] = useState<string | null>(null);
     const [feedDraft, setFeedDraft] = useState<FeedDraft>(() => createDefaultFeedDraft());
     const [appliedFeed, setAppliedFeed] = useState<FeedDraft>(() => createDefaultFeedDraft());
 
@@ -398,6 +411,20 @@ export const NewsTab: React.FC = () => {
         }
     }, [buildFeedQuery]);
 
+    const loadQuickGlanceDigest = useCallback(async (windowHours: NewsQuickGlanceWindowHours, options?: { forceRefresh?: boolean }) => {
+        setQuickGlanceLoading(true);
+        setQuickGlanceError(null);
+        try {
+            const response = await stockApi.getNewsQuickGlance(windowHours, options);
+            setQuickGlanceDigest(response);
+        } catch (error) {
+            setQuickGlanceError(getErrorMessage(error));
+            setQuickGlanceDigest(null);
+        } finally {
+            setQuickGlanceLoading(false);
+        }
+    }, []);
+
     const loadSourceManagement = useCallback(async () => {
         if (!canManageSources) {
             setSources(null);
@@ -444,6 +471,10 @@ export const NewsTab: React.FC = () => {
         setFeedCursor(null);
         void loadNewsFeed(nextDraft, false);
     }, [isSignedIn, loadNewsFeed]);
+
+    useEffect(() => {
+        void loadQuickGlanceDigest(quickGlanceWindowHours);
+    }, [isSignedIn, loadQuickGlanceDigest, quickGlanceWindowHours]);
 
     useEffect(() => {
         void loadSourceManagement();
@@ -1039,6 +1070,13 @@ export const NewsTab: React.FC = () => {
     const getItemDisplayText = (item: NewsFeedItem) => item.llm_summary?.trim() || item.excerpt;
     const getItemSummaryLoading = (itemId: number) => Boolean(summaryLoadingById[itemId]);
     const getItemSummaryError = (itemId: number) => summaryErrorById[itemId] || null;
+    const quickGlanceArticlesById = useMemo(() => {
+        const map = new Map<number, NewsQuickGlanceArticle>();
+        for (const article of quickGlanceDigest?.key_articles || []) {
+            map.set(article.id, article);
+        }
+        return map;
+    }, [quickGlanceDigest]);
 
     return (
         <div className="mx-auto w-full max-w-[101.5rem] space-y-6">
@@ -1070,69 +1108,214 @@ export const NewsTab: React.FC = () => {
             </section>
 
             <div className={`grid grid-cols-1 gap-6 items-start ${isUtilityRailOpen ? 'xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]' : 'xl:grid-cols-1'}`}>
-                <section className={`card bg-base-100 shadow-lg border border-base-300 w-full ${isUtilityRailOpen ? 'xl:max-w-[76rem] xl:justify-self-start' : 'xl:max-w-none xl:justify-self-stretch'}`}>
-                    <div className="card-body gap-5">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                            <div>
-                                <h3 className="card-title text-2xl">Feed</h3>
-                                <p className="text-sm text-base-content/70">
-                                    {feedPersonalized
-                                        ? 'Prioritize portfolio and bookmark-relevant stories, then drill into clustered coverage when something matters.'
-                                        : 'This is the public latest view from the default source pack.'}
-                                </p>
+                <div className={`space-y-6 w-full ${isUtilityRailOpen ? 'xl:max-w-[76rem] xl:justify-self-start' : 'xl:max-w-none xl:justify-self-stretch'}`}>
+                    <section className="card bg-base-100 shadow-lg border border-base-300 w-full">
+                        <div className="card-body gap-5">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <h3 className="card-title text-2xl">Quick glance</h3>
+                                    <p className="text-sm text-base-content/70">
+                                        Scan the most important developments across all accessible articles in the selected timeframe.
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {QUICK_GLANCE_WINDOW_OPTIONS.map((option) => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            className={`btn btn-sm ${quickGlanceWindowHours === option.value ? 'btn-primary' : 'btn-outline'}`}
+                                            onClick={() => setQuickGlanceWindowHours(option.value)}
+                                            disabled={quickGlanceLoading && quickGlanceWindowHours === option.value}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => void loadQuickGlanceDigest(quickGlanceWindowHours, { forceRefresh: true })}
+                                        disabled={quickGlanceLoading}
+                                    >
+                                        {quickGlanceLoading ? 'Refreshing...' : 'Refresh'}
+                                    </button>
+                                </div>
                             </div>
+
+                            {quickGlanceError ? (
+                                <div className="alert alert-error">
+                                    <span>{quickGlanceError}</span>
+                                </div>
+                            ) : null}
+
+                            {quickGlanceLoading ? (
+                                <div className="flex flex-col items-center justify-center py-10 text-base-content/70">
+                                    <span className="loading loading-spinner loading-lg text-primary" />
+                                    <p className="mt-4">Summarizing the latest news window...</p>
+                                </div>
+                            ) : null}
+
+                            {!quickGlanceLoading && !quickGlanceError && quickGlanceDigest ? (
+                                <>
+                                    <div className="flex flex-wrap gap-2 text-sm">
+                                        <div className="rounded-full border border-base-300 bg-base-200/60 px-3 py-2 text-base-content/75">
+                                            Articles: <span className="font-medium text-base-content">{quickGlanceDigest.article_count.toLocaleString()}</span>
+                                        </div>
+                                        <div className="rounded-full border border-base-300 bg-base-200/60 px-3 py-2 text-base-content/75">
+                                            Generated: <span className="font-medium text-base-content">{formatDateTime(quickGlanceDigest.generated_at)}</span>
+                                        </div>
+                                        <div className="rounded-full border border-base-300 bg-base-200/60 px-3 py-2 text-base-content/75">
+                                            Window: <span className="font-medium text-base-content">{QUICK_GLANCE_WINDOW_OPTIONS.find((option) => option.value === quickGlanceDigest.window_hours)?.label || `${quickGlanceDigest.window_hours}h`}</span>
+                                        </div>
+                                        <div className="rounded-full border border-base-300 bg-base-200/60 px-3 py-2 text-base-content/75">
+                                            {quickGlanceDigest.cache_hit ? 'Reused digest' : 'Fresh digest'}
+                                        </div>
+                                    </div>
+
+                                    {quickGlanceDigest.summary ? (
+                                        <div className="rounded-2xl border border-primary/15 bg-primary/5 p-5">
+                                            <p className="text-base leading-7 text-base-content">{quickGlanceDigest.summary}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-dashed border-base-300 p-6 text-center text-sm text-base-content/70">
+                                            No accessible articles were found in this timeframe.
+                                        </div>
+                                    )}
+
+                                    {quickGlanceDigest.highlights.length > 0 ? (
+                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                            {quickGlanceDigest.highlights.map((highlight, index) => (
+                                                <article key={`${highlight.title}-${index}`} className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm">
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <h4 className="font-semibold text-base-content">{highlight.title}</h4>
+                                                            <p className="mt-2 text-sm leading-6 text-base-content/80">{highlight.body}</p>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {highlight.article_ids.map((articleId) => {
+                                                                const article = quickGlanceArticlesById.get(articleId);
+                                                                if (!article) {
+                                                                    return null;
+                                                                }
+                                                                return (
+                                                                    <button
+                                                                        key={articleId}
+                                                                        type="button"
+                                                                        className="btn btn-ghost btn-xs"
+                                                                        onClick={() => void handleOpenRelatedArticle(articleId)}
+                                                                    >
+                                                                        {article.title}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    ) : null}
+
+                                    {quickGlanceDigest.key_articles.length > 0 ? (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-base-content/60">Key articles</h4>
+                                                <p className="text-xs text-base-content/60">
+                                                    {quickGlanceDigest.oldest_article_at && quickGlanceDigest.newest_article_at
+                                                        ? `${formatDateTime(quickGlanceDigest.oldest_article_at)} to ${formatDateTime(quickGlanceDigest.newest_article_at)}`
+                                                        : 'Current timeframe'}
+                                                </p>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                                {quickGlanceDigest.key_articles.map((article) => (
+                                                    <button
+                                                        key={article.id}
+                                                        type="button"
+                                                        className="rounded-2xl border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-base-200/50"
+                                                        onClick={() => void handleOpenRelatedArticle(article.id)}
+                                                    >
+                                                        <div className="space-y-2">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="text-sm font-semibold text-base-content">{article.title}</span>
+                                                                {article.importance ? <span className="badge badge-outline badge-sm">{article.importance}</span> : null}
+                                                            </div>
+                                                            <p className="text-xs text-base-content/60">
+                                                                {article.source_title || 'Unknown source'}
+                                                                {article.published_at ? ` · ${formatRelativeTime(article.published_at)}` : ''}
+                                                                {article.story_source_count > 1 ? ` · ${article.story_source_count} sources` : ''}
+                                                            </p>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </>
+                            ) : null}
+                        </div>
+                    </section>
+
+                    <section className="card bg-base-100 shadow-lg border border-base-300 w-full">
+                        <div className="card-body gap-5">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                <div>
+                                    <h3 className="card-title text-2xl">Feed</h3>
+                                    <p className="text-sm text-base-content/70">
+                                        {feedPersonalized
+                                            ? 'Prioritize portfolio and bookmark-relevant stories, then drill into clustered coverage when something matters.'
+                                            : 'This is the public latest view from the default source pack.'}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setIsUtilityRailOpen((current) => !current)}
+                                    >
+                                        {isUtilityRailOpen ? 'Hide setup rail' : 'Show setup rail'}
+                                    </button>
+                                    <button type="button" className="btn btn-primary btn-sm" onClick={handleApplyFilters}>
+                                        Apply filters
+                                    </button>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={handleResetFilters}>
+                                        Reset
+                                    </button>
+                                </div>
+                            </div>
+
                             <div className="flex flex-wrap gap-2">
                                 <button
                                     type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setIsUtilityRailOpen((current) => !current)}
+                                    className={`btn btn-sm ${activeFeedView === 'forYou' ? 'btn-primary' : 'btn-outline'}`}
+                                    onClick={() => void handleFeedViewChange('forYou')}
+                                    disabled={!canManageSources}
                                 >
-                                    {isUtilityRailOpen ? 'Hide setup rail' : 'Show setup rail'}
+                                    For You
                                 </button>
-                                <button type="button" className="btn btn-primary btn-sm" onClick={handleApplyFilters}>
-                                    Apply filters
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${activeFeedView === 'latest' ? 'btn-primary' : 'btn-outline'}`}
+                                    onClick={() => void handleFeedViewChange('latest')}
+                                >
+                                    Latest
                                 </button>
-                                <button type="button" className="btn btn-ghost btn-sm" onClick={handleResetFilters}>
-                                    Reset
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${activeFeedView === 'portfolio' ? 'btn-primary' : 'btn-outline'}`}
+                                    onClick={() => void handleFeedViewChange('portfolio')}
+                                    disabled={!canManageSources}
+                                >
+                                    Portfolio
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${activeFeedView === 'bookmarks' ? 'btn-primary' : 'btn-outline'}`}
+                                    onClick={() => void handleFeedViewChange('bookmarks')}
+                                    disabled={!canManageSources}
+                                >
+                                    Bookmarks
                                 </button>
                             </div>
-                        </div>
 
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${activeFeedView === 'forYou' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => void handleFeedViewChange('forYou')}
-                                disabled={!canManageSources}
-                            >
-                                For You
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${activeFeedView === 'latest' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => void handleFeedViewChange('latest')}
-                            >
-                                Latest
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${activeFeedView === 'portfolio' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => void handleFeedViewChange('portfolio')}
-                                disabled={!canManageSources}
-                            >
-                                Portfolio
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${activeFeedView === 'bookmarks' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => void handleFeedViewChange('bookmarks')}
-                                disabled={!canManageSources}
-                            >
-                                Bookmarks
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
                             <label className="form-control">
                                 <div className="label">
                                     <span className="label-text">Source</span>
@@ -1407,8 +1590,9 @@ export const NewsTab: React.FC = () => {
                                 {feedLoading ? 'Loading...' : feedCursor ? 'Load more' : 'No more articles'}
                             </button>
                         </div>
-                    </div>
-                </section>
+                        </div>
+                    </section>
+                </div>
 
                 {isUtilityRailOpen ? (
                 <div className="space-y-4 xl:w-full xl:max-w-[24rem] xl:justify-self-end">

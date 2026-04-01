@@ -6,7 +6,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.db.models import NewsArticle, NewsArticleSemantic, NewsArticleSource, NewsCrawlSource, NewsIngestionRun, NewsSite, NewsSiteFeed
+from app.db.models import NewsArticle, NewsArticleSemantic, NewsArticleSource, NewsCrawlSource, NewsIngestionRun, NewsQuickGlanceDigest, NewsSite, NewsSiteFeed
 from app.services.news import news_service
 from app.services.news import service as news_service_module
 from app.services.news.service import NEWS_STALE_RUN_MINUTES, utc_naive_to_local_iso
@@ -19,6 +19,54 @@ from app.services.news.discovery import (
     parse_feed_title,
     parse_sitemap_listing_candidates,
 )
+
+
+async def _seed_quick_glance_article(
+    db_session,
+    *,
+    feed: NewsSiteFeed,
+    title: str,
+    canonical_url: str,
+    published_at: datetime,
+    excerpt: str = "Article excerpt",
+    content_text: str = "Article body content.",
+    tickers: list[str] | None = None,
+    topics: list[str] | None = None,
+    importance: str = "high",
+    sentiment: str = "positive",
+    event_type: str = "earnings",
+    story_key: str | None = None,
+) -> NewsArticle:
+    article = NewsArticle(
+        canonical_url=canonical_url,
+        title=title,
+        excerpt=excerpt,
+        content_text=content_text,
+        published_at=published_at,
+        language="en",
+        content_hash=f"hash-{canonical_url.rsplit('/', 1)[-1]}",
+    )
+    db_session.add(article)
+    await db_session.flush()
+    db_session.add(NewsArticleSource(article_id=article.id, site_feed_id=feed.id, article_url=canonical_url))
+    db_session.add(
+        NewsArticleSemantic(
+            article_id=article.id,
+            topics=topics or ["earnings"],
+            tickers=tickers or ["ABC"],
+            sectors=["technology"],
+            importance=importance,
+            sentiment=sentiment,
+            raw_payload={
+                "event_type": event_type,
+                "event_labels": [event_type.replace("_", " ")],
+                "story_key": story_key or f"{tickers[0] if tickers else 'ABC'}|story|{article.id}",
+                "display_topics": topics or ["Earnings"],
+            },
+        )
+    )
+    await db_session.flush()
+    return article
 
 
 def test_parse_homepage_feed_candidates_discovers_multiple_feeds():
@@ -728,6 +776,303 @@ async def test_generate_article_summary_force_refresh_overwrites_existing_summar
     assert payload["excerpt"] == "Fresh regenerated summary"
     assert payload["llm_summary"] == "Fresh regenerated summary"
     assert article.llm_summary == "Fresh regenerated summary"
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_returns_structured_payload_and_persists_cache(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    first_article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="ABC earnings rise",
+        canonical_url="https://example.com/articles/quick-1",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        tickers=["ABC"],
+        story_key="ABC|story|1",
+    )
+    second_article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="XYZ wins new contract",
+        canonical_url="https://example.com/articles/quick-2",
+        published_at=datetime(2026, 3, 26, 9, 30, 0),
+        tickers=["XYZ"],
+        topics=["contracts"],
+        event_type="other",
+        story_key="XYZ|story|2",
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+
+    async def _fake_generate_quick_glance_digest(*, window_hours: int, article_count: int, highlights_target: int, evidence_items: list[dict]):
+        assert window_hours == 24
+        assert article_count == 2
+        assert highlights_target == 5
+        assert [item["article_id"] for item in evidence_items[:2]] == [first_article.id, second_article.id]
+        return {
+            "summary": "ABC earnings and XYZ contract wins dominated the session.",
+            "highlights": [
+                {
+                    "title": "ABC led earnings coverage",
+                    "body": "ABC posted the highest-importance story in the window.",
+                    "article_ids": [first_article.id],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    cached_rows = (await db_session.execute(select(NewsQuickGlanceDigest))).scalars().all()
+
+    assert payload["article_count"] == 2
+    assert payload["summary"] == "ABC earnings and XYZ contract wins dominated the session."
+    assert payload["highlights"][0]["article_ids"] == [first_article.id]
+    assert payload["key_articles"][0]["id"] == first_article.id
+    assert payload["cache_hit"] is False
+    assert len(cached_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_returns_empty_without_calling_llm(db_session, monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+
+    async def _fake_generate_quick_glance_digest(**kwargs):
+        calls.append("called")
+        return {"summary": "Should not happen", "highlights": []}
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    assert payload["article_count"] == 0
+    assert payload["summary"] is None
+    assert payload["highlights"] == []
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_reuses_cached_result_when_articles_unchanged(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="ABC earnings rise",
+        canonical_url="https://example.com/articles/cache-1",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        tickers=["ABC"],
+        story_key="ABC|story|cache",
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+    calls: list[int] = []
+
+    async def _fake_generate_quick_glance_digest(**kwargs):
+        calls.append(1)
+        return {
+            "summary": "ABC remained the only high-signal story.",
+            "highlights": [
+                {
+                    "title": "ABC only",
+                    "body": "One article carried the window.",
+                    "article_ids": [article.id],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    first_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+    second_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    assert first_payload["cache_hit"] is False
+    assert second_payload["cache_hit"] is True
+    assert first_payload["summary"] == second_payload["summary"]
+    assert calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_force_refresh_regenerates_cached_digest(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="ABC earnings rise",
+        canonical_url="https://example.com/articles/force-refresh",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        tickers=["ABC"],
+        story_key="ABC|story|force-refresh",
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+    calls: list[int] = []
+
+    async def _fake_generate_quick_glance_digest(**kwargs):
+        calls.append(1)
+        return {
+            "summary": f"Digest version {len(calls)}",
+            "highlights": [
+                {
+                    "title": "Top story",
+                    "body": "ABC remained the top story.",
+                    "article_ids": [article.id],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    first_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+    second_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24, force_refresh=True)
+
+    cached_rows = (await db_session.execute(select(NewsQuickGlanceDigest))).scalars().all()
+
+    assert first_payload["summary"] == "Digest version 1"
+    assert second_payload["summary"] == "Digest version 2"
+    assert second_payload["cache_hit"] is False
+    assert calls == [1, 1]
+    assert len(cached_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_invalidates_cache_when_new_article_arrives(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    first_article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="ABC earnings rise",
+        canonical_url="https://example.com/articles/invalidate-1",
+        published_at=datetime(2026, 3, 26, 10, 0, 0),
+        tickers=["ABC"],
+        story_key="ABC|story|invalidate-1",
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+    call_counts: list[int] = []
+
+    async def _fake_generate_quick_glance_digest(*, evidence_items: list[dict], **kwargs):
+        call_counts.append(len(evidence_items))
+        return {
+            "summary": f"Digest run {len(call_counts)}",
+            "highlights": [
+                {
+                    "title": "Top story",
+                    "body": "The leading story changed with the article set.",
+                    "article_ids": [evidence_items[0]["article_id"]],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    first_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    second_article = await _seed_quick_glance_article(
+        db_session,
+        feed=feed,
+        title="XYZ wins new contract",
+        canonical_url="https://example.com/articles/invalidate-2",
+        published_at=datetime(2026, 3, 26, 11, 0, 0),
+        tickers=["XYZ"],
+        topics=["contracts"],
+        event_type="other",
+        story_key="XYZ|story|invalidate-2",
+    )
+    await db_session.commit()
+
+    second_payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    assert first_payload["cache_hit"] is False
+    assert second_payload["cache_hit"] is False
+    assert second_payload["article_count"] == 2
+    assert second_payload["key_articles"][0]["id"] == second_article.id
+    assert call_counts == [1, 2]
 
 
 @pytest.mark.asyncio
