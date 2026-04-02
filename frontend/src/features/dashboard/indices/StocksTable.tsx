@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, BookmarkGroup } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
@@ -62,6 +63,13 @@ interface IndustrySection {
     industry: string;
     totalMarketCap: number;
     stocks: Stock[];
+}
+
+interface TickerTooltipState {
+    text: string;
+    x: number;
+    y: number;
+    placeLeft: boolean;
 }
 
 const normalizeIndustryLabel = (industry: string | null | undefined): string => {
@@ -142,6 +150,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportingContextMenu, setExportingContextMenu] = useState(false);
     const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
+    const [tickerTooltip, setTickerTooltip] = useState<TickerTooltipState | null>(null);
     const groupTickerMap = useMemo(() => {
         const map = new Map<number, Set<string>>();
         bookmarkGroups.forEach((group) => {
@@ -179,6 +188,22 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             window.clearTimeout(timeoutId);
         };
     }, [exportNotice]);
+
+    useEffect(() => {
+        if (!tickerTooltip) {
+            return;
+        }
+
+        const clearTooltip = () => setTickerTooltip(null);
+
+        window.addEventListener('scroll', clearTooltip, true);
+        window.addEventListener('resize', clearTooltip);
+
+        return () => {
+            window.removeEventListener('scroll', clearTooltip, true);
+            window.removeEventListener('resize', clearTooltip);
+        };
+    }, [tickerTooltip]);
 
     // Formatters
     const formatPrice = (price: number): string => {
@@ -693,6 +718,26 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         );
     };
 
+    const showTickerTooltip = (
+        target: HTMLButtonElement,
+        text: string,
+    ) => {
+        const rect = target.getBoundingClientRect();
+        const horizontalGap = 12;
+        const viewportPadding = 16;
+        const estimatedTooltipWidth = 360;
+        const placeLeft =
+            rect.right + horizontalGap + estimatedTooltipWidth > window.innerWidth - viewportPadding &&
+            rect.left - horizontalGap > estimatedTooltipWidth / 2;
+
+        setTickerTooltip({
+            text,
+            x: placeLeft ? rect.left - horizontalGap : rect.right + horizontalGap,
+            y: Math.max(viewportPadding, rect.top),
+            placeLeft,
+        });
+    };
+
     const totalColumns = isLoggedIn ? 17 : 16;
 
     const renderTableHeader = () => (
@@ -931,21 +976,20 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             </td>
                             <td className="w-20">
                                 <div className="flex items-center gap-1">
-                                    <div
-                                        className="tooltip tooltip-right [&:before]:top-0 [&:before]:translate-y-0 [&:before]:whitespace-pre-line [&:before]:text-left [&:after]:top-3 [&:after]:translate-y-0"
-                                        data-tip={tickerTooltipText}
+                                    <button
+                                        className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
+                                            isInPortfolio ? 'text-accent' : 'text-primary'
+                                        }`}
+                                        onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
+                                        onContextMenu={(event) => handleTickerContextMenu(event, stock)}
+                                        onMouseEnter={(event) => showTickerTooltip(event.currentTarget, tickerTooltipText)}
+                                        onMouseLeave={() => setTickerTooltip(null)}
+                                        onFocus={(event) => showTickerTooltip(event.currentTarget, tickerTooltipText)}
+                                        onBlur={() => setTickerTooltip(null)}
+                                        aria-label={`View financial details for ${stock.ticker}`}
                                     >
-                                        <button
-                                            className={`font-bold uppercase cursor-pointer focus:outline-none transition-colors hover:underline ${
-                                                isInPortfolio ? 'text-accent' : 'text-primary'
-                                            }`}
-                                            onClick={() => (window as Window & { onTickerClick?: (ticker: string, companyName: string) => void }).onTickerClick?.(stock.ticker, stock.company_name)}
-                                            onContextMenu={(event) => handleTickerContextMenu(event, stock)}
-                                            aria-label={`View financial details for ${stock.ticker}`}
-                                        >
-                                            {stock.ticker.slice(0, 3)}
-                                        </button>
-                                    </div>
+                                        {stock.ticker.slice(0, 3)}
+                                    </button>
                                     {isInOpenTradingPosition ? (
                                         <span
                                             className="inline-flex text-warning"
@@ -1108,6 +1152,22 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             ) : (
                 renderTable(sortedStocks)
             )}
+
+            {tickerTooltip && typeof document !== 'undefined'
+                ? createPortal(
+                    <div
+                        className="pointer-events-none fixed z-[120] max-w-[min(24rem,calc(100vw-2rem))] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-base-content shadow-xl"
+                        style={{
+                            left: tickerTooltip.x,
+                            top: tickerTooltip.y,
+                            transform: tickerTooltip.placeLeft ? 'translateX(-100%)' : undefined,
+                        }}
+                    >
+                        {tickerTooltip.text}
+                    </div>,
+                    document.body,
+                )
+                : null}
 
             {contextMenu ? (
                 <div
