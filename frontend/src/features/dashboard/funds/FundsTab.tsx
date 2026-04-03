@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { stockApi, type FundPerformanceData, type Stock } from '../../../api/stockApi';
 import { FundSelector, type FundInfo } from './FundSelector';
 import { FundInfoCard } from './FundInfoCard';
@@ -12,7 +12,7 @@ import { PeriodicReturnHeatmap } from './PeriodicReturnHeatmap';
 
 type ChartType = 'growth' | 'scatter' | 'heatmap';
 type Benchmark = 'VNINDEX' | 'VN30';
-type FundApiRecord = Record<string, string | number | boolean | null>;
+type FundApiRecord = Record<string, unknown>;
 
 interface IndustryHoldingStock {
     ticker: string;
@@ -40,11 +40,11 @@ interface ApiErrorLike {
     response?: ApiErrorResponse;
 }
 
-const getStringValue = (value: string | number | boolean | null | undefined): string | null => {
+const getStringValue = (value: unknown): string | null => {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
 
-const getNumberValue = (value: string | number | boolean | null | undefined): number | null => {
+const getNumberValue = (value: unknown): number | null => {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 };
 
@@ -70,7 +70,7 @@ export const FundsTab: React.FC = () => {
     // --- Individual Fund State ---
     const [funds, setFunds] = useState<FundInfo[]>([]);
     const [selectedFund, setSelectedFund] = useState<string | null>(null);
-    const [fundInfo, setFundInfo] = useState<FundInfo | FundApiRecord | null>(null);
+    const [fundInfo, setFundInfo] = useState<FundInfo | null>(null);
     const [navData, setNavData] = useState<FundApiRecord[]>([]);
     const [topHoldings, setTopHoldings] = useState<FundApiRecord[]>([]);
     const [industryHoldings, setIndustryHoldings] = useState<FundApiRecord[]>([]);
@@ -78,6 +78,7 @@ export const FundsTab: React.FC = () => {
     const [topHoldingCompanyNames, setTopHoldingCompanyNames] = useState<Record<string, string>>({});
     const [loadingFunds, setLoadingFunds] = useState(true);
     const [loadingData, setLoadingData] = useState(false);
+    const fundDetailsSectionRef = useRef<HTMLDivElement | null>(null);
 
     // --- Fetch Aggregate Performance Data ---
     useEffect(() => {
@@ -319,7 +320,7 @@ export const FundsTab: React.FC = () => {
             setLoadingData(true);
             try {
                 const fund = funds.find(f => f.symbol === selectedFund);
-                setFundInfo(fund || { symbol: selectedFund });
+                setFundInfo(fund || { symbol: selectedFund, name: selectedFund });
 
                 const [navResponse, holdingsResponse, industryResponse, assetResponse] = await Promise.all([
                     stockApi.getFundNavReport(selectedFund),
@@ -389,6 +390,18 @@ export const FundsTab: React.FC = () => {
             cancelled = true;
         };
     }, [topHoldings]);
+
+    const handleFundSelectFromGrowthChart = (symbol: string) => {
+        if (!funds.some((fund) => fund.symbol === symbol)) {
+            return;
+        }
+
+        setSelectedFund(symbol);
+        fundDetailsSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+    };
 
     return (
         <div className="space-y-6 p-4">
@@ -495,6 +508,7 @@ export const FundsTab: React.FC = () => {
                                             funds={performanceFunds}
                                             benchmark={selectedBenchmarkData}
                                             startYear={startYear}
+                                            onFundSelect={handleFundSelectFromGrowthChart}
                                         />
                                     )}
                                     {chartType === 'scatter' && (
@@ -521,7 +535,7 @@ export const FundsTab: React.FC = () => {
             <div className="divider opacity-50"></div>
 
             {/* --- Individual Fund Details Section --- */}
-            <div className="space-y-4">
+            <div ref={fundDetailsSectionRef} className="space-y-4">
                 <div className="flex items-center justify-between border-b border-base-300 pb-2">
                     <h2 className="text-xl font-bold">Individual Fund Details</h2>
                 </div>

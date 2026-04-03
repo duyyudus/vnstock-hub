@@ -6,6 +6,7 @@ interface CumulativeGrowthChartProps {
     funds: FundPerformanceMetrics[];
     benchmark: FundPerformanceMetrics | null;
     startYear: number;
+    onFundSelect?: (symbol: string) => void;
 }
 
 interface GrowthChartRecord extends Record<string, number | string> {
@@ -32,10 +33,11 @@ interface GrowthTooltipCardProps {
     onClose?: () => void;
     footerText?: string;
     scrollable?: boolean;
+    onFundSelect?: (symbol: string) => void;
 }
 
 interface ChartInteractionState {
-    activeTooltipIndex?: number | string;
+    activeTooltipIndex?: number | string | null;
     activeLabel?: string | number;
     isTooltipActive?: boolean;
 }
@@ -99,6 +101,7 @@ const GrowthTooltipCard: React.FC<GrowthTooltipCardProps> = ({
     onClose,
     footerText,
     scrollable = false,
+    onFundSelect,
 }) => {
     const sorted = sortGrowthPayload(payload);
 
@@ -134,11 +137,23 @@ const GrowthTooltipCard: React.FC<GrowthTooltipCardProps> = ({
                 const secondaryLabel =
                     !isBenchmark && displayName && displayName !== dataKey ? displayName : null;
                 const value = typeof entry.value === 'number' ? entry.value.toFixed(1) : 'N/A';
+                const isClickableFund = !isBenchmark && typeof onFundSelect === 'function';
                 return (
                     <div key={`${dataKey}-${index}`} className="mb-1 last:mb-0">
-                        <p className="text-xs" style={{ color: entry.color }}>
-                            {isBenchmark ? '📊 ' : ''}{primaryLabel}: {value}
-                        </p>
+                        {isClickableFund ? (
+                            <button
+                                type="button"
+                                className="text-xs font-medium underline underline-offset-2 decoration-transparent transition hover:decoration-current focus:outline-none focus-visible:decoration-current"
+                                style={{ color: entry.color }}
+                                onClick={() => onFundSelect(dataKey)}
+                            >
+                                {primaryLabel}: {value}
+                            </button>
+                        ) : (
+                            <p className="text-xs" style={{ color: entry.color }}>
+                                {isBenchmark ? '📊 ' : ''}{primaryLabel}: {value}
+                            </p>
+                        )}
                         {secondaryLabel ? (
                             <p className="text-[11px] text-base-content/55 leading-tight pl-2">
                                 {secondaryLabel}
@@ -184,6 +199,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
     funds,
     benchmark,
     startYear,
+    onFundSelect,
 }) => {
     const chartContainerRef = useRef<HTMLDivElement | null>(null);
     const [pinnedDate, setPinnedDate] = useState<string | null>(null);
@@ -368,6 +384,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                             payload={pinnedTooltip.payload}
                             onClose={() => setPinnedDate(null)}
                             scrollable={true}
+                            onFundSelect={onFundSelect}
                         />
                     </div>
                 ) : null}
