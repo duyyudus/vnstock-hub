@@ -9,7 +9,12 @@ from sqlalchemy import select
 from app.db.models import NewsArticle, NewsArticleSemantic, NewsArticleSource, NewsCrawlSource, NewsIngestionRun, NewsQuickGlanceDigest, NewsSite, NewsSiteFeed
 from app.services.news import news_service
 from app.services.news import service as news_service_module
-from app.services.news.service import NEWS_STALE_RUN_MINUTES, utc_naive_to_local_iso
+from app.services.news.service import (
+    NEWS_STALE_RUN_MINUTES,
+    QUICK_GLANCE_EVIDENCE_LIMIT,
+    QUICK_GLANCE_KEY_ARTICLE_LIMIT,
+    utc_naive_to_local_iso,
+)
 from app.services.news.discovery import (
     discover_crawl_listings,
     discover_rss_feeds,
@@ -859,6 +864,74 @@ async def test_get_quick_glance_digest_returns_structured_payload_and_persists_c
     assert len(cached_rows) == 1
 
 
+def test_select_quick_glance_evidence_story_items_keeps_all_high_importance_stories_and_fills_to_limit():
+    story_items = [
+        {"id": 101, "importance": "high", "_sort_score": 500, "published_at": "2026-03-26T10:00:00"},
+        {"id": 102, "importance": "medium", "_sort_score": 490, "published_at": "2026-03-26T09:59:00"},
+        {"id": 103, "importance": "high", "_sort_score": 480, "published_at": "2026-03-26T09:58:00"},
+        {"id": 104, "importance": "medium", "_sort_score": 470, "published_at": "2026-03-26T09:57:00"},
+    ]
+    story_items.extend(
+        {
+            "id": 105 + offset,
+            "importance": "medium",
+            "_sort_score": 460 - offset,
+            "published_at": f"2026-03-26T09:{56 - offset:02d}:00",
+        }
+        for offset in range(30)
+    )
+
+    selected = news_service._select_quick_glance_evidence_story_items(story_items)
+
+    assert [item["id"] for item in selected[:4]] == [101, 103, 102, 104]
+    assert {item["id"] for item in selected[:2]} == {101, 103}
+    assert len(selected) == QUICK_GLANCE_EVIDENCE_LIMIT
+
+
+def test_select_quick_glance_evidence_story_items_allows_high_importance_overflow_beyond_limit():
+    story_items = [
+        {
+            "id": index + 1,
+            "importance": "high",
+            "_sort_score": 1000 - index,
+            "published_at": f"2026-03-26T10:{59 - index:02d}:00",
+        }
+        for index in range(QUICK_GLANCE_EVIDENCE_LIMIT + 3)
+    ]
+
+    selected = news_service._select_quick_glance_evidence_story_items(story_items)
+
+    assert [item["id"] for item in selected] == [item["id"] for item in story_items]
+    assert len(selected) == QUICK_GLANCE_EVIDENCE_LIMIT + 3
+
+
+def test_select_quick_glance_key_articles_keeps_high_importance_and_highlights_visible_when_over_limit():
+    story_items = [
+        {
+            "id": index + 1,
+            "title": f"Story {index + 1}",
+            "canonical_url": f"https://example.com/story-{index + 1}",
+            "importance": "high" if index < QUICK_GLANCE_KEY_ARTICLE_LIMIT + 1 else "medium",
+            "published_at": f"2026-03-26T10:{59 - index:02d}:00",
+            "event_type": "earnings",
+            "story_source_count": 1,
+            "source_title": "Example",
+        }
+        for index in range(QUICK_GLANCE_KEY_ARTICLE_LIMIT + 3)
+    ]
+
+    selected = news_service._select_quick_glance_key_articles(
+        story_items,
+        highlighted_article_ids=[3, QUICK_GLANCE_KEY_ARTICLE_LIMIT + 3],
+    )
+
+    selected_ids = [item["id"] for item in selected]
+
+    assert selected_ids[:2] == [3, QUICK_GLANCE_KEY_ARTICLE_LIMIT + 3]
+    assert set(selected_ids).issuperset(set(range(1, QUICK_GLANCE_KEY_ARTICLE_LIMIT + 2)))
+    assert len(selected) == QUICK_GLANCE_KEY_ARTICLE_LIMIT + 2
+
+
 @pytest.mark.asyncio
 async def test_get_quick_glance_digest_returns_empty_without_calling_llm(db_session, monkeypatch):
     calls: list[str] = []
@@ -1379,6 +1452,125 @@ async def test_get_quick_glance_digest_regenerates_for_material_update_to_high_i
     assert second_payload["cache_hit"] is False
     assert second_payload["summary"] == "Digest run 2"
     assert call_counts == [1, 1]
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_limits_key_articles_to_ten_without_high_importance_overflow(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    for index in range(QUICK_GLANCE_KEY_ARTICLE_LIMIT + 2):
+        await _seed_quick_glance_article(
+            db_session,
+            feed=feed,
+            title=f"Medium story {index + 1}",
+            canonical_url=f"https://example.com/articles/medium-{index + 1}",
+            published_at=datetime(2026, 3, 26, 10, 0, 0),
+            tickers=[f"M{index + 1:02d}"],
+            importance="medium",
+            event_type="other",
+            story_key=f"MEDIUM|story|{index + 1}",
+        )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+
+    async def _fake_generate_quick_glance_digest(*, evidence_items: list[dict], **kwargs):
+        return {
+            "summary": "Medium stories filled the window.",
+            "highlights": [
+                {
+                    "title": "Top medium story",
+                    "body": "One medium story led the digest.",
+                    "article_ids": [evidence_items[0]["article_id"]],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    assert len(payload["key_articles"]) == QUICK_GLANCE_KEY_ARTICLE_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_get_quick_glance_digest_allows_key_article_overflow_for_high_importance_stories(db_session, monkeypatch):
+    site = NewsSite(
+        domain="example.com",
+        homepage_url="https://example.com",
+        display_name="Example",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://example.com/rss.xml",
+        title="Feed One",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+    )
+    db_session.add(feed)
+    await db_session.flush()
+
+    for index in range(QUICK_GLANCE_KEY_ARTICLE_LIMIT + 1):
+        await _seed_quick_glance_article(
+            db_session,
+            feed=feed,
+            title=f"High story {index + 1}",
+            canonical_url=f"https://example.com/articles/high-overflow-{index + 1}",
+            published_at=datetime(2026, 3, 26, 10, 0, 0),
+            tickers=[f"H{index + 1:02d}"],
+            importance="high",
+            story_key=f"HIGH|story|{index + 1}",
+        )
+    await db_session.commit()
+
+    monkeypatch.setattr(news_service_module, "utc_now", lambda: datetime(2026, 3, 26, 12, 0, 0))
+    captured_evidence_ids: list[int] = []
+
+    async def _fake_generate_quick_glance_digest(*, evidence_items: list[dict], **kwargs):
+        captured_evidence_ids[:] = [item["article_id"] for item in evidence_items]
+        return {
+            "summary": "Every high-priority story stayed visible.",
+            "highlights": [
+                {
+                    "title": "Top high story",
+                    "body": "The digest highlighted one of the high-importance stories.",
+                    "article_ids": [evidence_items[0]["article_id"]],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(news_service_module, "generate_quick_glance_digest", _fake_generate_quick_glance_digest)
+
+    payload = await news_service.get_quick_glance_digest(user_id=None, window_hours=24)
+
+    assert len(captured_evidence_ids) == QUICK_GLANCE_KEY_ARTICLE_LIMIT + 1
+    assert len(payload["key_articles"]) == QUICK_GLANCE_KEY_ARTICLE_LIMIT + 1
+    assert {item["id"] for item in payload["key_articles"]} == set(captured_evidence_ids)
 
 
 @pytest.mark.asyncio

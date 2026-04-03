@@ -115,9 +115,9 @@ DISCUSSION_WEB_EVIDENCE_LIMIT = 3
 DISCUSSION_WEB_QUERY_LIMIT = 3
 DISCUSSION_WEB_UNIQUE_RESULT_LIMIT = 8
 DISCUSSION_WEB_RETRY_QUERY_LIMIT = 2
-QUICK_GLANCE_EVIDENCE_LIMIT = 12
-QUICK_GLANCE_HIGHLIGHT_LIMIT = 5
-QUICK_GLANCE_KEY_ARTICLE_LIMIT = 5
+QUICK_GLANCE_EVIDENCE_LIMIT = 24
+QUICK_GLANCE_HIGHLIGHT_LIMIT = 7
+QUICK_GLANCE_KEY_ARTICLE_LIMIT = 10
 QUICK_GLANCE_REFRESH_COOLDOWN_MINUTES = 30
 QUICK_GLANCE_MIN_CHANGED_STORIES = 2
 DISCUSSION_BACKGROUND_INTENTS = {"overview", "ownership", "business", "financials", "comparison"}
@@ -1152,6 +1152,27 @@ class NewsIngestionService:
             "story_source_count": int(item.get("story_source_count") or 1),
         }
 
+    def _is_high_importance_story(self, item: dict[str, Any]) -> bool:
+        return str(item.get("importance") or "").strip().lower() == "high"
+
+    def _select_quick_glance_evidence_story_items(
+        self,
+        story_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        high_priority_items = [item for item in story_items if self._is_high_importance_story(item)]
+        selected: list[dict[str, Any]] = list(high_priority_items)
+        seen_ids = {int(item["id"]) for item in selected if item.get("id") is not None}
+
+        for item in story_items:
+            article_id = item.get("id")
+            if article_id is None or int(article_id) in seen_ids:
+                continue
+            if len(selected) >= QUICK_GLANCE_EVIDENCE_LIMIT:
+                break
+            seen_ids.add(int(article_id))
+            selected.append(item)
+        return selected
+
     def _select_quick_glance_key_articles(
         self,
         story_items: list[dict[str, Any]],
@@ -1171,16 +1192,20 @@ class NewsIngestionService:
                 continue
             seen.add(int(item["id"]))
             selected.append(self._serialize_quick_glance_key_article(item))
-            if len(selected) >= QUICK_GLANCE_KEY_ARTICLE_LIMIT:
-                return selected
+        for item in story_items:
+            article_id = int(item["id"])
+            if article_id in seen or not self._is_high_importance_story(item):
+                continue
+            seen.add(article_id)
+            selected.append(self._serialize_quick_glance_key_article(item))
         for item in story_items:
             article_id = int(item["id"])
             if article_id in seen:
                 continue
-            seen.add(article_id)
-            selected.append(self._serialize_quick_glance_key_article(item))
             if len(selected) >= QUICK_GLANCE_KEY_ARTICLE_LIMIT:
                 break
+            seen.add(article_id)
+            selected.append(self._serialize_quick_glance_key_article(item))
         return selected
 
     def _hydrate_quick_glance_payload(
@@ -2145,7 +2170,7 @@ class NewsIngestionService:
             oldest_article_at = min(str(item.get("published_at") or "") for item in items) or None
             ranked_items = sorted(items, key=self._story_sort_key, reverse=True)
             story_items = self._annotate_story_groups(ranked_items, group_by="story")
-            evidence_story_items = story_items[:QUICK_GLANCE_EVIDENCE_LIMIT]
+            evidence_story_items = self._select_quick_glance_evidence_story_items(story_items)
             evidence_items = [self._build_quick_glance_evidence_item(item) for item in evidence_story_items]
             evidence_fingerprint = self._build_quick_glance_fingerprint(items, evidence_items)
             viewer_key = self._quick_glance_viewer_key(user_id)

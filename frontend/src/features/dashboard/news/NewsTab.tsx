@@ -292,6 +292,7 @@ export const NewsTab: React.FC = () => {
     const [discussionError, setDiscussionError] = useState<string | null>(null);
     const [summaryLoadingById, setSummaryLoadingById] = useState<Record<number, boolean>>({});
     const [summaryErrorById, setSummaryErrorById] = useState<Record<number, string | null>>({});
+    const [isQuickGlanceKeyArticlesOpen, setIsQuickGlanceKeyArticlesOpen] = useState(false);
     const [isUtilityRailOpen, setIsUtilityRailOpen] = useState<boolean>(() => {
         if (typeof window === 'undefined') {
             return false;
@@ -1222,35 +1223,48 @@ export const NewsTab: React.FC = () => {
                                     {quickGlanceDigest.key_articles.length > 0 ? (
                                         <div className="space-y-3">
                                             <div className="flex items-center justify-between gap-3">
-                                                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-base-content/60">Key articles</h4>
+                                                <button
+                                                    type="button"
+                                                    className="flex items-center gap-3 text-left"
+                                                    onClick={() => setIsQuickGlanceKeyArticlesOpen((current) => !current)}
+                                                    aria-expanded={isQuickGlanceKeyArticlesOpen}
+                                                    aria-controls="quick-glance-key-articles"
+                                                >
+                                                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-base-content/60">Key articles</h4>
+                                                    <span className="text-xs text-base-content/50">
+                                                        {isQuickGlanceKeyArticlesOpen ? 'Hide' : 'Show'}
+                                                    </span>
+                                                </button>
                                                 <p className="text-xs text-base-content/60">
                                                     {quickGlanceDigest.oldest_article_at && quickGlanceDigest.newest_article_at
                                                         ? `${formatDateTime(quickGlanceDigest.oldest_article_at)} to ${formatDateTime(quickGlanceDigest.newest_article_at)}`
                                                         : 'Current timeframe'}
                                                 </p>
                                             </div>
-                                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                                {quickGlanceDigest.key_articles.map((article) => (
-                                                    <button
-                                                        key={article.id}
-                                                        type="button"
-                                                        className="rounded-2xl border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-base-200/50"
-                                                        onClick={() => void handleOpenRelatedArticle(article.id)}
-                                                    >
-                                                        <div className="space-y-2">
-                                                            <div className="flex flex-wrap items-center gap-2">
-                                                                <span className="text-sm font-semibold text-base-content">{article.title}</span>
-                                                                {article.importance ? <span className="badge badge-outline badge-sm">{article.importance}</span> : null}
+                                            {isQuickGlanceKeyArticlesOpen ? (
+                                                <div id="quick-glance-key-articles" className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                                    {quickGlanceDigest.key_articles.map((article) => (
+                                                        <button
+                                                            key={article.id}
+                                                            type="button"
+                                                            className="rounded-2xl border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-base-200/50"
+                                                            onClick={() => void handleOpenRelatedArticle(article.id)}
+                                                        >
+                                                            <div className="space-y-2">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="text-sm font-semibold text-base-content">{article.title}</span>
+                                                                    {article.importance ? <span className="badge badge-outline badge-sm">{article.importance}</span> : null}
+                                                                </div>
+                                                                <p className="text-xs text-base-content/60">
+                                                                    {article.source_title || 'Unknown source'}
+                                                                    {article.published_at ? ` · ${formatRelativeTime(article.published_at)}` : ''}
+                                                                    {article.story_source_count > 1 ? ` · ${article.story_source_count} sources` : ''}
+                                                                </p>
                                                             </div>
-                                                            <p className="text-xs text-base-content/60">
-                                                                {article.source_title || 'Unknown source'}
-                                                                {article.published_at ? ` · ${formatRelativeTime(article.published_at)}` : ''}
-                                                                {article.story_source_count > 1 ? ` · ${article.story_source_count} sources` : ''}
-                                                            </p>
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            ) : null}
                                         </div>
                                     ) : null}
                                 </>
