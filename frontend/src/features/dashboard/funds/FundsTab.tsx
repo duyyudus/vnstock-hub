@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { stockApi, type FundPerformanceData } from '../../../api/stockApi';
+import { stockApi, type FundPerformanceData, type Stock } from '../../../api/stockApi';
 import { FundSelector, type FundInfo } from './FundSelector';
 import { FundInfoCard } from './FundInfoCard';
 import { NavReportChart } from './NavReportChart';
@@ -14,6 +14,21 @@ type ChartType = 'growth' | 'scatter' | 'heatmap';
 type Benchmark = 'VNINDEX' | 'VN30';
 type FundApiRecord = Record<string, string | number | boolean | null>;
 
+interface IndustryHoldingStock {
+    ticker: string;
+    companyName?: string;
+    marketValue?: number;
+    allocation?: number;
+}
+
+interface EnrichedIndustryHoldingRecord extends FundApiRecord {
+    stocks?: IndustryHoldingStock[];
+}
+
+interface EnrichedTopHoldingRecord extends FundApiRecord {
+    company_name?: string;
+}
+
 interface ApiErrorResponse {
     status?: number;
     data?: {
@@ -24,6 +39,18 @@ interface ApiErrorResponse {
 interface ApiErrorLike {
     response?: ApiErrorResponse;
 }
+
+const getStringValue = (value: string | number | boolean | null | undefined): string | null => {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+};
+
+const getNumberValue = (value: string | number | boolean | null | undefined): number | null => {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
+
+const normalizeIndustryKey = (value: string | null): string | null => {
+    return value ? value.trim().toLocaleLowerCase() : null;
+};
 
 /**
  * Funds Tab - displays aggregate performance charts and individual fund data.
@@ -36,7 +63,7 @@ export const FundsTab: React.FC = () => {
     const [performanceWarning, setPerformanceWarning] = useState<string | null>(null);
     const [chartType, setChartType] = useState<ChartType>('growth');
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
-    const [startYear, setStartYear] = useState<number>(new Date().getFullYear() - 3);
+    const [startYear, setStartYear] = useState<number>(() => new Date().getFullYear());
     const [isSyncing, setIsSyncing] = useState(false);
     const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null);
 
@@ -48,6 +75,7 @@ export const FundsTab: React.FC = () => {
     const [topHoldings, setTopHoldings] = useState<FundApiRecord[]>([]);
     const [industryHoldings, setIndustryHoldings] = useState<FundApiRecord[]>([]);
     const [assetHoldings, setAssetHoldings] = useState<FundApiRecord[]>([]);
+    const [topHoldingCompanyNames, setTopHoldingCompanyNames] = useState<Record<string, string>>({});
     const [loadingFunds, setLoadingFunds] = useState(true);
     const [loadingData, setLoadingData] = useState(false);
 
@@ -64,13 +92,14 @@ export const FundsTab: React.FC = () => {
                 setRateLimitUntil(null);
 
                 if (response.funds.length > 0) {
+                    const currentYear = new Date().getFullYear();
                     const years = new Set<number>();
                     response.funds.forEach((fund) => {
                         Object.keys(fund.yearly_returns).forEach((y) => years.add(parseInt(y, 10)));
                     });
                     const sortedYears = Array.from(years).sort((a, b) => a - b);
                     if (sortedYears.length > 0) {
-                        const defaultStart = new Date().getFullYear() - 3;
+                        const defaultStart = currentYear;
                         if (sortedYears.includes(defaultStart)) {
                             setStartYear(defaultStart);
                         } else {
@@ -152,6 +181,83 @@ export const FundsTab: React.FC = () => {
         return performanceData?.benchmarks?.[benchmark] || null;
     }, [performanceData, benchmark]);
 
+    const enrichedTopHoldings = useMemo<EnrichedTopHoldingRecord[]>(() => {
+        return topHoldings.map((holding) => {
+            const ticker = getStringValue(holding.ticker)
+                || getStringValue(holding.stock_code)
+                || getStringValue(holding.symbol);
+            const normalizedTicker = ticker?.toUpperCase();
+            const companyName = getStringValue(holding.company_name)
+                || getStringValue(holding.companyName)
+                || (normalizedTicker ? topHoldingCompanyNames[normalizedTicker] : null);
+
+            return companyName
+                ? {
+                    ...holding,
+                    company_name: companyName,
+                }
+                : holding;
+        });
+    }, [topHoldings, topHoldingCompanyNames]);
+
+    const enrichedIndustryHoldings = useMemo<EnrichedIndustryHoldingRecord[]>(() => {
+        if (industryHoldings.length === 0) {
+            return [];
+        }
+
+        const stocksByIndustry = new Map<string, IndustryHoldingStock[]>();
+
+        enrichedTopHoldings.forEach((holding) => {
+            const industry = getStringValue(holding.industry);
+            const industryKey = normalizeIndustryKey(industry);
+            const ticker = getStringValue(holding.ticker)
+                || getStringValue(holding.stock_code)
+                || getStringValue(holding.symbol);
+
+            if (!industryKey || !ticker) {
+                return;
+            }
+
+            const stock: IndustryHoldingStock = {
+                ticker,
+                companyName: getStringValue(holding.company_name)
+                    || getStringValue(holding.companyName)
+                    || undefined,
+                marketValue: getNumberValue(holding.market_value)
+                    ?? getNumberValue(holding.marketValue)
+                    ?? undefined,
+                allocation: getNumberValue(holding.allocation)
+                    ?? getNumberValue(holding.net_asset_percent)
+                    ?? getNumberValue(holding.weight)
+                    ?? getNumberValue(holding.percentage)
+                    ?? undefined,
+            };
+
+            const industryStocks = stocksByIndustry.get(industryKey) || [];
+            industryStocks.push(stock);
+            stocksByIndustry.set(industryKey, industryStocks);
+        });
+
+        stocksByIndustry.forEach((stocks, key) => {
+            stocksByIndustry.set(
+                key,
+                [...stocks].sort((a, b) => (b.allocation || 0) - (a.allocation || 0)),
+            );
+        });
+
+        return industryHoldings.map((industryHolding) => {
+            const industry = getStringValue(industryHolding.industry)
+                || getStringValue(industryHolding.sector)
+                || getStringValue(industryHolding.industry_name);
+            const industryKey = normalizeIndustryKey(industry);
+
+            return {
+                ...industryHolding,
+                stocks: industryKey ? stocksByIndustry.get(industryKey) : undefined,
+            };
+        });
+    }, [enrichedTopHoldings, industryHoldings]);
+
     // --- Fetch Fund Listing for Selector ---
     useEffect(() => {
         const fetchFunds = async () => {
@@ -179,7 +285,13 @@ export const FundsTab: React.FC = () => {
                 }).filter((fund) => fund.symbol).sort((a, b) => a.name.localeCompare(b.name));
 
                 setFunds(fundList);
-                setSelectedFund((current) => current || (fundList.length > 0 ? fundList[0].symbol : null));
+                setSelectedFund((current) => {
+                    if (!current) {
+                        return null;
+                    }
+
+                    return fundList.some((fund) => fund.symbol === current) ? current : null;
+                });
             } catch (error) {
                 console.error('Error fetching funds list:', error);
             } finally {
@@ -192,7 +304,16 @@ export const FundsTab: React.FC = () => {
 
     // --- Fetch Selected Fund Details ---
     useEffect(() => {
-        if (!selectedFund) return;
+        if (!selectedFund) {
+            setFundInfo(null);
+            setNavData([]);
+            setTopHoldings([]);
+            setIndustryHoldings([]);
+            setAssetHoldings([]);
+            setTopHoldingCompanyNames({});
+            setLoadingData(false);
+            return;
+        }
 
         const fetchFundData = async () => {
             setLoadingData(true);
@@ -220,6 +341,54 @@ export const FundsTab: React.FC = () => {
 
         fetchFundData();
     }, [selectedFund, funds]);
+
+    useEffect(() => {
+        const tickers = Array.from(new Set(
+            topHoldings
+                .map((holding) => getStringValue(holding.ticker)
+                    || getStringValue(holding.stock_code)
+                    || getStringValue(holding.symbol))
+                .filter((ticker): ticker is string => Boolean(ticker))
+                .map((ticker) => ticker.toUpperCase()),
+        ));
+
+        if (tickers.length === 0) {
+            setTopHoldingCompanyNames({});
+            return;
+        }
+
+        let cancelled = false;
+
+        const fetchTopHoldingCompanyNames = async () => {
+            try {
+                const response = await stockApi.getStockQuotes(tickers);
+                if (cancelled) {
+                    return;
+                }
+
+                const companyNames = response.stocks.reduce<Record<string, string>>((acc, stock: Stock) => {
+                    const companyName = stock.company_name.trim();
+                    if (companyName) {
+                        acc[stock.ticker.toUpperCase()] = companyName;
+                    }
+                    return acc;
+                }, {});
+
+                setTopHoldingCompanyNames(companyNames);
+            } catch (error) {
+                console.error('Error fetching top holding company names:', error);
+                if (!cancelled) {
+                    setTopHoldingCompanyNames({});
+                }
+            }
+        };
+
+        fetchTopHoldingCompanyNames();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [topHoldings]);
 
     return (
         <div className="space-y-6 p-4">
@@ -368,45 +537,49 @@ export const FundsTab: React.FC = () => {
                     </div>
                 </div>
 
-                <FundInfoCard fundInfo={fundInfo} loading={loadingData && !fundInfo} />
+                {selectedFund && (
+                    <>
+                        <FundInfoCard fundInfo={fundInfo} loading={loadingData && !fundInfo} />
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="card bg-base-100 shadow-md border border-base-300">
-                        <div className="card-body p-4">
-                            <h3 className="card-title text-base mb-2">NAV Report</h3>
-                            <div className="h-80">
-                                <NavReportChart data={navData} loading={loadingData} />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="card bg-base-100 shadow-md border border-base-300">
+                                <div className="card-body p-4">
+                                    <h3 className="card-title text-base mb-2">NAV Report</h3>
+                                    <div className="h-80">
+                                        <NavReportChart data={navData} loading={loadingData} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card bg-base-100 shadow-md border border-base-300">
+                                <div className="card-body p-4">
+                                    <h3 className="card-title text-base mb-2">Top Holdings</h3>
+                                    <div className="h-80">
+                                        <TopHoldingChart data={enrichedTopHoldings} loading={loadingData} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card bg-base-100 shadow-md border border-base-300">
+                                <div className="card-body p-4">
+                                    <h3 className="card-title text-base mb-2">Industry Allocation</h3>
+                                    <div className="h-80">
+                                        <IndustryHoldingChart data={enrichedIndustryHoldings} loading={loadingData} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card bg-base-100 shadow-md border border-base-300">
+                                <div className="card-body p-4">
+                                    <h3 className="card-title text-base mb-2">Asset Allocation</h3>
+                                    <div className="h-80">
+                                        <AssetHoldingChart data={assetHoldings} loading={loadingData} />
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="card bg-base-100 shadow-md border border-base-300">
-                        <div className="card-body p-4">
-                            <h3 className="card-title text-base mb-2">Top Holdings</h3>
-                            <div className="h-80">
-                                <TopHoldingChart data={topHoldings} loading={loadingData} />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="card bg-base-100 shadow-md border border-base-300">
-                        <div className="card-body p-4">
-                            <h3 className="card-title text-base mb-2">Industry Allocation</h3>
-                            <div className="h-80">
-                                <IndustryHoldingChart data={industryHoldings} loading={loadingData} />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="card bg-base-100 shadow-md border border-base-300">
-                        <div className="card-body p-4">
-                            <h3 className="card-title text-base mb-2">Asset Allocation</h3>
-                            <div className="h-80">
-                                <AssetHoldingChart data={assetHoldings} loading={loadingData} />
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    </>
+                )}
             </div>
         </div>
     );

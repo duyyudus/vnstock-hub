@@ -5,6 +5,8 @@ interface TopHoldingDataPoint {
     ticker?: string | null;
     symbol?: string | null;
     stock_code?: string | null;
+    company_name?: string | null;
+    companyName?: string | null;
     allocation?: number | null;
     weight?: number | null;
     percentage?: number | null;
@@ -32,10 +34,16 @@ const TopHoldingTooltip: React.FC<TopHoldingTooltipProps> = ({ active, payload }
     if (active && payload && payload.length) {
         const datum = payload[0].payload;
         const ticker = datum.ticker || datum.symbol || datum.stock_code || 'N/A';
-        const allocation = datum.allocation || datum.weight || datum.percentage || 0;
+        const companyName = datum.company_name || datum.companyName || null;
+        const allocation = datum.allocation ?? datum.weight ?? datum.percentage ?? 0;
         return (
             <div className="bg-base-100 border border-base-300 p-3 rounded-lg shadow-lg">
                 <p className="text-sm font-semibold mb-1">{ticker}</p>
+                {companyName && (
+                    <p className="text-xs text-base-content/70 mb-1 max-w-56 whitespace-normal">
+                        {companyName}
+                    </p>
+                )}
                 <p className="text-xs text-primary">
                     Allocation: {formatPercent(allocation)}
                 </p>
