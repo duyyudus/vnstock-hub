@@ -141,7 +141,7 @@ async def fetch_text(client: httpx.AsyncClient, url: str) -> str:
 
 def _looks_like_feed_url(url: str) -> bool:
     lowered = url.lower()
-    return any(token in lowered for token in ("/rss", "/feed", "atom", ".xml"))
+    return any(token in lowered for token in ("/rss", "/feed", "atom", ".xml", ".rss"))
 
 
 def _looks_like_feed_hint(value: str | None) -> bool:

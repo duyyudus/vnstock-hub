@@ -529,6 +529,52 @@ async def test_discover_rss_feeds_follows_plain_rss_directory_hub_pages():
 
 
 @pytest.mark.asyncio
+async def test_discover_rss_feeds_follows_file_style_rss_links_from_hub_pages():
+    homepage_html = """
+    <html>
+      <body>
+        <p>No explicit feed links on homepage.</p>
+      </body>
+    </html>
+    """
+    hub_html = """
+    <html>
+      <body>
+        <a href="/830/chung-khoan/co-phieu.rss">Co phieu</a>
+        <a href="/739/chung-khoan/giao-dich-noi-bo.rss">Giao dich noi bo</a>
+      </body>
+    </html>
+    """
+    feed_xml = """
+    <rss><channel>
+      <item>
+        <title>Headline</title>
+        <link>https://example.com/articles/1</link>
+        <description>Summary</description>
+        <pubDate>Wed, 26 Mar 2026 10:30:00 +0700</pubDate>
+      </item>
+    </channel></rss>
+    """
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(200, text=homepage_html)
+        if request.url.path == "/rss":
+            return httpx.Response(200, text=hub_html)
+        if request.url.path in {"/830/chung-khoan/co-phieu.rss", "/739/chung-khoan/giao-dich-noi-bo.rss"}:
+            return httpx.Response(200, text=feed_xml)
+        return httpx.Response(404, text="not found")
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport, base_url="https://example.com") as client:
+        discovered = await discover_rss_feeds(client, "https://example.com/")
+
+    urls = {item["feed_url"] for item in discovered}
+    assert "https://example.com/830/chung-khoan/co-phieu.rss" in urls
+    assert "https://example.com/739/chung-khoan/giao-dich-noi-bo.rss" in urls
+
+
+@pytest.mark.asyncio
 async def test_discover_crawl_listings_falls_back_to_category_sitemaps():
     homepage_html = """
     <html>
