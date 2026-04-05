@@ -139,6 +139,7 @@ class ScheduledSyncJobCreateRequest(BaseModel):
     interval_unit: ScheduledSyncIntervalUnit
     timezone: str = "Asia/Ho_Chi_Minh"
     max_retries: int = 3
+    partial_success_failure_threshold_percent: int = Field(default=10, ge=0, le=100)
 
 
 class ScheduledSyncJobUpdateRequest(BaseModel):
@@ -156,6 +157,7 @@ class ScheduledSyncJobUpdateRequest(BaseModel):
     interval_unit: Optional[ScheduledSyncIntervalUnit] = None
     timezone: Optional[str] = None
     max_retries: Optional[int] = None
+    partial_success_failure_threshold_percent: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class ScheduledSyncJobResponse(BaseModel):
@@ -174,6 +176,7 @@ class ScheduledSyncJobResponse(BaseModel):
     interval_unit: ScheduledSyncIntervalUnit
     timezone: str
     max_retries: int
+    partial_success_failure_threshold_percent: int
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
     created_at: Optional[str] = None

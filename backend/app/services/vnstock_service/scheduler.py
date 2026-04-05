@@ -43,12 +43,15 @@ class ScheduledSyncRunStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
+    PARTIAL_SUCCEEDED = "partial_succeeded"
     FAILED = "failed"
 
 
 @dataclass(frozen=True)
 class SchedulerDispatchResult:
+    status: ScheduledSyncRunStatus
     summary: Dict[str, Any]
+    error: str | None = None
 
 
 class SchedulerValidationError(ValueError):
@@ -330,7 +333,22 @@ class ScheduledSyncService:
             )
             return
 
-        await self._mark_run_succeeded(run_id=run_id, job_id=job.id, summary=result.summary)
+        if result.status == ScheduledSyncRunStatus.FAILED:
+            await self._mark_run_failed(
+                run_id=run_id,
+                job_id=job.id,
+                error=result.error or "Scheduled sync failed",
+                summary=result.summary,
+                schedule_retry=True,
+            )
+            return
+
+        await self._mark_run_completed(
+            run_id=run_id,
+            job_id=job.id,
+            status=result.status,
+            summary=result.summary,
+        )
 
     async def _defer_run(self, run_id: int, delay_seconds: float) -> None:
         async with async_session() as session:
@@ -345,14 +363,20 @@ class ScheduledSyncService:
             run.summary = {}
             await session.commit()
 
-    async def _mark_run_succeeded(self, run_id: int, job_id: int, summary: Dict[str, Any]) -> None:
+    async def _mark_run_completed(
+        self,
+        run_id: int,
+        job_id: int,
+        status: ScheduledSyncRunStatus,
+        summary: Dict[str, Any],
+    ) -> None:
         finished_at = utc_now()
         async with async_session() as session:
             run = await session.get(ScheduledSyncJobRun, run_id)
             job = await session.get(ScheduledSyncJob, job_id)
             if run is None or job is None:
                 return
-            run.status = ScheduledSyncRunStatus.SUCCEEDED.value
+            run.status = status.value
             run.finished_at = finished_at
             run.error = None
             run.summary = summary
@@ -410,7 +434,8 @@ class ScheduledSyncService:
                 )
                 await self._ensure_started(response)
                 snapshot = await self._monitor_symbol_job("history_sync")
-                return SchedulerDispatchResult(summary=self._build_runtime_summary(snapshot, "history"))
+                summary = self._build_runtime_summary(snapshot, "history")
+                return self._classify_completed_run(job=job, summary=summary, label="History sync")
             if job.sync_action == ScheduledSyncAction.AUDIT.value:
                 response = await self._run_history_audit_sync(
                     symbols=symbols or None,
@@ -419,8 +444,8 @@ class ScheduledSyncService:
                     auto_repair=job.auto_repair,
                     index_symbol=index_symbol,
                 )
-                self._ensure_completed_without_failures(response, "History audit")
-                return SchedulerDispatchResult(summary=response)
+                await self._ensure_started(response, "History audit")
+                return self._classify_completed_run(job=job, summary=response, label="History audit")
             if job.sync_action == ScheduledSyncAction.REPAIR.value:
                 response = await self._run_history_repair_sync(
                     symbols=symbols or None,
@@ -428,8 +453,8 @@ class ScheduledSyncService:
                     end_date=job.date_to.isoformat(),
                     index_symbol=index_symbol,
                 )
-                self._ensure_completed_without_failures(response, "History repair")
-                return SchedulerDispatchResult(summary=response)
+                await self._ensure_started(response, "History repair")
+                return self._classify_completed_run(job=job, summary=response, label="History repair")
 
         if job.sync_type == ScheduledSyncType.FINANCE.value:
             response = await self._run_finance_sync(
@@ -440,7 +465,8 @@ class ScheduledSyncService:
             )
             await self._ensure_started(response)
             snapshot = await self._monitor_symbol_job("finance_sync")
-            return SchedulerDispatchResult(summary=self._build_runtime_summary(snapshot, "finance"))
+            summary = self._build_runtime_summary(snapshot, "finance")
+            return self._classify_completed_run(job=job, summary=summary, label="Finance sync")
 
         if job.sync_type == ScheduledSyncType.COMPANY.value:
             response = await self._run_company_sync(
@@ -451,24 +477,17 @@ class ScheduledSyncService:
             )
             await self._ensure_started(response)
             snapshot = await self._monitor_symbol_job("company_sync")
-            return SchedulerDispatchResult(summary=self._build_runtime_summary(snapshot, "company"))
+            summary = self._build_runtime_summary(snapshot, "company")
+            return self._classify_completed_run(job=job, summary=summary, label="Company sync")
 
         raise SchedulerValidationError("Unsupported scheduled sync type/action")
 
-    async def _ensure_started(self, response: Dict[str, Any]) -> None:
+    async def _ensure_started(self, response: Dict[str, Any], label: str = "Scheduled sync") -> None:
         if response.get("started"):
             return
         if response.get("state") == "running":
             raise DeferredRunError(delay_seconds=self._deferred_poll_seconds)
-        raise RuntimeError(response.get("message") or "Scheduled sync did not start")
-
-    def _ensure_completed_without_failures(self, response: Dict[str, Any], label: str) -> None:
-        if not response.get("started"):
-            raise RuntimeError(response.get("message") or f"{label} did not start")
-        if int(response.get("failed_symbols") or 0) > 0:
-            raise RuntimeError(
-                response.get("message") or f"{label} completed with failed symbols"
-            )
+        raise RuntimeError(response.get("message") or f"{label} did not start")
 
     async def _monitor_symbol_job(self, runtime_name: str) -> HistoryJobStatusData:
         seen_running = False
@@ -478,11 +497,7 @@ class ScheduledSyncService:
             if runtime.is_running:
                 seen_running = True
             elif seen_running:
-                if runtime.failed_symbols > 0:
-                    raise RuntimeError(
-                        runtime.error or f"{runtime_name} completed with {runtime.failed_symbols} failed symbols"
-                    )
-                if runtime.error:
+                if runtime.error and runtime.processed_symbols < runtime.total_symbols:
                     raise RuntimeError(runtime.error)
                 return runtime
             else:
@@ -496,6 +511,7 @@ class ScheduledSyncService:
     def _build_runtime_summary(self, runtime: HistoryJobStatusData, label: str) -> Dict[str, Any]:
         return {
             "type": label,
+            "total_symbols": runtime.total_symbols,
             "processed_symbols": runtime.processed_symbols,
             "success_symbols": runtime.success_symbols,
             "failed_symbols": runtime.failed_symbols,
@@ -583,6 +599,18 @@ class ScheduledSyncService:
         if max_retries < 0:
             raise SchedulerValidationError("max_retries must be a non-negative integer")
 
+        partial_success_threshold_raw = payload.get("partial_success_failure_threshold_percent", 10)
+        try:
+            partial_success_failure_threshold_percent = int(partial_success_threshold_raw)
+        except (TypeError, ValueError) as exc:
+            raise SchedulerValidationError(
+                "partial_success_failure_threshold_percent must be an integer between 0 and 100"
+            ) from exc
+        if partial_success_failure_threshold_percent < 0 or partial_success_failure_threshold_percent > 100:
+            raise SchedulerValidationError(
+                "partial_success_failure_threshold_percent must be an integer between 0 and 100"
+            )
+
         date_from = self._parse_date_value(payload.get("date_from")) if payload.get("date_from") else None
         date_to = self._parse_date_value(payload.get("date_to")) if payload.get("date_to") else None
         auto_repair = bool(payload.get("auto_repair", False))
@@ -627,6 +655,7 @@ class ScheduledSyncService:
             "interval_unit": interval_unit_enum.value,
             "timezone": timezone_name,
             "max_retries": max_retries,
+            "partial_success_failure_threshold_percent": partial_success_failure_threshold_percent,
             "next_run_at": next_run_at,
         }
 
@@ -646,6 +675,7 @@ class ScheduledSyncService:
             "interval_unit": job.interval_unit,
             "timezone": job.timezone,
             "max_retries": job.max_retries,
+            "partial_success_failure_threshold_percent": job.partial_success_failure_threshold_percent,
         }
         merged.update(payload)
         return merged
@@ -717,6 +747,7 @@ class ScheduledSyncService:
             "interval_unit": job.interval_unit,
             "timezone": job.timezone,
             "max_retries": job.max_retries,
+            "partial_success_failure_threshold_percent": job.partial_success_failure_threshold_percent,
             "next_run_at": utc_naive_to_local_iso(job.next_run_at),
             "last_run_at": utc_naive_to_local_iso(job.last_run_at),
             "created_at": utc_naive_to_local_iso(job.created_at),
@@ -740,3 +771,75 @@ class ScheduledSyncService:
             "created_at": utc_naive_to_local_iso(run.created_at),
             "updated_at": utc_naive_to_local_iso(run.updated_at),
         }
+
+    def _classify_completed_run(
+        self,
+        *,
+        job: ScheduledSyncJob,
+        summary: Dict[str, Any],
+        label: str,
+    ) -> SchedulerDispatchResult:
+        normalized_summary = dict(summary or {})
+        failed_symbols = max(0, int(normalized_summary.get("failed_symbols") or 0))
+        total_symbols = self._extract_total_symbols(normalized_summary)
+        threshold_percent = int(job.partial_success_failure_threshold_percent or 0)
+        failure_ratio = (failed_symbols / total_symbols) if total_symbols > 0 else None
+
+        normalized_summary["total_symbols"] = total_symbols
+        normalized_summary["partial_success_failure_threshold_percent"] = threshold_percent
+        normalized_summary["failure_ratio"] = failure_ratio
+
+        if failed_symbols == 0:
+            return SchedulerDispatchResult(
+                status=ScheduledSyncRunStatus.SUCCEEDED,
+                summary=normalized_summary,
+            )
+
+        if total_symbols <= 0:
+            return SchedulerDispatchResult(
+                status=ScheduledSyncRunStatus.FAILED,
+                summary=normalized_summary,
+                error=f"{label} completed with failed symbols but total symbol count was unavailable",
+            )
+
+        threshold_ratio = threshold_percent / 100.0
+        ratio_percent = failure_ratio * 100.0
+
+        if failure_ratio <= threshold_ratio:
+            normalized_summary["message"] = (
+                f"{label} partially succeeded: {failed_symbols}/{total_symbols} symbols failed "
+                f"({ratio_percent:.2f}% <= {threshold_percent}%)"
+            )
+            return SchedulerDispatchResult(
+                status=ScheduledSyncRunStatus.PARTIAL_SUCCEEDED,
+                summary=normalized_summary,
+            )
+
+        error = (
+            f"{label} failed: {failed_symbols}/{total_symbols} symbols failed "
+            f"({ratio_percent:.2f}% > {threshold_percent}%)"
+        )
+        normalized_summary["message"] = error
+        return SchedulerDispatchResult(
+            status=ScheduledSyncRunStatus.FAILED,
+            summary=normalized_summary,
+            error=error,
+        )
+
+    def _extract_total_symbols(self, summary: Dict[str, Any]) -> int:
+        candidates = (
+            summary.get("total_symbols"),
+            summary.get("audited_symbols"),
+            summary.get("processed_symbols"),
+        )
+        for candidate in candidates:
+            try:
+                value = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if value >= 0:
+                return value
+
+        success_symbols = max(0, int(summary.get("success_symbols") or 0))
+        failed_symbols = max(0, int(summary.get("failed_symbols") or 0))
+        return success_symbols + failed_symbols

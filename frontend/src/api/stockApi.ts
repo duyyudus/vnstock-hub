@@ -1164,7 +1164,7 @@ export interface HistoryAuditActionResponse extends HistorySyncActionResponse {
 export type ScheduledSyncType = 'history' | 'finance' | 'company';
 export type ScheduledSyncAction = 'sync' | 'audit' | 'repair' | 'full' | 'quick';
 export type ScheduledSyncIntervalUnit = 'minutes' | 'hours' | 'days';
-export type ScheduledSyncRunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type ScheduledSyncRunStatus = 'queued' | 'running' | 'succeeded' | 'partial_succeeded' | 'failed';
 
 export interface ScheduledSyncJob {
     id: number;
@@ -1182,6 +1182,7 @@ export interface ScheduledSyncJob {
     interval_unit: ScheduledSyncIntervalUnit;
     timezone: string;
     max_retries: number;
+    partial_success_failure_threshold_percent: number;
     next_run_at: string | null;
     last_run_at: string | null;
     created_at: string | null;
@@ -1230,6 +1231,7 @@ export interface ScheduledSyncJobCreateRequest {
     interval_unit: ScheduledSyncIntervalUnit;
     timezone?: string;
     max_retries?: number;
+    partial_success_failure_threshold_percent?: number;
 }
 
 export interface ScheduledSyncJobUpdateRequest {
@@ -1247,6 +1249,7 @@ export interface ScheduledSyncJobUpdateRequest {
     interval_unit?: ScheduledSyncIntervalUnit;
     timezone?: string;
     max_retries?: number;
+    partial_success_failure_threshold_percent?: number;
 }
 
 // Stock API functions

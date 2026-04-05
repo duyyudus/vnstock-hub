@@ -36,6 +36,7 @@ type SchedulerFormState = {
     intervalValue: string;
     intervalUnit: ScheduledSyncIntervalUnit;
     maxRetries: string;
+    partialSuccessFailureThresholdPercent: string;
     enabled: boolean;
 };
 
@@ -53,6 +54,7 @@ const DEFAULT_FORM_STATE: SchedulerFormState = {
     intervalValue: '1',
     intervalUnit: 'days',
     maxRetries: '3',
+    partialSuccessFailureThresholdPercent: '10',
     enabled: true,
 };
 
@@ -120,11 +122,20 @@ const getStatusBadgeClass = (status: ScheduledSyncJobRun['status']) => {
             return 'badge-info';
         case 'succeeded':
             return 'badge-success';
+        case 'partial_succeeded':
+            return 'badge-warning';
         case 'failed':
             return 'badge-error';
         default:
             return 'badge-ghost';
     }
+};
+
+const formatRunStatus = (status: ScheduledSyncJobRun['status']) => {
+    if (status === 'partial_succeeded') {
+        return 'partial-succeed';
+    }
+    return status;
 };
 
 interface SchedulerTabProps {
@@ -213,6 +224,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
             intervalValue: String(job.interval_value),
             intervalUnit: job.interval_unit,
             maxRetries: String(job.max_retries),
+            partialSuccessFailureThresholdPercent: String(job.partial_success_failure_threshold_percent),
             enabled: job.enabled,
         });
     }, []);
@@ -229,6 +241,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
             interval_unit: form.intervalUnit,
             timezone: SCHEDULER_TIMEZONE,
             max_retries: Number(form.maxRetries),
+            partial_success_failure_threshold_percent: Number(form.partialSuccessFailureThresholdPercent),
         };
 
         if (form.indexSymbol) {
@@ -374,6 +387,9 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
                                                     <div className="font-medium">{job.name}</div>
                                                     <div className="text-xs text-base-content/60">
                                                         Retry attempts after failure: {job.max_retries}
+                                                    </div>
+                                                    <div className="text-xs text-base-content/60">
+                                                        Partial failure threshold: {job.partial_success_failure_threshold_percent}%
                                                     </div>
                                                 </td>
                                                 <td>
@@ -637,6 +653,23 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
                                     onChange={(event) => setForm((current) => ({ ...current, maxRetries: event.target.value }))}
                                 />
                             </label>
+                            <label className="form-control">
+                                <span className="label-text">Partial failure threshold %</span>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    className="input input-bordered"
+                                    value={form.partialSuccessFailureThresholdPercent}
+                                    onChange={(event) => setForm((current) => ({
+                                        ...current,
+                                        partialSuccessFailureThresholdPercent: event.target.value,
+                                    }))}
+                                />
+                            </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
                             <label className="label cursor-pointer justify-start gap-3 pt-8">
                                 <input
                                     type="checkbox"
@@ -690,7 +723,7 @@ export const SchedulerTab: React.FC<SchedulerTabProps> = ({ indexOptions }) => {
                                             </td>
                                             <td>
                                                 <span className={`badge ${getStatusBadgeClass(run.status)}`}>
-                                                    {run.status}
+                                                    {formatRunStatus(run.status)}
                                                 </span>
                                             </td>
                                             <td className="text-xs">{formatDateTimeInTimezone(run.scheduled_for, SCHEDULER_TIMEZONE)}</td>

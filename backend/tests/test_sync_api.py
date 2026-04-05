@@ -337,6 +337,7 @@ async def test_create_scheduler_job_with_admin(client):
     assert payload["sync_type"] == "finance"
     assert payload["sync_action"] == "quick"
     assert payload["symbols"] == ["VCB", "ACB"]
+    assert payload["partial_success_failure_threshold_percent"] == 10
 
 
 @pytest.mark.asyncio
@@ -354,6 +355,7 @@ async def test_update_scheduler_job_validates_history_date_range(client):
             "interval_unit": "days",
             "timezone": "Asia/Ho_Chi_Minh",
             "max_retries": 0,
+            "partial_success_failure_threshold_percent": 10,
         }
     )
 
@@ -394,11 +396,11 @@ async def test_list_scheduler_runs_returns_recent_attempts(client, db_session):
         ScheduledSyncJobRun(
             job_id=job["id"],
             attempt_number=1,
-            status=ScheduledSyncRunStatus.FAILED.value,
+            status=ScheduledSyncRunStatus.PARTIAL_SUCCEEDED.value,
             scheduled_for=utc_now(),
             finished_at=utc_now(),
-            error="boom",
-            summary={"message": "boom"},
+            error=None,
+            summary={"message": "partial"},
         )
     )
     await db_session.commit()
@@ -413,6 +415,41 @@ async def test_list_scheduler_runs_returns_recent_attempts(client, db_session):
     payload = response.json()
     assert payload["count"] >= 1
     assert payload["runs"][0]["job_name"] == "Company Quick"
+    assert payload["runs"][0]["status"] == ScheduledSyncRunStatus.PARTIAL_SUCCEEDED.value
+
+
+@pytest.mark.asyncio
+async def test_update_scheduler_job_accepts_partial_success_threshold(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    created_job = await vnstock_service.scheduler.create_job(
+        {
+            "name": "Finance Sync",
+            "sync_type": "finance",
+            "sync_action": "quick",
+            "starts_at": "2026-03-27T09:00:00",
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 0,
+        }
+    )
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.patch(
+            f"/api/v1/sync/scheduler/jobs/{created_job['id']}",
+            json={
+                "partial_success_failure_threshold_percent": 25,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["partial_success_failure_threshold_percent"] == 25
 
 
 @pytest.mark.asyncio

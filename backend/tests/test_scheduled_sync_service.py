@@ -79,6 +79,7 @@ async def test_scheduler_create_job_validates_and_serializes_dates(db_session, m
     assert job["sync_type"] == "finance"
     assert job["sync_action"] == "quick"
     assert job["timezone"] == "Asia/Ho_Chi_Minh"
+    assert job["partial_success_failure_threshold_percent"] == 10
     assert job["next_run_at"] is not None
 
 
@@ -340,6 +341,246 @@ async def test_scheduler_dispatches_background_finance_and_records_success(db_se
     assert captured["quick_sync"] is True
     assert captured["index_symbol"] == "VN30"
     assert captured["symbols"] == ["VCB"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_marks_background_finance_partial_success_within_threshold(db_session, monkeypatch):
+    from app.services.vnstock_service import scheduler as scheduler_module
+
+    fresh_status = GlobalSyncStatus()
+    monkeypatch.setattr(scheduler_module, "sync_status", fresh_status)
+
+    async def _finance_sync(**_kwargs):
+        fresh_status.start_finance_sync(total_symbols=10)
+
+        async def _complete() -> None:
+            await asyncio.sleep(0.02)
+            fresh_status.update_finance_sync_progress(
+                processed_symbols=10,
+                success_symbols=9,
+                failed_symbols=1,
+                current_symbol=None,
+                failed_tickers=["BBB"],
+            )
+            fresh_status.complete_finance_sync(
+                success=True,
+                error="Finance sync completed with 1 failed symbols",
+            )
+
+        asyncio.create_task(_complete())
+        return {"started": True, "message": "Finance sync started", "state": "running"}
+
+    service = _build_service(run_finance_sync=_finance_sync)
+    created = await service.create_job(
+        {
+            "name": "Finance Partial",
+            "sync_type": "finance",
+            "sync_action": "quick",
+            "starts_at": _iso_in_vn(timedelta(hours=1)),
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 2,
+            "partial_success_failure_threshold_percent": 10,
+        }
+    )
+
+    queued = ScheduledSyncJobRun(
+        job_id=created["id"],
+        attempt_number=1,
+        status=ScheduledSyncRunStatus.QUEUED.value,
+        scheduled_for=utc_now(),
+        summary={},
+    )
+    db_session.add(queued)
+    await db_session.commit()
+
+    await service._run_queued_job(queued.id)
+
+    runs = (
+        await db_session.execute(
+            select(ScheduledSyncJobRun)
+            .where(ScheduledSyncJobRun.job_id == created["id"])
+            .order_by(ScheduledSyncJobRun.attempt_number.asc())
+        )
+    ).scalars().all()
+    for row in runs:
+        await db_session.refresh(row)
+
+    assert len(runs) == 1
+    assert runs[0].status == ScheduledSyncRunStatus.PARTIAL_SUCCEEDED.value
+    assert runs[0].error is None
+    assert runs[0].summary["partial_success_failure_threshold_percent"] == 10
+    assert runs[0].summary["failure_ratio"] == pytest.approx(0.1)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_marks_audit_run_partial_success_within_threshold(db_session, monkeypatch):
+    from app.services.vnstock_service import scheduler as scheduler_module
+
+    monkeypatch.setattr(scheduler_module, "sync_status", GlobalSyncStatus())
+
+    async def _history_audit(**_kwargs):
+        return {
+            "started": True,
+            "message": "History audit completed",
+            "processed_symbols": 10,
+            "success_symbols": 9,
+            "failed_symbols": 1,
+            "audited_symbols": 10,
+            "results": [],
+        }
+
+    service = _build_service(run_history_audit_sync=_history_audit)
+    created = await service.create_job(
+        {
+            "name": "Audit Partial",
+            "sync_type": "history",
+            "sync_action": "audit",
+            "symbols": ["AAA"],
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-02",
+            "starts_at": _iso_in_vn(timedelta(hours=1)),
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 1,
+            "partial_success_failure_threshold_percent": 10,
+        }
+    )
+
+    queued = ScheduledSyncJobRun(
+        job_id=created["id"],
+        attempt_number=1,
+        status=ScheduledSyncRunStatus.QUEUED.value,
+        scheduled_for=utc_now(),
+        summary={},
+    )
+    db_session.add(queued)
+    await db_session.commit()
+
+    await service._run_queued_job(queued.id)
+
+    runs = (
+        await db_session.execute(
+            select(ScheduledSyncJobRun)
+            .where(ScheduledSyncJobRun.job_id == created["id"])
+            .order_by(ScheduledSyncJobRun.attempt_number.asc())
+        )
+    ).scalars().all()
+    for row in runs:
+        await db_session.refresh(row)
+
+    assert len(runs) == 1
+    assert runs[0].status == ScheduledSyncRunStatus.PARTIAL_SUCCEEDED.value
+    assert runs[0].summary["failure_ratio"] == pytest.approx(0.1)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_above_threshold_failures_still_retry(db_session, monkeypatch):
+    from app.services.vnstock_service import scheduler as scheduler_module
+
+    monkeypatch.setattr(scheduler_module, "sync_status", GlobalSyncStatus())
+
+    async def _history_repair(**_kwargs):
+        return {
+            "started": True,
+            "message": "Repair sync completed",
+            "processed_symbols": 10,
+            "success_symbols": 8,
+            "failed_symbols": 2,
+            "results": [],
+        }
+
+    service = _build_service(run_history_repair_sync=_history_repair)
+    created = await service.create_job(
+        {
+            "name": "Repair Fails",
+            "sync_type": "history",
+            "sync_action": "repair",
+            "symbols": ["AAA"],
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-02",
+            "starts_at": _iso_in_vn(timedelta(hours=1)),
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 1,
+            "partial_success_failure_threshold_percent": 10,
+        }
+    )
+
+    queued = ScheduledSyncJobRun(
+        job_id=created["id"],
+        attempt_number=1,
+        status=ScheduledSyncRunStatus.QUEUED.value,
+        scheduled_for=utc_now(),
+        summary={},
+    )
+    db_session.add(queued)
+    await db_session.commit()
+
+    await service._run_queued_job(queued.id)
+
+    runs = (
+        await db_session.execute(
+            select(ScheduledSyncJobRun)
+            .where(ScheduledSyncJobRun.job_id == created["id"])
+            .order_by(ScheduledSyncJobRun.attempt_number.asc())
+        )
+    ).scalars().all()
+    for row in runs:
+        await db_session.refresh(row)
+
+    assert len(runs) == 2
+    assert runs[0].status == ScheduledSyncRunStatus.FAILED.value
+    assert runs[0].error is not None
+    assert "20.00% > 10%" in runs[0].error
+    assert runs[1].status == ScheduledSyncRunStatus.QUEUED.value
+
+
+@pytest.mark.asyncio
+async def test_scheduler_runtime_exception_without_summary_marks_failed(db_session, monkeypatch):
+    from app.services.vnstock_service import scheduler as scheduler_module
+
+    monkeypatch.setattr(scheduler_module, "sync_status", GlobalSyncStatus())
+
+    async def _history_audit(**_kwargs):
+        raise RuntimeError("upstream exploded")
+
+    service = _build_service(run_history_audit_sync=_history_audit)
+    created = await service.create_job(
+        {
+            "name": "Audit Crash",
+            "sync_type": "history",
+            "sync_action": "audit",
+            "symbols": ["AAA"],
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-02",
+            "starts_at": _iso_in_vn(timedelta(hours=1)),
+            "interval_value": 1,
+            "interval_unit": "days",
+            "timezone": "Asia/Ho_Chi_Minh",
+            "max_retries": 0,
+        }
+    )
+
+    queued = ScheduledSyncJobRun(
+        job_id=created["id"],
+        attempt_number=1,
+        status=ScheduledSyncRunStatus.QUEUED.value,
+        scheduled_for=utc_now(),
+        summary={},
+    )
+    db_session.add(queued)
+    await db_session.commit()
+
+    await service._run_queued_job(queued.id)
+
+    refreshed = await db_session.get(ScheduledSyncJobRun, queued.id)
+    await db_session.refresh(refreshed)
+    assert refreshed.status == ScheduledSyncRunStatus.FAILED.value
+    assert refreshed.error == "upstream exploded"
 
 
 @pytest.mark.asyncio
