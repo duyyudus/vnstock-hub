@@ -104,6 +104,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const indexDetailsDialogRef = useRef<HTMLDialogElement>(null);
     const batchExportDialogRef = useRef<HTMLDialogElement>(null);
+    const dateRangeControlsRef = useRef<HTMLDivElement>(null);
     const [batchExportSelections, setBatchExportSelections] = useState<Record<string, boolean>>({});
     const [batchExporting, setBatchExporting] = useState(false);
     const [batchExportNotice, setBatchExportNotice] = useState<ExportNotice | null>(null);
@@ -379,22 +380,6 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         };
     }, [batchExportNotice]);
 
-    useEffect(() => {
-        const timeoutId = window.setTimeout(() => {
-            const parsedStart = parseIsoDate(dateRange.startDate);
-            const parsedEnd = parseIsoDate(dateRange.endDate);
-            if (!parsedStart || !parsedEnd) {
-                return;
-            }
-
-            setAppliedDateRange(dateRange);
-        }, 300);
-
-        return () => {
-            window.clearTimeout(timeoutId);
-        };
-    }, [dateRange]);
-
     const {
         selectorIndustries,
         industryAllocation,
@@ -573,6 +558,23 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
     };
 
+    const commitDateRange = useCallback(() => {
+        const parsedStart = parseIsoDate(dateRange.startDate);
+        const parsedEnd = parseIsoDate(dateRange.endDate);
+        if (!parsedStart || !parsedEnd) {
+            return;
+        }
+
+        if (
+            appliedDateRange.startDate === dateRange.startDate
+            && appliedDateRange.endDate === dateRange.endDate
+        ) {
+            return;
+        }
+
+        setAppliedDateRange(dateRange);
+    }, [appliedDateRange.endDate, appliedDateRange.startDate, dateRange]);
+
     const handleDateRangeStartChange = (nextValue: string) => {
         const parsed = parseIsoDate(nextValue);
         if (!parsed) {
@@ -603,6 +605,18 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
             ...previous,
             endDate: formatIsoDate(nextEnd),
         }));
+    };
+
+    const handleDateRangeControlBlur = () => {
+        window.setTimeout(() => {
+            const controls = dateRangeControlsRef.current;
+            const activeElement = document.activeElement;
+            if (controls && activeElement instanceof Node && controls.contains(activeElement)) {
+                return;
+            }
+
+            commitDateRange();
+        }, 0);
     };
 
     const handleBookmarksUpdated = async (groupId?: number) => {
@@ -865,7 +879,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         </button>
                     ) : null}
                     {shouldShowDateRangeControls ? (
-                        <>
+                        <div ref={dateRangeControlsRef} className="flex flex-wrap items-center gap-2">
                             <label className="flex items-center gap-2 text-sm text-base-content/70">
                                 <span>From</span>
                                 <input
@@ -873,6 +887,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                     className="input input-sm input-bordered"
                                     value={dateRange.startDate}
                                     onChange={(event) => handleDateRangeStartChange(event.target.value)}
+                                    onBlur={handleDateRangeControlBlur}
                                     min={dateRangeDomain.minDate}
                                     max={dateRange.endDate}
                                 />
@@ -884,11 +899,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                     className="input input-sm input-bordered"
                                     value={dateRange.endDate}
                                     onChange={(event) => handleDateRangeEndChange(event.target.value)}
+                                    onBlur={handleDateRangeControlBlur}
                                     min={dateRange.startDate}
                                     max={dateRangeDomain.maxDate}
                                 />
                             </label>
-                        </>
+                        </div>
                     ) : null}
                     <button
                         type="button"
