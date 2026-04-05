@@ -7,6 +7,8 @@ import {
     type TradingPosition,
 } from '../../../api/stockApi';
 import { useAuthUser } from '../../auth/useAuthUser';
+import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
+import { StockAllocationChart } from '../components/StockAllocationChart';
 
 interface FormState {
     ticker: string;
@@ -23,6 +25,23 @@ type SortKey =
     | 'marketValue'
     | 'pnl';
 type SortDirection = 'asc' | 'desc';
+
+interface StockAllocationItem {
+    ticker: string;
+    allocation: number;
+    companyName?: string;
+}
+
+interface IndustryAllocationItem {
+    industry: string;
+    allocation: number;
+    stocks: Array<{
+        ticker: string;
+        companyName?: string;
+        marketValue?: number;
+        allocation?: number;
+    }>;
+}
 
 const buildEmptyFormState = (): FormState => ({
     ticker: '',
@@ -398,6 +417,114 @@ export const TradingTab: React.FC = () => {
             : totalNetPnl.total < 0
                 ? 'text-error'
                 : 'text-base-content';
+
+    const industryAllocation = useMemo<IndustryAllocationItem[]>(() => {
+        if (filteredPositions.length === 0 || Object.keys(quotes).length === 0) {
+            return [];
+        }
+
+        const industryMap = new Map<string, {
+            marketValue: number;
+            stockMap: Map<string, {
+                marketValue: number;
+                companyName?: string;
+            }>;
+        }>();
+        let total = 0;
+
+        filteredPositions.forEach((position) => {
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
+            const price = quote?.price;
+            const industry = quote?.industry || 'Other';
+
+            if (typeof price !== 'number' || !Number.isFinite(price)) {
+                return;
+            }
+
+            const marketValue = position.quantity * price;
+            const companyName = quote?.company_name?.trim() || undefined;
+            const existingIndustry = industryMap.get(industry) || {
+                marketValue: 0,
+                stockMap: new Map<string, {
+                    marketValue: number;
+                    companyName?: string;
+                }>(),
+            };
+            const existingStock = existingIndustry.stockMap.get(ticker) || {
+                marketValue: 0,
+                companyName,
+            };
+
+            existingIndustry.marketValue += marketValue;
+            existingStock.marketValue += marketValue;
+            existingStock.companyName = existingStock.companyName || companyName;
+            existingIndustry.stockMap.set(ticker, existingStock);
+            industryMap.set(industry, existingIndustry);
+            total += marketValue;
+        });
+
+        if (total <= 0) {
+            return [];
+        }
+
+        return Array.from(industryMap.entries())
+            .map(([industry, value]) => ({
+                industry,
+                allocation: (value.marketValue / total) * 100,
+                stocks: Array.from(value.stockMap.entries())
+                    .sort((a, b) => b[1].marketValue - a[1].marketValue)
+                    .map(([ticker, stock]) => ({
+                        ticker,
+                        companyName: stock.companyName,
+                        marketValue: stock.marketValue,
+                        allocation: (stock.marketValue / total) * 100,
+                    })),
+            }))
+            .filter((item) => item.allocation > 0)
+            .sort((a, b) => b.allocation - a.allocation);
+    }, [filteredPositions, quotes]);
+
+    const stockAllocation = useMemo<StockAllocationItem[]>(() => {
+        if (filteredPositions.length === 0 || Object.keys(quotes).length === 0) {
+            return [];
+        }
+
+        const stockMap = new Map<string, number>();
+        const companyNameMap = new Map<string, string>();
+        let total = 0;
+
+        filteredPositions.forEach((position) => {
+            const ticker = position.ticker.toUpperCase();
+            const quote = quotes[ticker];
+            const price = quote?.price;
+            const companyName = quote?.company_name?.trim();
+
+            if (typeof price !== 'number' || !Number.isFinite(price)) {
+                return;
+            }
+
+            const marketValue = position.quantity * price;
+            stockMap.set(ticker, (stockMap.get(ticker) || 0) + marketValue);
+            if (companyName) {
+                companyNameMap.set(ticker, companyName);
+            }
+            total += marketValue;
+        });
+
+        if (total <= 0) {
+            return [];
+        }
+
+        return Array.from(stockMap.entries())
+            .map(([ticker, marketValue]) => ({
+                ticker,
+                allocation: (marketValue / total) * 100,
+                companyName: companyNameMap.get(ticker),
+            }))
+            .filter((item) => item.allocation > 0)
+            .sort((a, b) => b.allocation - a.allocation);
+    }, [filteredPositions, quotes]);
 
     const handleAddInputChange = (field: keyof FormState) => (
         event: React.ChangeEvent<HTMLInputElement>,
@@ -956,6 +1083,33 @@ export const TradingTab: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {positions.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div className="card relative z-10 overflow-visible bg-base-100 shadow-md border border-base-300">
+                        <div className="card-body overflow-visible p-4">
+                            <h3 className="card-title text-base">Industry Allocation</h3>
+                            <div className="w-full aspect-square overflow-visible">
+                                <IndustryHoldingChart
+                                    data={industryAllocation}
+                                    loading={quoteLoading}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card relative z-0 bg-base-100 shadow-md border border-base-300">
+                        <div className="card-body p-4">
+                            <h3 className="card-title text-base">Stock Allocation</h3>
+                            <div className="w-full aspect-square overflow-y-auto pr-1">
+                                <StockAllocationChart
+                                    data={stockAllocation}
+                                    loading={quoteLoading}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <dialog ref={importDialogRef} className="modal">
                 <div className="modal-box">
