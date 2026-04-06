@@ -370,6 +370,14 @@ def test_normalize_summary_text_collapses_whitespace():
     assert normalized == "Revenue improved sharply. Margins expanded on lower funding costs. Shares rose after the update."
 
 
+def test_normalize_discussion_text_preserves_markdown_lists_and_paragraph_breaks():
+    discussion = "  -   First point\t\n - second point  \n\n\n  Follow-up   paragraph\twith cleanup.  "
+
+    normalized = semantics._normalize_discussion_text(discussion, limit=4000)
+
+    assert normalized == "- First point\n- second point\n\nFollow-up paragraph with cleanup."
+
+
 def test_normalize_label_transliterates_vietnamese_text():
     assert semantics._normalize_label("phát hành cổ phiếu riêng lẻ") == "phat_hanh_co_phieu_rieng_le"
 

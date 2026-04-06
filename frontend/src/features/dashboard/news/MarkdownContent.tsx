@@ -14,6 +14,8 @@ type MarkdownBlock =
     | { type: 'code'; language: string; content: string };
 
 const INLINE_TOKEN_PATTERN = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_)/;
+const UNORDERED_LIST_PATTERN = /^[-*+•]\s+/;
+const UNORDERED_LIST_ITEM_PATTERN = /^[-*+•]\s+(.*)$/;
 
 const joinClassNames = (...values: Array<string | undefined>) => values.filter(Boolean).join(' ');
 
@@ -140,11 +142,11 @@ const parseMarkdownBlocks = (content: string): MarkdownBlock[] => {
             continue;
         }
 
-        if (/^[-*+]\s+/.test(trimmed)) {
+        if (UNORDERED_LIST_PATTERN.test(trimmed)) {
             const items: string[] = [];
             while (index < lines.length) {
                 const listLine = lines[index].trim();
-                const listMatch = listLine.match(/^[-*+]\s+(.*)$/);
+                const listMatch = listLine.match(UNORDERED_LIST_ITEM_PATTERN);
                 if (!listMatch) {
                     break;
                 }
@@ -179,7 +181,7 @@ const parseMarkdownBlocks = (content: string): MarkdownBlock[] => {
                 paragraphTrimmed.startsWith('```') ||
                 /^#{1,6}\s+/.test(paragraphTrimmed) ||
                 paragraphTrimmed.startsWith('>') ||
-                /^[-*+]\s+/.test(paragraphTrimmed) ||
+                UNORDERED_LIST_PATTERN.test(paragraphTrimmed) ||
                 /^\d+\.\s+/.test(paragraphTrimmed)
             ) {
                 break;

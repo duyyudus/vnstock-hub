@@ -239,7 +239,19 @@ def _normalize_summary_text(text: str) -> str:
 
 
 def _normalize_discussion_text(text: str, *, limit: int) -> str:
-    normalized = re.sub(r"\s+", " ", text).strip()
+    normalized_lines: list[str] = []
+    previous_blank = False
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        normalized_line = re.sub(r"[^\S\n]+", " ", raw_line).strip()
+        if not normalized_line:
+            if normalized_lines and not previous_blank:
+                normalized_lines.append("")
+            previous_blank = True
+            continue
+        normalized_lines.append(normalized_line)
+        previous_blank = False
+
+    normalized = "\n".join(normalized_lines).strip()
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: max(0, limit - 1)].rstrip()}…"
@@ -661,6 +673,7 @@ async def discuss_article_with_context(
         "If multiple strong web evidence items are provided for a broad background question, cite more than one distinct web source_id instead of relying on a single outside citation. "
         "If the available evidence is insufficient, say so plainly. "
         "Avoid investment-advice phrasing and do not tell the user to buy, sell, or hold. "
+        "When the answer has multiple distinct points, format them as markdown bullet lines instead of inline dash-separated prose. "
         "Every substantive factual answer must cite at least one source_id from the provided evidence. "
         "Prefer article citations for article-grounded points and web citations for outside context. "
         "Keep the answer concise and directly responsive to the latest user message."

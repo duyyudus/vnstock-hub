@@ -1234,6 +1234,38 @@ async def test_discuss_news_article_uses_web_search_when_requested(client, db_se
 
 
 @pytest.mark.asyncio
+async def test_discuss_news_article_preserves_markdown_bullets_in_response(client, db_session, monkeypatch):
+    headers, _ = await _register_and_auth(client, "news-discuss-markdown@example.com")
+    article, _ = await _seed_discussion_article(db_session)
+    assistant_message = "- First point\n- Second point\n\nFollow-up paragraph."
+
+    async def _fake_discussion(*, article_context, messages, evidence_items, search_web):
+        assert search_web is False
+        assert article_context["title"] == article.title
+        return {
+            "assistant_message": assistant_message,
+            "cited_source_ids": ["article:primary"],
+            "warning": None,
+        }
+
+    monkeypatch.setattr("app.services.news.service.discuss_article_with_context", _fake_discussion)
+
+    response = await client.post(
+        f"/api/v1/news/articles/{article.id}/discussion",
+        json={
+            "messages": [{"role": "user", "content": "Tóm tắt các ý chính."}],
+            "search_mode": "off",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["assistant_message"] == assistant_message
+    assert payload["citations"][0]["source_type"] == "article"
+
+
+@pytest.mark.asyncio
 async def test_discuss_news_article_warns_when_full_article_body_is_unavailable(client, db_session, monkeypatch):
     headers, _ = await _register_and_auth(client, "news-discuss-missing-body@example.com")
     article, _ = await _seed_discussion_article(db_session, content_text=None)
