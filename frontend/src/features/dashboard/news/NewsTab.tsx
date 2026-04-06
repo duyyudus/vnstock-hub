@@ -10,6 +10,7 @@ import {
     type NewsQuickGlanceArticle,
     type NewsQuickGlanceResponse,
     type NewsQuickGlanceWindowHours,
+    type Stock,
     stockApi,
     type NewsArticleDetail,
     type NewsArticleDiscussionResponse,
@@ -245,6 +246,7 @@ export const NewsTab: React.FC = () => {
     const [feedPersonalized, setFeedPersonalized] = useState(false);
     const [feedLoading, setFeedLoading] = useState(true);
     const [feedError, setFeedError] = useState<string | null>(null);
+    const [tickerQuotesBySymbol, setTickerQuotesBySymbol] = useState<Record<string, Stock>>({});
     const [quickGlanceWindowHours, setQuickGlanceWindowHours] = useState<NewsQuickGlanceWindowHours>(24);
     const [quickGlanceDigest, setQuickGlanceDigest] = useState<NewsQuickGlanceResponse | null>(null);
     const [quickGlanceLoading, setQuickGlanceLoading] = useState(true);
@@ -315,6 +317,7 @@ export const NewsTab: React.FC = () => {
         sources: true,
     });
     const appliedFeedRef = useRef(appliedFeed);
+    const requestedTickerQuotesRef = useRef<Set<string>>(new Set());
 
     const activeNewsSources = useMemo(() => {
         if (!sources) {
@@ -322,6 +325,22 @@ export const NewsTab: React.FC = () => {
         }
         return mergeNewsSources(sources.rss_sources, sources.crawl_sources);
     }, [sources]);
+
+    const formatNumber = useMemo(() => {
+        return (value: number, options?: Intl.NumberFormatOptions) =>
+            new Intl.NumberFormat('en-US', options).format(value);
+    }, []);
+
+    const formatPercent = useMemo(() => {
+        return (value: number) => {
+            const formatted = new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }).format(value);
+            const prefix = value > 0 ? '+' : '';
+            return `${prefix}${formatted}%`;
+        };
+    }, []);
 
     const sourceFilterOptions = useMemo(() => {
         const domains = new Set<string>();
@@ -361,6 +380,25 @@ export const NewsTab: React.FC = () => {
         }
         return 'latest';
     }, [feedDraft.scope, feedDraft.sort]);
+
+    const visibleFeedTickers = useMemo(() => {
+        const uniqueTickers = new Set<string>();
+        for (const item of feedItems) {
+            for (const ticker of item.matched_tickers) {
+                const normalizedTicker = ticker.trim().toUpperCase();
+                if (normalizedTicker) {
+                    uniqueTickers.add(normalizedTicker);
+                }
+            }
+            for (const ticker of getDistinctArticleTickers(item.tickers, item.matched_tickers)) {
+                const normalizedTicker = ticker.trim().toUpperCase();
+                if (normalizedTicker) {
+                    uniqueTickers.add(normalizedTicker);
+                }
+            }
+        }
+        return Array.from(uniqueTickers);
+    }, [feedItems]);
 
     useEffect(() => {
         appliedFeedRef.current = appliedFeed;
@@ -485,6 +523,73 @@ export const NewsTab: React.FC = () => {
     useEffect(() => {
         void loadSourceManagement();
     }, [loadSourceManagement]);
+
+    useEffect(() => {
+        const tickersToLoad = visibleFeedTickers.filter((ticker) => !requestedTickerQuotesRef.current.has(ticker));
+        if (tickersToLoad.length === 0) {
+            return;
+        }
+
+        tickersToLoad.forEach((ticker) => requestedTickerQuotesRef.current.add(ticker));
+
+        let isCancelled = false;
+
+        const loadTickerQuotes = async () => {
+            try {
+                const response = await stockApi.getStockQuotes(tickersToLoad);
+                if (isCancelled || response.stocks.length === 0) {
+                    return;
+                }
+                setTickerQuotesBySymbol((current) => {
+                    const next = { ...current };
+                    for (const stock of response.stocks) {
+                        const normalizedTicker = stock.ticker.trim().toUpperCase();
+                        if (normalizedTicker) {
+                            next[normalizedTicker] = stock;
+                        }
+                    }
+                    return next;
+                });
+            } catch {
+                // Keep feed rendering stable and fall back to unavailable tooltip copy.
+            }
+        };
+
+        void loadTickerQuotes();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [visibleFeedTickers]);
+
+    const getTickerTooltipText = useCallback((ticker: string) => {
+        const normalizedTicker = ticker.trim().toUpperCase();
+        const quote = tickerQuotesBySymbol[normalizedTicker];
+        if (!quote || typeof quote.price !== 'number' || !Number.isFinite(quote.price)) {
+            return 'Price data unavailable';
+        }
+
+        const lines = [`Price: ${formatNumber(quote.price, { maximumFractionDigits: 2 })}`];
+        if (typeof quote.price_change_24h === 'number' && Number.isFinite(quote.price_change_24h)) {
+            lines.push(`24h: ${formatPercent(quote.price_change_24h)}`);
+        } else {
+            lines.push('24h: --');
+        }
+        return lines.join('\n');
+    }, [formatNumber, formatPercent, tickerQuotesBySymbol]);
+
+    const renderTickerBadge = useCallback((ticker: string, className: string, key: string) => {
+        const tooltipText = getTickerTooltipText(ticker);
+        return (
+            <div
+                key={key}
+                className="tooltip tooltip-top z-30 [&:before]:z-30 [&:before]:whitespace-pre-line [&:after]:z-30"
+                data-tip={tooltipText}
+            >
+                <span className={`${className} cursor-help`}>{ticker}</span>
+            </div>
+        );
+    }, [getTickerTooltipText]);
 
     const handleApplyFilters = async () => {
         const nextDraft = feedDraft;
@@ -1573,10 +1678,10 @@ export const NewsTab: React.FC = () => {
                                                     <span key={topic} className="badge badge-outline">{topic}</span>
                                                 ))}
                                                 {item.matched_tickers.slice(0, 5).map((ticker) => (
-                                                    <span key={`matched-${ticker}`} className="badge badge-primary">{ticker}</span>
+                                                    renderTickerBadge(ticker, 'badge badge-primary', `matched-${item.id}-${ticker}`)
                                                 ))}
                                                 {getDistinctArticleTickers(item.tickers, item.matched_tickers).slice(0, 5).map((ticker) => (
-                                                    <span key={ticker} className="badge badge-secondary badge-outline">{ticker}</span>
+                                                    renderTickerBadge(ticker, 'badge badge-secondary badge-outline', `secondary-${item.id}-${ticker}`)
                                                 ))}
                                                 {item.sectors.slice(0, 3).map((sector) => (
                                                     <span key={sector} className="badge badge-accent badge-outline">{sector}</span>
