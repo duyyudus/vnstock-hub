@@ -27,11 +27,13 @@ import {
     runTickerExportDefinitions,
 } from './stockExport';
 import {
+    buildPresetDateRange,
     buildIndicesDateRangeDomain,
     clampDateToDomain,
     formatIsoDate,
     parseIsoDate,
     type DateRange,
+    type DateRangePreset,
 } from './dateRange';
 
 interface IndicesTabProps {
@@ -48,6 +50,17 @@ interface ExportNotice {
 
 const DEFAULT_INDEX_ID = 'VN30';
 const INDICES_SELECTED_INDEX_STORAGE_KEY = 'vnstock_indices_selected_index_id';
+const DATE_RANGE_PRESETS: DateRangePreset[] = [
+    { label: '3D', amount: 3, unit: 'days' },
+    { label: '1W', amount: 7, unit: 'days' },
+    { label: '2W', amount: 14, unit: 'days' },
+    { label: '1M', amount: 1, unit: 'months' },
+    { label: '3M', amount: 3, unit: 'months' },
+    { label: '6M', amount: 6, unit: 'months' },
+    { label: '1Y', amount: 1, unit: 'years' },
+    { label: '2Y', amount: 2, unit: 'years' },
+    { label: '3Y', amount: 3, unit: 'years' },
+];
 
 const getDefaultSelectedIndex = (indices: IndexConfig[]) => {
     if (indices.length === 0) {
@@ -122,6 +135,22 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         : selectedPositionsFilter === 'trading'
             ? 'Trading Positions'
             : null;
+    const activeDateRangePresetLabel = useMemo(() => {
+        const anchorDate = parseIsoDate(dateRange.endDate);
+        if (!anchorDate) {
+            return null;
+        }
+
+        const matchingPreset = DATE_RANGE_PRESETS.find((preset) => {
+            const presetRange = buildPresetDateRange(anchorDate, preset, dateRangeDomain);
+            return (
+                presetRange.startDate === dateRange.startDate
+                && presetRange.endDate === dateRange.endDate
+            );
+        });
+
+        return matchingPreset?.label ?? null;
+    }, [dateRange.endDate, dateRange.startDate, dateRangeDomain]);
 
     // --- Effects ---
 
@@ -619,6 +648,27 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }, 0);
     };
 
+    const handleDateRangePresetSelect = useCallback((preset: DateRangePreset) => {
+        const anchorDate = parseIsoDate(dateRange.endDate) ?? dateRangeDomain.max;
+        const nextRange = buildPresetDateRange(anchorDate, preset, dateRangeDomain);
+
+        setDateRange(nextRange);
+        setAppliedDateRange((previous) => (
+            previous.startDate === nextRange.startDate && previous.endDate === nextRange.endDate
+                ? previous
+                : nextRange
+        ));
+    }, [dateRange.endDate, dateRangeDomain]);
+
+    const handleDateRangePresetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const preset = DATE_RANGE_PRESETS.find((option) => option.label === event.target.value);
+        if (!preset) {
+            return;
+        }
+
+        handleDateRangePresetSelect(preset);
+    };
+
     const handleBookmarksUpdated = async (groupId?: number) => {
         await refreshBookmarkGroups();
         if (selectedBookmarkGroupId && (!groupId || groupId === selectedBookmarkGroupId)) {
@@ -904,6 +954,19 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                     max={dateRangeDomain.maxDate}
                                 />
                             </label>
+                            <select
+                                className="select select-bordered select-sm w-20 bg-base-100 font-medium"
+                                value={activeDateRangePresetLabel ?? ''}
+                                onChange={handleDateRangePresetChange}
+                                aria-label="Select date range preset"
+                            >
+                                <option value="">-- Range --</option>
+                                {DATE_RANGE_PRESETS.map((preset) => (
+                                    <option key={preset.label} value={preset.label}>
+                                        {preset.label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     ) : null}
                     <button
