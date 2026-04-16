@@ -423,6 +423,25 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         }
         return selectorIndustries;
     }, [industries, selectedBookmarkGroupId, selectedIndex, selectedPositionsFilter, selectorIndustries]);
+    const selectedIndexForeignNetSum = useMemo(() => {
+        let total = 0;
+        let hasForeignData = false;
+
+        indexUniverseStocks.forEach((stock) => {
+            if (stock.foreign_buy_value != null && stock.foreign_sell_value != null) {
+                total += stock.foreign_buy_value - stock.foreign_sell_value;
+                hasForeignData = true;
+            }
+        });
+
+        return hasForeignData ? total : null;
+    }, [indexUniverseStocks]);
+    const showSelectedIndexForeignNetSum = Boolean(
+        selectedIndex
+        && selectedPositionsFilter === 'all'
+        && !selectedBookmarkGroupId
+        && indexUniverseIndexId === selectedIndex.id
+    );
 
     useEffect(() => {
         if (
@@ -1090,6 +1109,8 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                         ) : (
                             <StocksTable
                                 stocks={filteredStocks}
+                                foreignNetSummaryValue={showSelectedIndexForeignNetSum ? selectedIndexForeignNetSum : undefined}
+                                foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}
                                 openTradingPositions={openTradingPositions}

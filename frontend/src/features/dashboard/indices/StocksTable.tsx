@@ -18,6 +18,10 @@ import {
 interface StocksTableProps {
     /** List of stocks to display */
     stocks: Stock[];
+    /** Aggregate foreign net value for the selected index universe */
+    foreignNetSummaryValue?: number | null;
+    /** Label for the selected index summary */
+    foreignNetSummaryLabel?: string;
     /** Bookmark groups for the logged-in user */
     bookmarkGroups?: BookmarkGroup[];
     /** Current holding details keyed by uppercase ticker */
@@ -127,6 +131,8 @@ const compareStocksForSort = (a: Stock, b: Stock, sortConfig: SortConfig) => {
 
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
+    foreignNetSummaryValue = undefined,
+    foreignNetSummaryLabel,
     bookmarkGroups = [],
     portfolioHoldings = {},
     openTradingPositions = {},
@@ -246,6 +252,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(value);
+    };
+
+    const formatForeignNetSummaryValue = (value: number | null | undefined): string => {
+        if (value == null) {
+            return '-';
+        }
+        const formatted = new Intl.NumberFormat('en-US', {
+            maximumFractionDigits: 2,
+        }).format(Math.abs(value));
+        const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+        return `${prefix}${formatted}`;
     };
 
     const formatHoldingPercent = (value: number): string => {
@@ -739,6 +756,15 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     };
 
     const totalColumns = isLoggedIn ? 17 : 16;
+    const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
+    const foreignNetSummaryClassName = foreignNetSummaryValue == null
+        ? 'text-base-content/60'
+        : foreignNetSummaryValue > 0
+            ? 'text-success'
+            : foreignNetSummaryValue < 0
+                ? 'text-error'
+                : 'text-base-content';
+    const showForeignNetSummary = foreignNetSummaryValue !== undefined;
 
     const renderTableHeader = () => (
         <thead className="sticky top-0 z-20 bg-base-200">
@@ -1124,7 +1150,18 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     <span>{exportNotice.message}</span>
                 </div>
             ) : null}
-            <div className="flex justify-end">
+            <div className={`flex flex-wrap items-start gap-3 ${showForeignNetSummary ? 'justify-between' : 'justify-end'}`}>
+                {showForeignNetSummary ? (
+                    <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                        <span className="text-base-content/70">
+                            Foreign net sum{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
+                        </span>
+                        <span className={`font-semibold ${foreignNetSummaryClassName}`}>
+                            {foreignNetSummaryText}
+                        </span>
+                        <span className="text-base-content/70"> B VND</span>
+                    </div>
+                ) : null}
                 <label className="inline-flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm font-medium">
                     <span>Group by industry</span>
                     <input
