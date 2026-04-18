@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 
+import pandas as pd
 import pytest
 from sqlalchemy import select
 
@@ -724,6 +725,60 @@ async def test_sync_symbol_without_history_starts_from_listing_date(monkeypatch)
 
     assert chunk_starts
     assert chunk_starts[0] == date(2021, 6, 15)
+
+
+def test_fetch_remote_history_dates_sync_uses_history_service_quote_helper(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    calls = []
+
+    def _fake_fetch(symbol: str, start_date: date, end_date: date, source: str = "VCI"):
+        calls.append((symbol, start_date, end_date, source))
+        return pd.DataFrame(
+            [
+                {"time": "2025-01-03"},
+                {"time": "2025-01-05"},
+                {"time": "2025-01-08"},
+                {"time": None},
+            ]
+        )
+
+    monkeypatch.setattr(service._history, "_fetch_ohlcv_history", _fake_fetch)
+
+    result = service._fetch_remote_history_dates_sync(
+        "AAA",
+        date(2025, 1, 4),
+        date(2025, 1, 7),
+    )
+
+    assert calls == [("AAA", date(2025, 1, 4), date(2025, 1, 7), "VCI")]
+    assert result == {date(2025, 1, 5)}
+
+
+def test_discover_oldest_history_date_uses_history_service_quote_helper(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    calls = []
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 4, 18)
+
+    def _fake_fetch(symbol: str, start_date: date, end_date: date, source: str = "VCI"):
+        calls.append((symbol, start_date, end_date, source))
+        return pd.DataFrame(
+            [
+                {"time": "1999-01-04"},
+                {"time": "2000-01-03"},
+            ]
+        )
+
+    monkeypatch.setattr(history_sync_module, "date", FixedDate)
+    monkeypatch.setattr(service._history, "_fetch_ohlcv_history", _fake_fetch)
+
+    result = service._discover_oldest_history_date("AAA")
+
+    assert calls == [("AAA", service.FALLBACK_DISCOVERY_START_DATE, FixedDate.today(), "VCI")]
+    assert result == date(1999, 1, 4)
 
 
 @pytest.mark.asyncio

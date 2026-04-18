@@ -825,7 +825,7 @@ def test_turnover_fetch_uses_vendored_vnstock_data_alt_trading(monkeypatch):
                 ]
             )
 
-    monkeypatch.setattr("app.lib.vnstock_data_alt.api.trading.Trading", FakeTrading)
+    monkeypatch.setitem(sys.modules, "vnstock_data", SimpleNamespace(Trading=FakeTrading))
 
     turnover = service._fetch_turnover_history(
         symbol="VCB",
@@ -1089,15 +1089,12 @@ def test_upsert_stock_daily_history_continues_when_auxiliary_fetch_fails(monkeyp
     )
 
     class FakeQuote:
+        def __init__(self, symbol, source):
+            assert symbol == "INC"
+            assert source == "VCI"
+
         def history(self, **_kwargs):
             return ohlcv_hist
-
-    class FakeStock:
-        quote = FakeQuote()
-
-    class FakeVnstock:
-        def stock(self, **_kwargs):
-            return FakeStock()
 
     class FakeTrading:
         def __init__(self, **_kwargs):
@@ -1123,11 +1120,80 @@ def test_upsert_stock_daily_history_continues_when_auxiliary_fetch_fails(monkeyp
         def rollback(self):
             raise AssertionError("rollback should not be called")
 
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Quote=FakeQuote))
+    monkeypatch.setitem(sys.modules, "vnstock_data", SimpleNamespace(Trading=FakeTrading))
+    monkeypatch.setattr(history_module, "retry_with_backoff", lambda func, max_retries=2: func())
+
+    session = RecordingSession()
+    count = service._upsert_stock_daily_history(
+        symbol="INC",
+        start_date=date(2021, 10, 1),
+        end_date=date(2021, 11, 30),
+        session=session,
+    )
+
+    assert count == 1
+    assert session.executed == 1
+    assert session.commits == 1
+
+
+def test_upsert_stock_daily_history_bypasses_stock_component_bootstrap(monkeypatch):
+    service = HistoryService()
+    ohlcv_hist = pd.DataFrame(
+        [
+            {
+                "time": "2021-10-29",
+                "open": 9.1,
+                "high": 9.3,
+                "low": 9.0,
+                "close": 9.0,
+                "volume": 1000,
+            }
+        ]
+    )
+
+    class BrokenVnstock:
+        def stock(self, **_kwargs):
+            raise KeyError("data")
+
+    class FakeQuote:
+        def __init__(self, symbol, source):
+            assert symbol == "INC"
+            assert source == "VCI"
+
+        def history(self, **_kwargs):
+            return ohlcv_hist
+
+    class FakeTrading:
+        def __init__(self, **_kwargs):
+            return None
+
+        def foreign_trade(self, **_kwargs):
+            return pd.DataFrame()
+
+        def prop_trade(self, **_kwargs):
+            return pd.DataFrame()
+
+    class RecordingSession:
+        def __init__(self):
+            self.executed = 0
+            self.commits = 0
+
+        def execute(self, _stmt):
+            self.executed += 1
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
     monkeypatch.setitem(
         sys.modules,
         "vnstock",
-        SimpleNamespace(Vnstock=FakeVnstock, Trading=FakeTrading),
+        SimpleNamespace(Vnstock=BrokenVnstock, Quote=FakeQuote),
     )
+    monkeypatch.setitem(sys.modules, "vnstock_data", SimpleNamespace(Trading=FakeTrading))
     monkeypatch.setattr(history_module, "retry_with_backoff", lambda func, max_retries=2: func())
 
     session = RecordingSession()

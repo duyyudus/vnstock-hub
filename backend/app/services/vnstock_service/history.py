@@ -239,6 +239,23 @@ class HistoryService:
         normalized = self._normalize_history_frame_columns(hist, STANDARD_TURNOVER_HISTORY_ALIASES)
         return self._ensure_turnover_history_canonical_columns(normalized)
 
+    def _fetch_ohlcv_history(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        source: str = "VCI",
+    ) -> pd.DataFrame:
+        from vnstock import Quote
+
+        symbol_key = symbol[:3].upper()
+        quote = Quote(symbol=symbol_key, source=source)
+        return quote.history(
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d"),
+            interval="1D",
+        )
+
     @staticmethod
     def _coalesce_frame_columns(
         hist: pd.DataFrame,
@@ -771,8 +788,6 @@ class HistoryService:
         Fetch stock history from API and store in database via atomic upsert.
         Returns number of rows synced (inserted or updated).
         """
-        from vnstock import Vnstock
-
         # Use provided session or create a temporary one
         own_session = False
         if session is None:
@@ -787,15 +802,15 @@ class HistoryService:
         try:
             with symbol_lock:
                 # Fetch from API with retry logic
-                def fetch_history():
-                    s = Vnstock().stock(symbol=symbol_key, source='VCI')
-                    return s.quote.history(
-                        start=start_date.strftime('%Y-%m-%d'),
-                        end=end_date.strftime('%Y-%m-%d'),
-                        interval='1D'
-                    )
-
-                ohlcv_hist = retry_with_backoff(fetch_history, max_retries=2)
+                ohlcv_hist = retry_with_backoff(
+                    lambda: self._fetch_ohlcv_history(
+                        symbol_key,
+                        start_date,
+                        end_date,
+                        source="VCI",
+                    ),
+                    max_retries=2,
+                )
 
                 if ohlcv_hist is None or ohlcv_hist.empty:
                     return 0

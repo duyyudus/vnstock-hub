@@ -979,13 +979,11 @@ class HistorySyncService:
         start_date: date,
         end_date: date,
     ) -> set[date]:
-        from vnstock import Vnstock
-
-        stock = Vnstock().stock(symbol=symbol, source='VCI')
-        hist = stock.quote.history(
-            start=start_date.strftime('%Y-%m-%d'),
-            end=end_date.strftime('%Y-%m-%d'),
-            interval='1D',
+        hist = self._history._fetch_ohlcv_history(
+            symbol,
+            start_date,
+            end_date,
+            source="VCI",
         )
         if hist is None or hist.empty:
             return set()
@@ -1133,14 +1131,12 @@ class HistorySyncService:
         return None
 
     def _discover_oldest_history_date(self, symbol: str) -> Optional[date]:
-        from vnstock import Vnstock
-
         try:
-            stock = Vnstock().stock(symbol=symbol, source='VCI')
-            hist = stock.quote.history(
-                start=self.FALLBACK_DISCOVERY_START_DATE.strftime('%Y-%m-%d'),
-                end=date.today().strftime('%Y-%m-%d'),
-                interval='1D',
+            hist = self._history._fetch_ohlcv_history(
+                symbol,
+                self.FALLBACK_DISCOVERY_START_DATE,
+                date.today(),
+                source="VCI",
             )
             if hist is None or hist.empty:
                 return None
