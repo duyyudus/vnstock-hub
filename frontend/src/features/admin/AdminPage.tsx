@@ -55,6 +55,7 @@ export const AdminPage: React.FC = () => {
     const [financeCollectionScope, setFinanceCollectionScope] = useState<SyncCollectionScope>('manual');
     const [financeForceRestart, setFinanceForceRestart] = useState(false);
     const [financeQuickSync, setFinanceQuickSync] = useState(false);
+    const [financeForceRefresh, setFinanceForceRefresh] = useState(false);
     const [companySymbols, setCompanySymbols] = useState('');
     const [companyIndexSymbol, setCompanyIndexSymbol] = useState('');
     const [companyCollectionScope, setCompanyCollectionScope] = useState<SyncCollectionScope>('manual');
@@ -288,6 +289,7 @@ export const AdminPage: React.FC = () => {
                 symbols.length > 0 ? symbols : undefined,
                 financeCollectionScope === 'manual' ? financeIndexSymbol || undefined : undefined,
                 financeQuickSync,
+                financeForceRefresh,
             ),
             setFinanceRunning,
             undefined,
@@ -559,6 +561,8 @@ export const AdminPage: React.FC = () => {
                         onFinanceForceRestartChange={(checked) => setFinanceForceRestart(checked)}
                         financeQuickSync={financeQuickSync}
                         onFinanceQuickSyncChange={(checked) => setFinanceQuickSync(checked)}
+                        financeForceRefresh={financeForceRefresh}
+                        onFinanceForceRefreshChange={(checked) => setFinanceForceRefresh(checked)}
                         onRunFinanceSync={handleRunFinanceSync}
                         financeActive={financeActive}
                         anyJobActive={anyJobActive}

@@ -493,6 +493,16 @@ const safeDiv = (numerator: number | null, denominator: number | null): number |
     return Number.isFinite(value) ? value : null;
 };
 
+const asRate = (value: number | null): number | null => {
+    if (value === null || !Number.isFinite(value)) {
+        return null;
+    }
+    if (Math.abs(value) > 1 && Math.abs(value) <= 100) {
+        return value / 100;
+    }
+    return value;
+};
+
 const average = (a: number | null, b: number | null): number | null => {
     if (a === null || b === null) return null;
     return (a + b) / 2;
@@ -701,6 +711,7 @@ const mapCoreMetrics = (
         'tongtaisan',
     ], ['currentassets', 'longtermassets', 'othercurrentassets', 'othernoncurrentassets', 'shorttermassets']);
     const totalLiabilities = pickMetric(balanceRows, [
+        'liabilities',
         'liabilitiesbnvnd',
         'totalliabilities',
         'tongno',
@@ -732,7 +743,8 @@ const mapCoreMetrics = (
     ]);
     const revenue = isFinancial
         ? (
-            pickMetric(incomeRows, ['totaloperatingrevenue'], ['yoy'])
+            pickMetric(incomeRows, ['totaloperatingincome'], ['yoy'])
+            ?? pickMetric(incomeRows, ['totaloperatingrevenue'], ['yoy'])
             ?? pickMetric(incomeRows, ['revenue'], ['yoy'])
         )
         : (
@@ -740,11 +752,16 @@ const mapCoreMetrics = (
             ?? pickMetric(incomeRows, ['revenuebnvnd', 'revenue'], ['yoy'])
         );
     const grossProfit = isFinancial
-        ? pickMetric(incomeRows, ['grossprofit', 'laigop', 'grossincome'], ['margin', 'yoy'])
+        ? pickMetric(
+            incomeRows,
+            ['grossprofit', 'laigop', 'grossincome', 'netinterestincome'],
+            ['margin', 'yoy'],
+        )
         : pickMetric(incomeRows, ['grossprofit', 'laigop', 'grossincome'], ['margin', 'yoy']);
     const operatingProfit = isFinancial
         ? (
-            pickMetric(incomeRows, ['operatingprofitbeforeprovision'])
+            pickMetric(incomeRows, ['netoperatingprofitbeforeallowanceforcreditloss'])
+            ?? pickMetric(incomeRows, ['operatingprofitbeforeprovision'])
             ?? pickMetric(incomeRows, ['operatingprofitloss'])
         )
         : pickMetric(incomeRows, ['operatingprofitloss']);
@@ -857,7 +874,7 @@ const computeSnapshot = (
     const coreCurrent = mapCoreMetrics(currentBalance, currentIncome, currentCashflow, currentRatioRows, classification.is_financial);
     const corePrior = mapCoreMetrics(priorBalance, priorIncome, priorCashflow, priorRatioRows, classification.is_financial);
     const marketCapFromRatioVnd = normalizeMarketCapToVnd(
-        pickMetric(currentRatioRows, ['chitieudinhgiamarketcapitalbnvnd', 'marketcapitalbnvnd']),
+        pickMetric(currentRatioRows, ['chitieudinhgiamarketcapitalbnvnd', 'marketcapitalbnvnd', 'marketcap']),
     );
     const closeAtCutoffVnd = pickCloseAtOrBeforeQuarterEndVnd(bundle.price_history, currentYear, quarterCutoff);
     const marketCapFromHistoryVnd = closeAtCutoffVnd !== null
@@ -900,8 +917,10 @@ const computeSnapshot = (
     const equityAssetCurrent = safeDiv(coreCurrent.equity, coreCurrent.totalAssets);
     const equityAssetPrior = safeDiv(corePrior.equity, corePrior.totalAssets);
 
-    const grossMarginCurrent = safeDiv(coreCurrent.grossProfit, coreCurrent.revenue);
-    const grossMarginPrior = safeDiv(corePrior.grossProfit, corePrior.revenue);
+    const grossMarginFromRatioCurrent = asRate(pickMetric(currentRatioRows, ['grossmargin'], ['yoy']));
+    const grossMarginFromRatioPrior = asRate(pickMetric(priorRatioRows, ['grossmargin'], ['yoy']));
+    const grossMarginCurrent = safeDiv(coreCurrent.grossProfit, coreCurrent.revenue) ?? grossMarginFromRatioCurrent;
+    const grossMarginPrior = safeDiv(corePrior.grossProfit, corePrior.revenue) ?? grossMarginFromRatioPrior;
     const assetTurnoverCurrent = safeDiv(coreCurrent.revenue, avgAssetsCurrent);
     const assetTurnoverPrior = safeDiv(corePrior.revenue, avgAssetsPrior);
 
@@ -1038,6 +1057,7 @@ const signalLtMedian = (value: number | null, medianValue: number | null): boole
     if (medianValue === null) return value < 0;
     return value < medianValue;
 };
+
 
 const computePercentile = (value: number | null, values: number[]): number | null => {
     if (value === null || values.length === 0) {

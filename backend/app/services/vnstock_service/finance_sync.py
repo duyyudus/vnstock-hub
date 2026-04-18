@@ -72,6 +72,7 @@ class FinanceDataSyncService:
         symbols: Optional[List[str]] = None,
         index_symbol: Optional[str] = None,
         quick_sync: bool = False,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         """Start finance data sync as background task."""
         symbols_filter = await self._resolve_symbols_filter(symbols=symbols, index_symbol=index_symbol)
@@ -92,14 +93,15 @@ class FinanceDataSyncService:
                     pass
 
             finance_sync_logger.info(
-                "Finance sync requested (force_restart=%s, symbols=%s, index_symbol=%s, quick_sync=%s)",
+                "Finance sync requested (force_restart=%s, symbols=%s, index_symbol=%s, quick_sync=%s, force_refresh=%s)",
                 force_restart,
                 len(symbols_filter) if symbols_filter else 0,
                 index_symbol or "",
                 quick_sync,
+                force_refresh,
             )
             self._sync_task = asyncio.create_task(
-                self._run_sync(symbols_filter, quick_sync=quick_sync)
+                self._run_sync(symbols_filter, quick_sync=quick_sync, force_refresh=force_refresh)
             )
 
         return {
@@ -108,16 +110,22 @@ class FinanceDataSyncService:
             "state": "running",
         }
 
-    async def _run_sync(self, symbols: Optional[List[str]], quick_sync: bool = False) -> None:
+    async def _run_sync(
+        self,
+        symbols: Optional[List[str]],
+        quick_sync: bool = False,
+        force_refresh: bool = False,
+    ) -> None:
         symbols_to_sync = await self._build_symbol_universe(symbols)
         if quick_sync:
             symbols_to_sync = await self._filter_quick_sync_symbols(symbols_to_sync)
         total = len(symbols_to_sync)
 
         finance_sync_logger.info(
-            "Finance sync started for %s symbols (quick_sync=%s)",
+            "Finance sync started for %s symbols (quick_sync=%s, force_refresh=%s)",
             total,
             quick_sync,
+            force_refresh,
         )
         sync_status.start_finance_sync(total_symbols=total)
         if total == 0:
@@ -166,7 +174,7 @@ class FinanceDataSyncService:
                         )
 
                     async with self._operation_worker_semaphore:
-                        await self._sync_symbol(symbol)
+                        await self._sync_symbol(symbol, force_refresh=force_refresh)
                 except asyncio.CancelledError:
                     was_cancelled = True
                     raise
@@ -249,6 +257,7 @@ class FinanceDataSyncService:
         symbol: str,
         data_type: str,
         lang: str = "en",
+        force_refresh: bool = False,
     ) -> int:
         attempt = 0
         total_rate_limit_wait_seconds = 0.0
@@ -265,6 +274,7 @@ class FinanceDataSyncService:
                     data_type=data_type,
                     lang=lang,
                     raise_on_failure=True,
+                    force_refresh=force_refresh,
                 )
                 elapsed = time.monotonic() - started
                 finance_sync_logger.debug(
@@ -330,12 +340,13 @@ class FinanceDataSyncService:
 
                 await asyncio.sleep(sleep_seconds)
 
-    async def _sync_symbol(self, symbol: str) -> None:
+    async def _sync_symbol(self, symbol: str, force_refresh: bool = False) -> None:
         for data_type in self.DATA_TYPES:
             retries = await self._run_finance_fetch_with_retry(
                 symbol=symbol,
                 data_type=data_type,
                 lang="en",
+                force_refresh=force_refresh,
             )
             if retries > 0:
                 finance_sync_logger.debug(

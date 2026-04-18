@@ -18,6 +18,8 @@ interface FinanceSyncTabProps {
     onFinanceForceRestartChange: (checked: boolean) => void;
     financeQuickSync: boolean;
     onFinanceQuickSyncChange: (checked: boolean) => void;
+    financeForceRefresh: boolean;
+    onFinanceForceRefreshChange: (checked: boolean) => void;
     onRunFinanceSync: () => void | Promise<void>;
     financeActive: boolean;
     anyJobActive: boolean;
@@ -40,6 +42,8 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
     onFinanceForceRestartChange,
     financeQuickSync,
     onFinanceQuickSyncChange,
+    financeForceRefresh,
+    onFinanceForceRefreshChange,
     onRunFinanceSync,
     financeActive,
     anyJobActive,
@@ -119,6 +123,15 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
                             onChange={(event) => onFinanceQuickSyncChange(event.target.checked)}
                         />
                         <span className="label-text">Quick sync</span>
+                    </label>
+                    <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={financeForceRefresh}
+                            onChange={(event) => onFinanceForceRefreshChange(event.target.checked)}
+                        />
+                        <span className="label-text">Force refresh cached finance data</span>
                     </label>
                     <button
                         className="btn btn-info"

@@ -252,12 +252,14 @@ class VnstockService:
         symbols: List[str] | None = None,
         index_symbol: str | None = None,
         quick_sync: bool = False,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         return await self.finance_data_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,
             quick_sync=quick_sync,
+            force_refresh=force_refresh,
         )
 
     # Company Sync

@@ -510,7 +510,13 @@ const buildRow = (stock: Stock, bundle: ValuationTickerBundle | undefined, hasEr
     const ratioEps = pickMetric(ratioRows, ['earningpershare', 'eps']);
     const ratioRoe = asRate(pickMetric(ratioRows, ['roe']));
     const ratioRoa = asRate(pickMetric(ratioRows, ['roa']));
-    const ratioNpm = asRate(pickMetric(ratioRows, ['netprofitmargin', 'npm', 'ros']));
+    const ratioNpm = asRate(
+        pickMetric(
+            ratioRows,
+            ['aftertaxprofitmargin', 'netprofitmargin', 'netmargin', 'npm', 'ros', 'profitmargin'],
+            ['gross', 'operating', 'ebit', 'beforetax', 'pretax', 'yoy'],
+        ),
+    );
     const ratioBvps = pickMetric(ratioRows, ['bookvaluepershare', 'bvps']);
     const ratioDe = pickMetric(ratioRows, ['debtequity', 'debttoequity', 'detoequity']);
     const ratioCurrent = pickMetric(ratioRows, ['currentratio']);
@@ -534,9 +540,21 @@ const buildRow = (stock: Stock, bundle: ValuationTickerBundle | undefined, hasEr
         ),
     );
 
-    const revenueCurrent = pickAggMetric(currentIncome, ['totaloperatingrevenue', 'netsales', 'revenue'], ['yoy']);
-    const revenuePrior1 = pickAggMetric(priorIncome1, ['totaloperatingrevenue', 'netsales', 'revenue'], ['yoy']);
-    const revenuePrior3 = pickAggMetric(priorIncome3, ['totaloperatingrevenue', 'netsales', 'revenue'], ['yoy']);
+    const revenueCurrent = pickAggMetric(
+        currentIncome,
+        ['totaloperatingincome', 'totaloperatingrevenue', 'netsales', 'revenue'],
+        ['yoy'],
+    );
+    const revenuePrior1 = pickAggMetric(
+        priorIncome1,
+        ['totaloperatingincome', 'totaloperatingrevenue', 'netsales', 'revenue'],
+        ['yoy'],
+    );
+    const revenuePrior3 = pickAggMetric(
+        priorIncome3,
+        ['totaloperatingincome', 'totaloperatingrevenue', 'netsales', 'revenue'],
+        ['yoy'],
+    );
 
     const profitCurrent = pickAggMetric(currentIncome, ['netincome', 'profitaftertax', 'loinhuansauthue', 'netprofit']);
     const profitPrior1 = pickAggMetric(priorIncome1, ['netincome', 'profitaftertax', 'loinhuansauthue', 'netprofit']);
@@ -580,7 +598,7 @@ const buildRow = (stock: Stock, bundle: ValuationTickerBundle | undefined, hasEr
     const fallbackPe = latestDbClose !== null && epsVnd !== null && epsVnd > 0
         ? latestDbClose / epsVnd
         : null;
-    const pe = primaryPe ?? fallbackPe ?? ratioPe;
+    const pe = ratioPe ?? primaryPe ?? fallbackPe;
 
     const benchmark = getSectorBenchmark(stock.industry || UNKNOWN_SECTOR);
 

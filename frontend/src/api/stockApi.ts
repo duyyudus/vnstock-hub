@@ -1736,13 +1736,15 @@ export const stockApi = {
         forceRestart: boolean = false,
         symbols?: string[],
         indexSymbol?: string,
-        quickSync: boolean = false
+        quickSync: boolean = false,
+        forceRefresh: boolean = false,
     ): Promise<HistorySyncActionResponse> {
         const response = await apiClient.post<HistorySyncActionResponse>('/sync/finance/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
             quick_sync: quickSync,
+            force_refresh: forceRefresh,
         });
         return response.data;
     },

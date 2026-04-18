@@ -419,13 +419,15 @@ const buildTickerSeries = (industry: string, bundle: MarginTrendTickerBundle): M
 
     const points = Array.from(periods.values())
         .sort(comparePeriodAsc)
+        .filter((bucket) => bucket.incomeRows.length > 0)
         .map((bucket) => {
             const incomeRows = normalizeDataRows(bucket.incomeRows);
             const ratioRows = normalizeDataRows(bucket.ratioRows);
 
             const revenueRaw = isFinancial
                 ? (
-                    pickMetric(incomeRows, ['totaloperatingrevenue'], ['yoy'])
+                    pickMetric(incomeRows, ['totaloperatingincome'], ['yoy'])
+                    ?? pickMetric(incomeRows, ['totaloperatingrevenue'], ['yoy'])
                     ?? pickMetric(incomeRows, ['revenue'], ['yoy'])
                 )
                 : (
@@ -443,8 +445,8 @@ const buildTickerSeries = (industry: string, bundle: MarginTrendTickerBundle): M
             const ratioNetMargin = asRate(
                 pickMetric(
                     ratioRows,
-                    ['netprofitmargin', 'netmargin', 'npm', 'profitmargin'],
-                    ['gross', 'operating', 'ebit', 'beforetax', 'yoy'],
+                    ['aftertaxprofitmargin', 'netprofitmargin', 'netmargin', 'npm', 'profitmargin'],
+                    ['gross', 'operating', 'ebit', 'beforetax', 'pretax', 'yoy'],
                 ),
             );
 

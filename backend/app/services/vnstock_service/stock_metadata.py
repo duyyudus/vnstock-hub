@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from app.db.database import async_session
-from app.db.models import StockCompany
+from app.db.models import StockCompany, StockFinancialDataCache
 from app.services.sync_status import sync_status
 from app.core.logging_config import (
     log_background_start,
@@ -35,6 +35,84 @@ class StockMetadataService:
         self._enriching_tickers = set()
         self._finance_service = finance_service
 
+    def _extract_pe_ratio_from_records(self, ratio_records: List[Dict] | None) -> float | None:
+        """Read P/E from normalized cached ratio rows."""
+        if not ratio_records:
+            return None
+
+        if self._finance_service is not None:
+            try:
+                return self._finance_service.extract_latest_pe_ratio(ratio_records)
+            except Exception:
+                pass
+
+        first_row = ratio_records[0]
+        if not isinstance(first_row, dict):
+            return None
+
+        for key, value in first_row.items():
+            key_upper = str(key).upper().replace(" ", "")
+            if "P/E" not in key_upper and key_upper not in {"PE", "P_E"} and not key_upper.endswith("_PE"):
+                continue
+            try:
+                if value is None:
+                    continue
+                parsed = float(value)
+                if pd.isna(parsed):
+                    continue
+                return parsed
+            except (TypeError, ValueError):
+                continue
+
+        return None
+
+    @staticmethod
+    def _extract_market_cap_vnd_from_records(ratio_records: List[Dict] | None) -> float | None:
+        """Read snapshot market cap in VND from normalized cached ratio rows."""
+        if not ratio_records:
+            return None
+
+        first_row = ratio_records[0]
+        if not isinstance(first_row, dict):
+            return None
+
+        for key, value in first_row.items():
+            key_upper = str(key).upper().replace(" ", "")
+            if "MARKETCAP" not in key_upper:
+                continue
+            try:
+                if value is None:
+                    continue
+                parsed = float(value)
+                if pd.isna(parsed) or parsed <= 0:
+                    continue
+                return parsed
+            except (TypeError, ValueError):
+                continue
+
+        return None
+
+    def _compute_live_pe_ratio(self, stock: StockInfo, ratio_records: List[Dict] | None) -> float | None:
+        """
+        Compute live P/E using current market cap (or price) against the latest
+        trailing earnings base implied by the freshest ratio snapshot.
+        """
+        snapshot_pe = self._extract_pe_ratio_from_records(ratio_records)
+        snapshot_market_cap_vnd = self._extract_market_cap_vnd_from_records(ratio_records)
+        if snapshot_pe is None or snapshot_pe <= 0 or snapshot_market_cap_vnd is None or snapshot_market_cap_vnd <= 0:
+            return None
+
+        trailing_earnings_vnd = snapshot_market_cap_vnd / snapshot_pe
+        if not pd.notna(trailing_earnings_vnd) or trailing_earnings_vnd <= 0:
+            return None
+
+        live_market_cap_vnd = stock.market_cap * 1_000_000_000 if stock.market_cap and stock.market_cap > 0 else None
+        if live_market_cap_vnd is not None:
+            live_pe = live_market_cap_vnd / trailing_earnings_vnd
+            return float(live_pe) if pd.notna(live_pe) and live_pe > 0 else None
+
+        return None
+
     async def apply_cache_to_stocks(self, stocks: List[StockInfo]) -> List[StockInfo]:
         """Apply currently cached data to stocks without fetching new data."""
         if not stocks:
@@ -42,9 +120,18 @@ class StockMetadataService:
 
         tickers = [s.ticker for s in stocks]
         async with async_session() as session:
-            stmt = select(StockCompany).where(StockCompany.symbol.in_(tickers))
-            result = await session.execute(stmt)
-            cached_data = {c.symbol: c for c in result.scalars().all()}
+            company_stmt = select(StockCompany).where(StockCompany.symbol.in_(tickers))
+            company_result = await session.execute(company_stmt)
+            cached_data = {c.symbol: c for c in company_result.scalars().all()}
+
+            ratio_stmt = select(StockFinancialDataCache).where(
+                StockFinancialDataCache.symbol.in_(tickers),
+                StockFinancialDataCache.data_type == 'ratios',
+                StockFinancialDataCache.period == 'quarter',
+                StockFinancialDataCache.lang == 'en',
+            )
+            ratio_result = await session.execute(ratio_stmt)
+            ratio_cache = {row.symbol: row for row in ratio_result.scalars().all()}
 
             for stock in stocks:
                 if stock.ticker in cached_data:
@@ -56,8 +143,12 @@ class StockMetadataService:
                         stock.exchange = company.exchange
                     if stock.charter_capital == 0 and company.charter_capital:
                         stock.charter_capital = company.charter_capital
-                    if stock.pe_ratio is None and company.pe_ratio:
-                        stock.pe_ratio = company.pe_ratio
+
+                ratio_cache_row = ratio_cache.get(stock.ticker)
+                ratio_records = ratio_cache_row.data if ratio_cache_row is not None else None
+                live_ratio_pe = self._compute_live_pe_ratio(stock, ratio_records)
+                if live_ratio_pe is not None:
+                    stock.pe_ratio = live_ratio_pe
         return stocks
 
     async def enrich_stocks_with_metadata(self, stocks: List[StockInfo]) -> List[StockInfo]:
@@ -218,8 +309,6 @@ class StockMetadataService:
                         # Use cached value if real-time value is missing
                         if stock.charter_capital == 0 and company.charter_capital:
                             stock.charter_capital = company.charter_capital
-                        if stock.pe_ratio is None and company.pe_ratio:
-                            stock.pe_ratio = company.pe_ratio
 
                 await session.commit()
             except Exception as e:

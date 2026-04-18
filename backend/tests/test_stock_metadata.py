@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
 from app.services.vnstock_service.stock_metadata import StockMetadataService
 from app.services.vnstock_service.models import StockInfo
-from app.db.models import StockCompany
+from app.db.models import StockCompany, StockFinancialDataCache
 from app.services.vnstock_service.core import CircuitOpenError
 
 @pytest.fixture
@@ -35,15 +35,54 @@ async def test_apply_cache_to_stocks(metadata_service, mock_db_session):
     
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [mock_company]
-    mock_db_session.execute.return_value = mock_result
+    mock_ratio_result = MagicMock()
+    mock_ratio_result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.side_effect = [mock_result, mock_ratio_result]
 
     with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
         enriched = await metadata_service.apply_cache_to_stocks(stocks)
         
         assert enriched[0].ticker == "TCB"
         assert enriched[0].company_name == "Techcombank"
-        assert enriched[0].pe_ratio == 5.5
+        assert enriched[0].pe_ratio is None
         assert enriched[1].company_name == ""  # Default empty string
+
+
+@pytest.mark.asyncio
+async def test_apply_cache_to_stocks_computes_live_pe_from_ratio_cache(metadata_service, mock_db_session):
+    stocks = [
+        StockInfo(ticker="VIC", price=187900, market_cap=1447963.23, pe_ratio=81.37),
+    ]
+
+    mock_company = StockCompany(
+        symbol="VIC",
+        company_name="Vingroup",
+        pe_ratio=81.37,
+        charter_capital=77060,
+    )
+    mock_ratio_cache = StockFinancialDataCache(
+        symbol="VIC",
+        data_type="ratios",
+        period="quarter",
+        lang="en",
+        data=[{
+            "Meta_period": "2025-Q4",
+            "P/E": 120.583447222,
+            "Market Cap": 1363967491248000.0,
+        }],
+    )
+
+    mock_company_result = MagicMock()
+    mock_company_result.scalars.return_value.all.return_value = [mock_company]
+    mock_ratio_result = MagicMock()
+    mock_ratio_result.scalars.return_value.all.return_value = [mock_ratio_cache]
+    mock_db_session.execute.side_effect = [mock_company_result, mock_ratio_result]
+
+    with patch("app.services.vnstock_service.stock_metadata.async_session", return_value=mock_db_session):
+        enriched = await metadata_service.apply_cache_to_stocks(stocks)
+
+    assert enriched[0].company_name == "Vingroup"
+    assert enriched[0].pe_ratio == pytest.approx(128.0092075311)
 
 @pytest.mark.asyncio
 async def test_enrich_stocks_everything_cached(metadata_service, mock_db_session):
@@ -102,7 +141,7 @@ async def test_enrich_stocks_missing_data_triggers_api(metadata_service, mock_db
                     enriched = await metadata_service.enrich_stocks_with_metadata(stocks)
                     
                     assert enriched[0].company_name == "Techcombank API"
-                    assert enriched[0].pe_ratio == 6.0
+                    assert enriched[0].pe_ratio is None
                     assert not mock_db_session.add.called
                     assert mock_db_session.commit.called
 
@@ -174,7 +213,7 @@ async def test_metadata_enrichment_logs_completed_on_success(metadata_service, m
                             with patch("app.services.vnstock_service.stock_metadata.log_background_error") as mock_error:
                                 enriched = await metadata_service.enrich_stocks_with_metadata(stocks)
 
-    assert enriched[0].pe_ratio == 6.0
+    assert enriched[0].pe_ratio is None
     mock_start.assert_called_once()
     mock_complete.assert_called_once()
     mock_error.assert_not_called()

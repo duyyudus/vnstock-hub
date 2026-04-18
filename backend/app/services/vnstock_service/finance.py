@@ -78,6 +78,7 @@ class FinanceService:
         data_type: str,
         lang: str = 'en',
         raise_on_failure: bool = False,
+        force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """Refresh a financial dataset from source and upsert cache, with stale fallback."""
         symbol_key = self._normalize_symbol(symbol)
@@ -91,7 +92,7 @@ class FinanceService:
                 data_type=data_type_key,
                 lang=lang_key,
             )
-            if cached and not self._is_stale(cached.updated_at):
+            if cached and not force_refresh and not self._is_stale(cached.updated_at):
                 return self._deserialize_cached_records(cached.data)
 
             try:
@@ -309,81 +310,262 @@ class FinanceService:
         records = df.to_dict('records')
         return self._serialize_records_for_cache(records)
 
-    def _fetch_income_statement_sync(self, symbol: str, lang: str) -> List[Dict[str, Any]]:
-        """Fetch income statement synchronously from source API."""
-        from vnstock import Vnstock
+    def _build_vnstock_data_alt_client(self, symbol: str):
+        from app.lib.vnstock_data_alt.api.financial import Finance
 
+        return Finance(
+            source="VCI",
+            symbol=symbol[:3],
+            period=self.DEFAULT_PERIOD,
+            show_log=False,
+        )
+
+    def _sort_frame_by_metadata(
+        self,
+        df: pd.DataFrame,
+        columns: List[str],
+        ascending: bool,
+    ) -> pd.DataFrame:
+        sort_columns = [column for column in columns if column in df.columns]
+        if not sort_columns:
+            return df.copy()
+        return df.sort_values(
+            by=sort_columns,
+            ascending=[ascending] * len(sort_columns),
+            kind="mergesort",
+            na_position="last",
+        )
+
+    def _normalize_statement_dataset(
+        self,
+        final_df: pd.DataFrame | None,
+        raw_df: pd.DataFrame | None,
+        dataset_name: str,
+    ) -> List[Dict[str, Any]]:
+        if final_df is None or final_df.empty:
+            return []
+        if raw_df is None or raw_df.empty:
+            return []
+
+        final_flat = _flatten_columns(final_df).copy()
+        raw_flat = _flatten_columns(raw_df).copy()
+
+        if len(final_flat) != len(raw_flat):
+            raise ValueError(
+                f"{dataset_name} raw/final row count mismatch: final={len(final_flat)} raw={len(raw_flat)}"
+            )
+
+        final_flat["__row_position"] = range(len(final_flat))
+        raw_flat["__row_position"] = range(len(raw_flat))
+
+        raw_ordered = self._sort_frame_by_metadata(
+            raw_flat,
+            columns=[
+                "yearReport",
+                "lengthReport",
+                "updateDate",
+                "publicDate",
+                "__row_position",
+            ],
+            ascending=True,
+        ).reset_index(drop=True)
+
+        final_ordered = (
+            final_flat.iloc[raw_ordered["__row_position"].tolist()]
+            .reset_index(drop=True)
+            .copy()
+        )
+
+        metadata = pd.DataFrame(
+            {
+                "ticker": raw_ordered.get("ticker"),
+                "yearReport": raw_ordered.get("yearReport"),
+                "lengthReport": raw_ordered.get("lengthReport"),
+                "__updateDate": raw_ordered.get("updateDate"),
+                "__publicDate": raw_ordered.get("publicDate"),
+                "__row_position": raw_ordered.get("__row_position"),
+            }
+        )
+
+        value_columns = final_ordered.drop(
+            columns=[
+                column
+                for column in [
+                    "ticker",
+                    "yearReport",
+                    "lengthReport",
+                    "organCode",
+                    "createDate",
+                    "updateDate",
+                    "publicDate",
+                    "report_period",
+                    "__row_position",
+                ]
+                if column in final_ordered.columns
+            ],
+            errors="ignore",
+        )
+
+        combined = pd.concat([metadata, value_columns], axis=1)
+        combined = self._sort_frame_by_metadata(
+            combined,
+            columns=[
+                "yearReport",
+                "lengthReport",
+                "__updateDate",
+                "__publicDate",
+                "__row_position",
+            ],
+            ascending=False,
+        )
+        combined = combined.drop(
+            columns=["__updateDate", "__publicDate", "__row_position"],
+            errors="ignore",
+        ).reset_index(drop=True)
+
+        return self._normalize_finance_dataframe(combined)
+
+    def _normalize_ratio_dataset(self, raw_df: pd.DataFrame | None) -> List[Dict[str, Any]]:
+        if raw_df is None or raw_df.empty:
+            return []
+
+        ratio_df = _flatten_columns(raw_df).copy()
+        ratio_df["__row_position"] = range(len(ratio_df))
+
+        if "Ratio Type" not in ratio_df.columns:
+            raise ValueError("ratio payload missing 'Ratio Type'")
+        if "yearReport" not in ratio_df.columns:
+            raise ValueError("ratio payload missing 'yearReport'")
+        if "Ratio TTM Id" not in ratio_df.columns:
+            raise ValueError("ratio payload missing 'Ratio TTM Id'")
+
+        ratio_df = ratio_df[ratio_df["Ratio Type"] == "RATIO_TTM"].copy()
+        if ratio_df.empty:
+            return []
+
+        ratio_df = self._sort_frame_by_metadata(
+            ratio_df,
+            columns=["yearReport", "Ratio TTM Id", "__row_position"],
+            ascending=True,
+        ).reset_index(drop=True)
+
+        ratio_df["Meta_lengthReport"] = (
+            ratio_df.groupby("yearReport").cumcount() + 1
+        )
+        ratio_df["Meta_ticker"] = ratio_df.get("organCode")
+        if "ticker" in ratio_df.columns:
+            ratio_df["Meta_ticker"] = ratio_df["Meta_ticker"].fillna(ratio_df["ticker"])
+        ratio_df["Meta_yearReport"] = ratio_df["yearReport"]
+        ratio_df["Meta_period"] = ratio_df.apply(
+            lambda row: f"{int(row['Meta_yearReport'])}-Q{int(row['Meta_lengthReport'])}",
+            axis=1,
+        )
+
+        ratio_df = self._sort_frame_by_metadata(
+            ratio_df,
+            columns=["Meta_yearReport", "Meta_lengthReport", "Ratio TTM Id", "__row_position"],
+            ascending=False,
+        ).reset_index(drop=True)
+
+        ratio_df = ratio_df.drop(
+            columns=[
+                column
+                for column in [
+                    "Ratio TTM Id",
+                    "Ratio Type",
+                    "Ratio Year Id",
+                    "organCode",
+                    "ticker",
+                    "yearReport",
+                    "__row_position",
+                ]
+                if column in ratio_df.columns
+            ],
+            errors="ignore",
+        )
+
+        ordered_columns = [
+            column
+            for column in [
+                "Meta_ticker",
+                "Meta_yearReport",
+                "Meta_lengthReport",
+                "Meta_period",
+            ]
+            if column in ratio_df.columns
+        ]
+        ordered_columns.extend(
+            [column for column in ratio_df.columns if column not in ordered_columns]
+        )
+        ratio_df = ratio_df[ordered_columns]
+
+        return self._normalize_finance_dataframe(ratio_df)
+
+    def _fetch_statement_dataset_sync(
+        self,
+        symbol: str,
+        lang: str,
+        method_name: str,
+        dataset_name: str,
+    ) -> List[Dict[str, Any]]:
         if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch income statement for {symbol}")
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch {dataset_name} for {symbol}")
 
         try:
-            s = Vnstock().stock(symbol=symbol[:3], source='VCI')
-            df = s.finance.income_statement(period=self.DEFAULT_PERIOD, lang=lang)
+            client = self._build_vnstock_data_alt_client(symbol)
+            fetcher = getattr(client, method_name)
+            final_df = fetcher(period=self.DEFAULT_PERIOD, lang=lang, mode="final")
+            raw_df = fetcher(period=self.DEFAULT_PERIOD, lang=lang, mode="raw")
+            records = self._normalize_statement_dataset(final_df, raw_df, dataset_name=dataset_name)
             api_circuit_breaker.record_success()
-            return self._normalize_finance_dataframe(df)
+            return records
         except CircuitOpenError:
             raise
         except (SystemExit, Exception) as e:
             if _is_rate_limit_error(e):
                 _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching income statement for {symbol}: {e}")
-            logger.warning(f"Error fetching income statement for {symbol}: {e}")
+                raise CircuitOpenError(f"Rate limited fetching {dataset_name} for {symbol}: {e}")
+            logger.warning(f"Error fetching {dataset_name} for {symbol}: {e}")
             raise
+
+    def _fetch_income_statement_sync(self, symbol: str, lang: str) -> List[Dict[str, Any]]:
+        """Fetch income statement synchronously from source API."""
+        return self._fetch_statement_dataset_sync(
+            symbol=symbol,
+            lang=lang,
+            method_name="income_statement",
+            dataset_name="income statement",
+        )
 
     def _fetch_balance_sheet_sync(self, symbol: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch balance sheet synchronously from source API."""
-        from vnstock import Vnstock
-
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch balance sheet for {symbol}")
-
-        try:
-            s = Vnstock().stock(symbol=symbol[:3], source='VCI')
-            df = s.finance.balance_sheet(period=self.DEFAULT_PERIOD, lang=lang)
-            api_circuit_breaker.record_success()
-            return self._normalize_finance_dataframe(df)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching balance sheet for {symbol}: {e}")
-            logger.warning(f"Error fetching balance sheet for {symbol}: {e}")
-            raise
+        return self._fetch_statement_dataset_sync(
+            symbol=symbol,
+            lang=lang,
+            method_name="balance_sheet",
+            dataset_name="balance sheet",
+        )
 
     def _fetch_cash_flow_sync(self, symbol: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch cash flow synchronously from source API."""
-        from vnstock import Vnstock
-
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch cash flow for {symbol}")
-
-        try:
-            s = Vnstock().stock(symbol=symbol[:3], source='VCI')
-            df = s.finance.cash_flow(period=self.DEFAULT_PERIOD, lang=lang)
-            api_circuit_breaker.record_success()
-            return self._normalize_finance_dataframe(df)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching cash flow for {symbol}: {e}")
-            logger.warning(f"Error fetching cash flow for {symbol}: {e}")
-            raise
+        return self._fetch_statement_dataset_sync(
+            symbol=symbol,
+            lang=lang,
+            method_name="cash_flow",
+            dataset_name="cash flow",
+        )
 
     def _fetch_financial_ratios_sync(self, symbol: str, lang: str) -> List[Dict[str, Any]]:
         """Fetch financial ratios synchronously from source API."""
-        from vnstock import Vnstock
-
         if not api_circuit_breaker.can_proceed():
             raise CircuitOpenError(f"Circuit breaker open - cannot fetch financial ratios for {symbol}")
 
         try:
-            s = Vnstock().stock(symbol=symbol[:3], source='VCI')
-            df = s.finance.ratio(period=self.DEFAULT_PERIOD, lang=lang)
+            client = self._build_vnstock_data_alt_client(symbol)
+            df = client.ratio(period=self.DEFAULT_PERIOD, lang=lang, mode="raw")
+            records = self._normalize_ratio_dataset(df)
             api_circuit_breaker.record_success()
-            return self._normalize_finance_dataframe(df)
+            return records
         except CircuitOpenError:
             raise
         except (SystemExit, Exception) as e:

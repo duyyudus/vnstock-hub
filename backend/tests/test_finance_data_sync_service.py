@@ -23,7 +23,7 @@ async def test_finance_sync_parallel_workers_update_counters(monkeypatch):
     async def _fake_build_symbol_universe(_symbols=None):
         return symbols
 
-    async def _fake_sync_symbol(_symbol: str):
+    async def _fake_sync_symbol(_symbol: str, force_refresh: bool = False):
         nonlocal in_flight, max_in_flight
         async with counter_lock:
             in_flight += 1
@@ -60,11 +60,11 @@ async def test_finance_sync_tracks_failed_tickers_and_resets(monkeypatch):
     async def _fake_build_symbol_universe(_symbols=None):
         return symbols
 
-    async def _fail_on_bbb(symbol: str):
+    async def _fail_on_bbb(symbol: str, force_refresh: bool = False):
         if symbol == "BBB":
             raise RuntimeError("sync failed")
 
-    async def _all_success(_symbol: str):
+    async def _all_success(_symbol: str, force_refresh: bool = False):
         return None
 
     monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
@@ -127,7 +127,7 @@ async def test_finance_sync_normal_mode_does_not_apply_quick_filter(monkeypatch)
 
     processed = []
 
-    async def _fake_sync_symbol(symbol: str):
+    async def _fake_sync_symbol(symbol: str, force_refresh: bool = False):
         processed.append(symbol)
 
     monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
@@ -137,6 +137,26 @@ async def test_finance_sync_normal_mode_does_not_apply_quick_filter(monkeypatch)
     await service._run_sync(symbols=None, quick_sync=False)
 
     assert processed == ["AAA", "BBB"]
+
+
+@pytest.mark.asyncio
+async def test_finance_sync_force_refresh_flows_to_symbol_sync(monkeypatch):
+    service = FinanceDataSyncService(finance=FinanceService())
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return ["AAA", "BBB"]
+
+    processed = []
+
+    async def _fake_sync_symbol(symbol: str, force_refresh: bool = False):
+        processed.append((symbol, force_refresh))
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_sync_symbol", _fake_sync_symbol)
+
+    await service._run_sync(symbols=None, quick_sync=False, force_refresh=True)
+
+    assert processed == [("AAA", True), ("BBB", True)]
 
 
 @pytest.mark.asyncio
@@ -163,8 +183,9 @@ async def test_finance_fetch_rate_limit_then_success(monkeypatch):
         data_type: str,
         lang: str = "en",
         raise_on_failure: bool = False,
+        force_refresh: bool = False,
     ):
-        attempts.append((symbol, data_type, lang, raise_on_failure))
+        attempts.append((symbol, data_type, lang, raise_on_failure, force_refresh))
         if len(attempts) <= 2:
             raise RuntimeError("Rate limit exceeded")
         return []
@@ -195,6 +216,7 @@ async def test_finance_fetch_rate_limit_then_success(monkeypatch):
     assert len(attempts) == 3
     assert attempts[0][:2] == attempts[1][:2] == attempts[2][:2] == ("AAA", "income")
     assert all(entry[3] is True for entry in attempts)
+    assert all(entry[4] is False for entry in attempts)
     assert len(sleeps) == 2
 
 
@@ -212,8 +234,9 @@ async def test_finance_fetch_non_rate_limit_does_not_retry(monkeypatch):
         data_type: str,
         lang: str = "en",
         raise_on_failure: bool = False,
+        force_refresh: bool = False,
     ):
-        attempts.append((symbol, data_type, lang, raise_on_failure))
+        attempts.append((symbol, data_type, lang, raise_on_failure, force_refresh))
         raise RuntimeError("database exploded")
 
     async def _fake_sleep(seconds: float):
@@ -255,8 +278,9 @@ async def test_finance_fetch_rate_limit_exceeds_max_wait_cap(monkeypatch):
         data_type: str,
         lang: str = "en",
         raise_on_failure: bool = False,
+        force_refresh: bool = False,
     ):
-        attempts.append((symbol, data_type, lang, raise_on_failure))
+        attempts.append((symbol, data_type, lang, raise_on_failure, force_refresh))
         raise CircuitOpenError("Rate limited")
 
     async def _fake_sleep(seconds: float):
@@ -321,8 +345,13 @@ async def test_sync_symbol_fetches_each_data_type_once(monkeypatch):
     service = FinanceDataSyncService(finance=FinanceService())
     calls = []
 
-    async def _fake_run_finance_fetch_with_retry(symbol: str, data_type: str, lang: str = "en") -> int:
-        calls.append((symbol, data_type, lang))
+    async def _fake_run_finance_fetch_with_retry(
+        symbol: str,
+        data_type: str,
+        lang: str = "en",
+        force_refresh: bool = False,
+    ) -> int:
+        calls.append((symbol, data_type, lang, force_refresh))
         return 0
 
     monkeypatch.setattr(service, "_run_finance_fetch_with_retry", _fake_run_finance_fetch_with_retry)
@@ -330,7 +359,7 @@ async def test_sync_symbol_fetches_each_data_type_once(monkeypatch):
     await service._sync_symbol("AAA")
 
     assert [entry[1] for entry in calls] == list(service.DATA_TYPES)
-    assert all(entry[0] == "AAA" and entry[2] == "en" for entry in calls)
+    assert all(entry[0] == "AAA" and entry[2] == "en" and entry[3] is False for entry in calls)
 
 
 @pytest.mark.asyncio
@@ -357,8 +386,9 @@ async def test_run_sync_force_restart(monkeypatch):
     async def _fake_resolve_symbols_filter(symbols=None, index_symbol=None):
         return ["AAA"]
 
-    async def _fake_run_sync(_symbols, quick_sync=False):
+    async def _fake_run_sync(_symbols, quick_sync=False, force_refresh=False):
         assert quick_sync is False
+        assert force_refresh is True
         await asyncio.sleep(0)
 
     monkeypatch.setattr(service, "_resolve_symbols_filter", _fake_resolve_symbols_filter)
@@ -370,7 +400,12 @@ async def test_run_sync_force_restart(monkeypatch):
     not_restarted = await service.run_sync(force_restart=False, symbols=["AAA"], index_symbol=None)
     assert not_restarted["started"] is False
 
-    restarted = await service.run_sync(force_restart=True, symbols=["AAA"], index_symbol=None)
+    restarted = await service.run_sync(
+        force_restart=True,
+        symbols=["AAA"],
+        index_symbol=None,
+        force_refresh=True,
+    )
     assert restarted["started"] is True
     assert restarted["state"] == "running"
 
