@@ -1,95 +1,276 @@
-'Listing module.'
-_N='__typename'
-_M="Tham số lang phải là 'vi' hoặc 'en'."
-_L='Không tìm thấy dữ liệu. Vui lòng kiểm tra lại.'
-_K='icb_name'
-_J=None
-_I='icb_code'
-_H='records'
-_G='organ_name'
-_F='VCI'
-_E='symbol'
-_D='vi'
-_C='VCI.ext'
-_B=False
-_A=True
-from typing import Dict,Optional
+"""Listing module."""
+
+from __future__ import annotations
+
+import json
 from datetime import datetime
-from app.lib.vnstock_alt.explorer.vci.const import _GROUP_CODE,_TRADING_URL,_GRAPHQL_URL
-import json,pandas as pd
-from app.lib._vnstock_shared.core.utils.parser import camel_to_snake
+from typing import Optional
+
+import pandas as pd
+
+from app.lib._vnstock_shared.common.vci_industry_fallback import build_vci_industry_fallback
+from app.lib._vnstock_shared.compat import agg_execution
 from app.lib._vnstock_shared.core.utils.logger import get_logger
-from app.lib._vnstock_shared.core.utils.transform import drop_cols_by_pattern,reorder_cols
+from app.lib._vnstock_shared.core.utils.parser import camel_to_snake
+from app.lib._vnstock_shared.core.utils.transform import drop_cols_by_pattern, reorder_cols
+from app.lib.vnstock_alt.explorer.vci.const import _GRAPHQL_URL, _GROUP_CODE, _TRADING_URL
+from app.lib.vnstock_data_alt.core.registry import ProviderRegistry
 from app.lib.vnstock_data_alt.core.utils.client import send_request
 from app.lib.vnstock_data_alt.core.utils.user_agent import get_headers
-from app.lib._vnstock_shared.compat import agg_execution
-logger=get_logger(__name__)
+
+
+logger = get_logger(__name__)
+
+
 class Listing:
-	'\n    Cấu hình truy cập dữ liệu lịch sử giá chứng khoán từ VCI.\n    '
-	def __init__(A,random_agent=_B,show_log=_B):
-		B=show_log;A.data_source=_F;A.base_url=_TRADING_URL;A.headers=get_headers(data_source=A.data_source,random_agent=random_agent);A.show_log=B
-		if not B:logger.setLevel('CRITICAL')
-	@agg_execution(_C)
-	def all_symbols(self,show_log=_B,to_df=_A):
-		'\n        Truy xuất danh sách toàn. bộ mã và tên các cổ phiếu trên thị trường Việt Nam.\n\n        Tham số:\n            - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.\n            - to_df (tùy chọn): Chuyển đổi dữ liệu danh sách mã cổ phiếu trả về dưới dạng DataFrame. Mặc định là True. Đặt là False để trả về dữ liệu dạng JSON.\n        ';A=self.symbols_by_exchange(show_log=show_log,to_df=_A);A=A.query('type == "STOCK"').reset_index(drop=_A);A=A[[_E,_G]]
-		if to_df:return A
-		else:B=A.to_json(orient=_H);return B
-	@agg_execution(_C)
-	def symbols_by_industries(self,lang=_D,show_log=_B,to_df=_A):
-		'\n        Truy xuất thông tin phân ngành icb của các mã cổ phiếu trên thị trường Việt Nam.\n\n        Tham số:\n            - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.\n            - to_df (tùy chọn): Chuyển đổi dữ liệu danh sách mã cổ phiếu trả về dưới dạng DataFrame. Mặc định là True. Đặt là False để trả về dữ liệu dạng JSON.\n        ';M='com_type_code';K=show_log;J='icb_level';D=lang
-		if D not in[_D,'en']:raise ValueError(_M)
-		F='{"query":"{\\n  CompaniesListingInfo {\\n    ticker\\n    organName\\n    enOrganName\\n    icbName3\\n    enIcbName3\\n    icbName2\\n    enIcbName2\\n    icbName4\\n    enIcbName4\\n    comTypeCode\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}\\n","variables":{}}';F=json.loads(F);E=send_request(url=_GRAPHQL_URL,headers=self.headers,method='POST',payload=F,show_log=K)
-		if not E:raise ValueError(_L)
-		if K:logger.info(f"Truy xuất thành công dữ liệu danh sách phân ngành icb.")
-		A=pd.DataFrame(E['data']['CompaniesListingInfo']);A.columns=[camel_to_snake(A)for A in A.columns];A=A.drop(columns=[_N]);A=A.rename(columns={'ticker':_E});L=_G if D==_D else'en_organ_name';N='icb_name2'if D==_D else'en_icb_name2';O='icb_name3'if D==_D else'en_icb_name3';P='icb_name4'if D==_D else'en_icb_name4';Q=[_E,L,M];G=[]
-		for(R,H,I)in[(1,'icb_code1',_J),(2,'icb_code2',N),(3,'icb_code3',O),(4,'icb_code4',P)]:
-			if H in A.columns:
-				C=A[Q+[H]].copy();C[J]=R;C=C.rename(columns={H:_I})
-				if I and I in A.columns:C[_K]=A[I]
-				else:C[_K]=_J
-				G.append(C)
-		if G:B=pd.concat(G,ignore_index=_A);B=B[B[_I].notna()&(B[_I]!='')];B=B.rename(columns={L:_G});B=B.sort_values(by=[_E,J]).reset_index(drop=_A);A=B[[_E,_G,M,J,_I,_K]]
-		A.source=_F
-		if to_df:return A
-		else:E=A.to_json(orient=_H);return E
-	@agg_execution(_C)
-	def symbols_by_exchange(self,lang=_D,show_log=_B,to_df=_A):
-		'\n        Truy xuất thông tin niêm yết theo sàn của các mã cổ phiếu trên thị trường Việt Nam.\n\n        Tham số:\n                - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.\n                - to_df (tùy chọn): Chuyển đổi dữ liệu danh sách mã cổ phiếu trả về dưới dạng DataFrame. Mặc định là True. Đặt là False để trả về dữ liệu dạng JSON.\n        ';E='en_';D='exchange';C=show_log
-		if lang not in[_D,'en']:raise ValueError(_M)
-		F=self.base_url+'/price/symbols/getAll';B=send_request(url=F,headers=self.headers,method='GET',payload=_J,show_log=C)
-		if not B:raise ValueError(_L)
-		if C:logger.info(f"Truy xuất dữ liệu thành công cho {len(B)} mã.")
-		A=pd.DataFrame(B);A.columns=[camel_to_snake(A)for A in A.columns];A=A.rename(columns={'board':D});A=reorder_cols(A,[_E,D,'type'],position='first');A=A.drop(columns=['id'])
-		if lang==_D:A=drop_cols_by_pattern(A,[E])
-		else:A=A.drop(columns=[_G,'organ_short_name']);A.columns=[A.replace(E,'')for A in A.columns]
-		if to_df:A.source=_F;return A
-		else:B=A.to_json(orient=_H);return B
-	@agg_execution(_C)
-	def industries_icb(self,show_log=_B,to_df=_A):
-		'\n        Truy xuất thông tin phân ngành icb của các mã cổ phiếu trên thị trường Việt Nam.\n\n        Tham số:\n            - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.\n            - to_df (tùy chọn): Chuyển đổi dữ liệu danh sách mã cổ phiếu trả về dưới dạng DataFrame. Mặc định là True. Đặt là False để trả về dữ liệu dạng JSON.\n        ';D=show_log;C='{"query":"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}","variables":{}}';C=json.loads(C);B=send_request(url=_GRAPHQL_URL,headers=self.headers,method='POST',payload=C,show_log=D)
-		if not B:raise ValueError(_L)
-		if D:logger.info(f"Truy xuất thành công dữ liệu danh sách phân ngành icb.")
-		A=pd.DataFrame(B['data']['ListIcbCode']);A.columns=[camel_to_snake(A)for A in A.columns];A=A.drop(columns=[_N]);A=A[[_K,'en_icb_name',_I,'level']];A.source=_F
-		if to_df:return A
-		else:B=A.to_json(orient=_H);return B
-	@agg_execution(_C)
-	def symbols_by_group(self,group='VN30',show_log=_B,to_df=_A):
-		"\n        Truy xuất danh sách các mã cổ phiếu theo tên nhóm trên thị trường Việt Nam.\n\n        Tham số:\n            - group (tùy chọn): Tên nhóm cổ phiếu. Mặc định là 'VN30'. Các mã có thể là: HOSE, VN30, VNMidCap, VNSmallCap, VNAllShare, VN100, ETF, HNX, HNX30, HNXCon, HNXFin, HNXLCap, HNXMSCap, HNXMan, UPCOM, FU_INDEX (mã chỉ số hợp đồng tương lai), CW (chứng quyền).\n            - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.\n            - to_df (tùy chọn): Chuyển đổi dữ liệu danh sách mã cổ phiếu trả về dưới dạng DataFrame. Mặc định là True. Đặt là False để trả về dữ liệu dạng JSON.\n        ";D=show_log;C=group
-		if C not in _GROUP_CODE:raise ValueError(f"Invalid group. Group must be in {_GROUP_CODE}")
-		E=self.base_url+f"/price/symbols/getByGroup?group={C}";A=send_request(url=E,headers=self.headers,method='GET',payload=_J,show_log=D)
-		if D:logger.info(f"Truy xuất thành công dữ liệu danh sách mã CP theo nhóm.")
-		B=pd.DataFrame(A)
-		if to_df:
-			if not A:raise ValueError('JSON data is empty or not provided.')
-			B.source=_F;return B[_E]
-		else:A=B.to_json(orient=_H);return A
-	@agg_execution(_C)
-	def all_future_indices(self,show_log=_B,to_df=_A):return self.symbols_by_group(group='FU_INDEX',show_log=show_log,to_df=to_df)
-	@agg_execution(_C)
-	def all_government_bonds(self,show_log=_B,to_df=_A):return self.symbols_by_group(group='FU_BOND',show_log=show_log,to_df=to_df)
-	@agg_execution(_C)
-	def all_covered_warrant(self,show_log=_B,to_df=_A):return self.symbols_by_group(group='CW',show_log=show_log,to_df=to_df)
-	@agg_execution(_C)
-	def all_bonds(self,show_log=_B,to_df=_A):return self.symbols_by_group(group='BOND',show_log=show_log,to_df=to_df)
-from app.lib.vnstock_data_alt.core.registry import ProviderRegistry
-ProviderRegistry.register('listing','vci',Listing)
+    """Cấu hình truy cập dữ liệu lịch sử giá chứng khoán từ VCI."""
+
+    def __init__(self, random_agent: bool = False, show_log: bool = False):
+        self.data_source = "VCI"
+        self.base_url = _TRADING_URL
+        self.headers = get_headers(data_source=self.data_source, random_agent=random_agent)
+        self.show_log = show_log
+        if not show_log:
+            logger.setLevel("CRITICAL")
+
+    @agg_execution("VCI.ext")
+    def all_symbols(self, show_log: bool = False, to_df: bool = True):
+        df = self.symbols_by_exchange(show_log=show_log, to_df=True)
+        df = df.query('type == "STOCK"').reset_index(drop=True)
+        df = df[["symbol", "organ_name"]]
+        if to_df:
+            return df
+        return df.to_json(orient="records")
+
+    @agg_execution("VCI.ext")
+    def symbols_by_industries(self, lang: str = "vi", show_log: bool = False, to_df: bool = True):
+        if lang not in ["vi", "en"]:
+            raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
+
+        payload = json.loads(
+            '{"query":"{\\n  CompaniesListingInfo {\\n    ticker\\n    organName\\n    enOrganName\\n    '
+            'icbName3\\n    enIcbName3\\n    icbName2\\n    enIcbName2\\n    icbName4\\n    enIcbName4\\n    '
+            'comTypeCode\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}'
+            '\\n","variables":{}}'
+        )
+        json_data = send_request(
+            url=_GRAPHQL_URL,
+            headers=self.headers,
+            method="POST",
+            payload=payload,
+            show_log=show_log,
+        )
+
+        companies_listing = _extract_graphql_rows(json_data, "CompaniesListingInfo")
+        if not companies_listing:
+            df = self._fallback_symbols_by_industries(lang=lang, show_log=show_log)
+        else:
+            if show_log:
+                logger.info("Truy xuất thành công dữ liệu danh sách phân ngành icb.")
+            df = pd.DataFrame(companies_listing)
+            df.columns = [camel_to_snake(col) for col in df.columns]
+            df = df.drop(columns=["__typename"])
+            df = df.rename(columns={"ticker": "symbol"})
+            df = self._to_long_form_symbols_by_industries(df, lang=lang)
+
+        df.source = "VCI"
+        if to_df:
+            return df
+        return df.to_json(orient="records")
+
+    @agg_execution("VCI.ext")
+    def symbols_by_exchange(self, lang: str = "vi", show_log: bool = False, to_df: bool = True):
+        if lang not in ["vi", "en"]:
+            raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
+
+        json_data = send_request(
+            url=self.base_url + "/price/symbols/getAll",
+            headers=self.headers,
+            method="GET",
+            payload=None,
+            show_log=show_log,
+        )
+        if not json_data:
+            raise ValueError("Không tìm thấy dữ liệu. Vui lòng kiểm tra lại.")
+
+        if show_log:
+            logger.info("Truy xuất dữ liệu thành công cho %s mã.", len(json_data))
+
+        df = pd.DataFrame(json_data)
+        df.columns = [camel_to_snake(col) for col in df.columns]
+        df = df.rename(columns={"board": "exchange"})
+        df = reorder_cols(df, ["symbol", "exchange", "type"], position="first")
+        df = df.drop(columns=["id"])
+
+        if lang == "vi":
+            df = drop_cols_by_pattern(df, ["en_"])
+        else:
+            df = df.drop(columns=["organ_name", "organ_short_name"])
+            df.columns = [col.replace("en_", "") for col in df.columns]
+
+        df.source = "VCI"
+        if to_df:
+            return df
+        return df.to_json(orient="records")
+
+    @agg_execution("VCI.ext")
+    def industries_icb(self, show_log: bool = False, to_df: bool = True):
+        payload = json.loads(
+            '{"query":"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName'
+            '\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    '
+            'icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}","variables":{}}'
+        )
+        json_data = send_request(
+            url=_GRAPHQL_URL,
+            headers=self.headers,
+            method="POST",
+            payload=payload,
+            show_log=show_log,
+        )
+
+        icb_rows = _extract_graphql_rows(json_data, "ListIcbCode")
+        if not icb_rows:
+            df = self._fallback_industries_icb(show_log=show_log)
+        else:
+            if show_log:
+                logger.info("Truy xuất thành công dữ liệu danh sách phân ngành icb.")
+            df = pd.DataFrame(icb_rows)
+            df.columns = [camel_to_snake(col) for col in df.columns]
+            df = df.drop(columns=["__typename"])
+            df = df[["icb_name", "en_icb_name", "icb_code", "level"]]
+
+        df.source = "VCI"
+        if to_df:
+            return df
+        return df.to_json(orient="records")
+
+    @agg_execution("VCI.ext")
+    def symbols_by_group(self, group: str = "VN30", show_log: bool = False, to_df: bool = True):
+        if group not in _GROUP_CODE:
+            raise ValueError(f"Invalid group. Group must be in {_GROUP_CODE}")
+
+        json_data = send_request(
+            url=self.base_url + f"/price/symbols/getByGroup?group={group}",
+            headers=self.headers,
+            method="GET",
+            payload=None,
+            show_log=show_log,
+        )
+        if show_log:
+            logger.info("Truy xuất thành công dữ liệu danh sách mã CP theo nhóm.")
+
+        df = pd.DataFrame(json_data)
+        if to_df:
+            if not json_data:
+                raise ValueError("JSON data is empty or not provided.")
+            df.source = "VCI"
+            return df["symbol"]
+        return df.to_json(orient="records")
+
+    @agg_execution("VCI.ext")
+    def all_future_indices(self, show_log: bool = False, to_df: bool = True):
+        return self.symbols_by_group(group="FU_INDEX", show_log=show_log, to_df=to_df)
+
+    @agg_execution("VCI.ext")
+    def all_government_bonds(self, show_log: bool = False, to_df: bool = True):
+        return self.symbols_by_group(group="FU_BOND", show_log=show_log, to_df=to_df)
+
+    @agg_execution("VCI.ext")
+    def all_covered_warrant(self, show_log: bool = False, to_df: bool = True):
+        return self.symbols_by_group(group="CW", show_log=show_log, to_df=to_df)
+
+    @agg_execution("VCI.ext")
+    def all_bonds(self, show_log: bool = False, to_df: bool = True):
+        return self.symbols_by_group(group="BOND", show_log=show_log, to_df=to_df)
+
+    def _fallback_industries_icb(self, show_log: bool = False) -> pd.DataFrame:
+        fallback = self._build_industry_fallback(show_log=show_log)
+        return fallback.industries_icb.copy()
+
+    def _fallback_symbols_by_industries(self, lang: str, show_log: bool = False) -> pd.DataFrame:
+        fallback = self._build_industry_fallback(show_log=show_log)
+        base_df = fallback.symbols_by_level2.copy()
+        name_column = "icb_name2" if lang == "vi" else "en_icb_name2"
+        family_name_column = "icb_name1" if lang == "vi" else "en_icb_name1"
+        organ_name_column = "organ_name" if lang == "vi" else "en_organ_name"
+
+        records: list[dict[str, object]] = []
+        for row in base_df.itertuples(index=False):
+            if row.icb_code1:
+                records.append(
+                    {
+                        "symbol": row.symbol,
+                        "organ_name": getattr(row, organ_name_column),
+                        "com_type_code": row.com_type_code,
+                        "icb_level": 1,
+                        "icb_code": row.icb_code1,
+                        "icb_name": getattr(row, family_name_column),
+                    }
+                )
+            records.append(
+                {
+                    "symbol": row.symbol,
+                    "organ_name": getattr(row, organ_name_column),
+                    "com_type_code": row.com_type_code,
+                    "icb_level": 2,
+                    "icb_code": row.icb_code2,
+                    "icb_name": getattr(row, name_column),
+                }
+            )
+
+        df = pd.DataFrame(records, columns=["symbol", "organ_name", "com_type_code", "icb_level", "icb_code", "icb_name"])
+        if not df.empty:
+            df = df.sort_values(by=["symbol", "icb_level"]).reset_index(drop=True)
+        if show_log:
+            logger.warning("VCI industry GraphQL returned empty payload; using reconstructed listing fallback.")
+        return df
+
+    def _build_industry_fallback(self, show_log: bool = False):
+        symbols_df = self.symbols_by_exchange(show_log=show_log, to_df=True)
+        return build_vci_industry_fallback(symbols_df, random_agent=False, show_log=show_log)
+
+    def _to_long_form_symbols_by_industries(self, df: pd.DataFrame, *, lang: str) -> pd.DataFrame:
+        organ_name_column = "organ_name" if lang == "vi" else "en_organ_name"
+        rows: list[pd.DataFrame] = []
+        level_mappings = [
+            (1, "icb_code1", None),
+            (2, "icb_code2", "icb_name2" if lang == "vi" else "en_icb_name2"),
+            (3, "icb_code3", "icb_name3" if lang == "vi" else "en_icb_name3"),
+            (4, "icb_code4", "icb_name4" if lang == "vi" else "en_icb_name4"),
+        ]
+
+        for level, code_column, name_column in level_mappings:
+            if code_column not in df.columns:
+                continue
+            level_df = df[["symbol", organ_name_column, "com_type_code", code_column]].copy()
+            level_df["icb_level"] = level
+            level_df = level_df.rename(columns={organ_name_column: "organ_name", code_column: "icb_code"})
+            if name_column and name_column in df.columns:
+                level_df["icb_name"] = df[name_column]
+            else:
+                level_df["icb_name"] = None
+            rows.append(level_df)
+
+        if not rows:
+            return pd.DataFrame(columns=["symbol", "organ_name", "com_type_code", "icb_level", "icb_code", "icb_name"])
+
+        long_df = pd.concat(rows, ignore_index=True)
+        long_df = long_df[long_df["icb_code"].notna() & (long_df["icb_code"] != "")]
+        return long_df[["symbol", "organ_name", "com_type_code", "icb_level", "icb_code", "icb_name"]].sort_values(
+            by=["symbol", "icb_level"]
+        ).reset_index(drop=True)
+
+
+def _extract_graphql_rows(json_data: object, field_name: str) -> list[dict]:
+    if not isinstance(json_data, dict):
+        return []
+    data = json_data.get("data")
+    if not isinstance(data, dict):
+        return []
+    rows = data.get(field_name)
+    if not isinstance(rows, list):
+        return []
+    return rows
+
+
+ProviderRegistry.register("listing", "vci", Listing)

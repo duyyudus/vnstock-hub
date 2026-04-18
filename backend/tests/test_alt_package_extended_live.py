@@ -529,3 +529,22 @@ def test_extended_live_full_surface_contracts_match_upstream(
         pytest.skip(f"Live rate limit encountered during {case_name}; skipping full-surface assertion.")
 
     assert alt_result == upstream_result, f"{case_name}: alt={alt_result} upstream={upstream_result}"
+
+
+@pytest.mark.skipif(
+    not RUN_EXTENDED_LIVE_DIFF,
+    reason="Set RUN_VNSTOCK_EXTENDED_LIVE_DIFF=1 to run extended live full-surface checks.",
+)
+def test_vci_industry_fallback_sources_are_non_empty() -> None:
+    vnstock_alt = importlib.import_module("app.lib.vnstock_alt")
+    screener_module = importlib.import_module("app.lib.vnstock_data_alt.explorer.vci.screener")
+
+    symbols = vnstock_alt.Listing(source="VCI", show_log=False).symbols_by_exchange()
+    criteria = screener_module.Screener(show_log=False).get_criteria(to_df=False)
+
+    assert isinstance(symbols, pd.DataFrame)
+    assert not symbols.empty
+    assert "icb_code2" in symbols.columns
+    assert isinstance(criteria, list)
+    assert any(item.get("name") == "sector" for item in criteria)
+    assert any(item.get("name") == "sectorLv1" for item in criteria)

@@ -8,6 +8,7 @@ import json
 import requests
 import pandas as pd
 from app.lib._vnstock_shared.core.utils.parser import camel_to_snake
+from app.lib._vnstock_shared.common.vci_industry_fallback import build_vci_industry_fallback
 from app.lib._vnstock_shared.core.utils.logger import get_logger
 from app.lib._vnstock_shared.core.utils.user_agent import get_headers
 from app.lib._vnstock_shared.core.utils.client import send_request, ProxyConfig
@@ -88,13 +89,14 @@ class Listing:
             request_mode=self.proxy_config.request_mode
         )
 
-        if not json_data:
-            raise ValueError("Không tìm thấy dữ liệu. Vui lòng kiểm tra lại.")
+        companies_listing = _extract_graphql_rows(json_data, "CompaniesListingInfo")
+        if not companies_listing:
+            return self._fallback_symbols_by_industries(lang=lang, show_log=show_log)
 
         if show_log:
-            logger.info(f'Truy xuất thành công dữ liệu danh sách phân ngành icb.')
+            logger.info('Truy xuất thành công dữ liệu danh sách phân ngành icb.')
 
-        df = pd.DataFrame(json_data['data']['CompaniesListingInfo'])
+        df = pd.DataFrame(companies_listing)
         df.columns = [camel_to_snake(col) for col in df.columns]
         df = df.drop(columns=['__typename'])
         df = df.rename(columns={'ticker': 'symbol'})
@@ -182,13 +184,14 @@ class Listing:
             request_mode=self.proxy_config.request_mode
         )
 
-        if not json_data:
-            raise ValueError("Không tìm thấy dữ liệu. Vui lòng kiểm tra lại.")
+        icb_rows = _extract_graphql_rows(json_data, "ListIcbCode")
+        if not icb_rows:
+            return self._fallback_industries_icb(show_log=show_log)
 
         if show_log:
             logger.info('Truy xuất thành công dữ liệu danh sách phân ngành icb.')
 
-        df = pd.DataFrame(json_data['data']['ListIcbCode'])
+        df = pd.DataFrame(icb_rows)
         df.columns = [camel_to_snake(col) for col in df.columns]
         df = df.drop(columns=['__typename'])
         df = df[['icb_name', 'en_icb_name', 'icb_code', 'level']]
@@ -278,6 +281,53 @@ class Listing:
                           (Sector indices include sector_id mapping)
         """
         return market_indices.get_indices_by_group(group)
+
+    def _fallback_industries_icb(self, show_log: Optional[bool] = False) -> pd.DataFrame:
+        fallback = self._build_industry_fallback(show_log=show_log)
+        df = fallback.industries_icb.copy()
+        df.source = "VCI"
+        return df
+
+    def _fallback_symbols_by_industries(self, lang: str, show_log: Optional[bool] = False) -> pd.DataFrame:
+        fallback = self._build_industry_fallback(show_log=show_log)
+        base_df = fallback.symbols_by_level2.copy()
+        rows = {
+            'symbol': base_df['symbol'],
+            'organ_name': base_df['organ_name'] if lang == 'vi' else base_df['en_organ_name'],
+            'icb_name3': None,
+            'icb_name2': base_df['icb_name2'] if lang == 'vi' else base_df['en_icb_name2'],
+            'icb_name4': None,
+            'com_type_code': base_df['com_type_code'],
+            'icb_code1': base_df['icb_code1'],
+            'icb_code2': base_df['icb_code2'],
+            'icb_code3': None,
+            'icb_code4': None,
+        }
+        df = pd.DataFrame(rows)
+        df.source = "VCI"
+        if show_log:
+            logger.warning('VCI industry GraphQL returned empty payload; using reconstructed listing fallback.')
+        return df
+
+    def _build_industry_fallback(self, show_log: Optional[bool] = False):
+        symbols_df = self.symbols_by_exchange(show_log=show_log)
+        return build_vci_industry_fallback(
+            symbols_df,
+            random_agent=False,
+            show_log=show_log,
+        )
+
+
+def _extract_graphql_rows(json_data: object, field_name: str) -> list[dict]:
+    if not isinstance(json_data, dict):
+        return []
+    data = json_data.get('data')
+    if not isinstance(data, dict):
+        return []
+    rows = data.get(field_name)
+    if not isinstance(rows, list):
+        return []
+    return rows
 
 
 # Register provider
