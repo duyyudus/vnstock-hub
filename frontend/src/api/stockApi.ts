@@ -1535,6 +1535,46 @@ export const stockApi = {
     },
 
     /**
+     * Fetch ownership composition for a specific stock
+     */
+    async getOwnership(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/ownership`);
+        return response.data;
+    },
+
+    /**
+     * Fetch charter capital history for a specific stock
+     */
+    async getCapitalHistory(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/capital-history`);
+        return response.data;
+    },
+
+    /**
+     * Fetch company news for a specific stock
+     */
+    async getCompanyNews(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/news`);
+        return response.data;
+    },
+
+    /**
+     * Fetch company events for a specific stock
+     */
+    async getCompanyEvents(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/events`);
+        return response.data;
+    },
+
+    /**
+     * Fetch insider trading for a specific stock
+     */
+    async getInsiderTrading(symbol: string): Promise<FinancialDataResponse> {
+        const response = await apiClient.get<FinancialDataResponse>(`/stocks/company/${symbol}/insider-trading`);
+        return response.data;
+    },
+
+    /**
      * Fetch volume history for a specific stock
      * @param symbol Stock ticker symbol
      * @param days Number of days to fetch (default: 30)
@@ -1753,13 +1793,15 @@ export const stockApi = {
         forceRestart: boolean = false,
         symbols?: string[],
         indexSymbol?: string,
-        quickSync: boolean = false
+        quickSync: boolean = false,
+        forceRefresh: boolean = false,
     ): Promise<HistorySyncActionResponse> {
         const response = await apiClient.post<HistorySyncActionResponse>('/sync/company/run', {
             force_restart: forceRestart,
             symbols: symbols && symbols.length > 0 ? symbols : undefined,
             index_symbol: indexSymbol || undefined,
             quick_sync: quickSync,
+            force_refresh: forceRefresh,
         });
         return response.data;
     },

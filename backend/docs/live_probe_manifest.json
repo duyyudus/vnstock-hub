@@ -164,9 +164,9 @@
     "package": "vnstock_alt",
     "class_path": "app.lib.vnstock_alt.api.company.Company",
     "method": "overview",
-    "source": "vci",
+    "source": "kbs",
     "init_kwargs": {
-      "source": "VCI",
+      "source": "KBS",
       "symbol": "VCB"
     },
     "method_kwargs": {}
@@ -175,9 +175,9 @@
     "package": "vnstock_alt",
     "class_path": "app.lib.vnstock_alt.api.company.Company",
     "method": "shareholders",
-    "source": "vci",
+    "source": "kbs",
     "init_kwargs": {
-      "source": "VCI",
+      "source": "KBS",
       "symbol": "VCB"
     },
     "method_kwargs": {}
@@ -186,9 +186,9 @@
     "package": "vnstock_alt",
     "class_path": "app.lib.vnstock_alt.api.company.Company",
     "method": "officers",
-    "source": "vci",
+    "source": "kbs",
     "init_kwargs": {
-      "source": "VCI",
+      "source": "KBS",
       "symbol": "VCB"
     },
     "method_kwargs": {}
@@ -197,9 +197,64 @@
     "package": "vnstock_alt",
     "class_path": "app.lib.vnstock_alt.api.company.Company",
     "method": "subsidiaries",
-    "source": "vci",
+    "source": "kbs",
     "init_kwargs": {
-      "source": "VCI",
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "ownership",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "capital_history",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "news",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "events",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
+      "symbol": "VCB"
+    },
+    "method_kwargs": {}
+  },
+  {
+    "package": "vnstock_alt",
+    "class_path": "app.lib.vnstock_alt.api.company.Company",
+    "method": "insider_trading",
+    "source": "kbs",
+    "init_kwargs": {
+      "source": "KBS",
       "symbol": "VCB"
     },
     "method_kwargs": {}

@@ -459,8 +459,7 @@ _COMPANY_PROFILE_MAP = {
     'URL': 'website',
     'BRANCH': 'branches',
     'HS': 'history',
-    'KLCPNY': 'free_float_percentage',
-    'SFV': 'free_float',
+    'KLCPNY': 'charter_capital_vnd',
     'KLCPLH': 'outstanding_shares',
     'AD': 'as_of_date',
 }
@@ -590,4 +589,3 @@ _FINANCIAL_PERIOD_TYPE_MAP = {
     1: 'year',
     2: 'quarter',
 }
-

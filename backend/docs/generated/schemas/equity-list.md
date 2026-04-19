@@ -2,7 +2,7 @@
 
 - Class: `EquityReference`
 - Method: `list`
-- Signature: `(show_log = False, to_df = True)`
+- Signature: `(show_log: bool = False, to_df: bool = True)`
 - Return type: `None`
 - Normalization mode: `contractual`
 - Supported sources: `kbs, vci`
@@ -20,8 +20,8 @@ List all equity symbols.
 
 | Name | Kind | Required | Default | Annotation |
 | --- | --- | --- | --- | --- |
-| `show_log` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `` |
-| `to_df` | `POSITIONAL_OR_KEYWORD` | `False` | `True` | `` |
+| `show_log` | `POSITIONAL_OR_KEYWORD` | `False` | `False` | `bool` |
+| `to_df` | `POSITIONAL_OR_KEYWORD` | `False` | `True` | `bool` |
 
 ## Source details
 

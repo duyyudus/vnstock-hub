@@ -61,6 +61,7 @@ export const AdminPage: React.FC = () => {
     const [companyCollectionScope, setCompanyCollectionScope] = useState<SyncCollectionScope>('manual');
     const [companyForceRestart, setCompanyForceRestart] = useState(false);
     const [companyQuickSync, setCompanyQuickSync] = useState(false);
+    const [companyForceRefresh, setCompanyForceRefresh] = useState(false);
     const [portfolioCollectionSymbols, setPortfolioCollectionSymbols] = useState<string[]>([]);
     const [tradingCollectionSymbols, setTradingCollectionSymbols] = useState<string[]>([]);
 
@@ -311,6 +312,7 @@ export const AdminPage: React.FC = () => {
                 symbols.length > 0 ? symbols : undefined,
                 companyCollectionScope === 'manual' ? companyIndexSymbol || undefined : undefined,
                 companyQuickSync,
+                companyForceRefresh,
             ),
             setCompanyRunning,
             undefined,
@@ -587,6 +589,8 @@ export const AdminPage: React.FC = () => {
                         onCompanyForceRestartChange={(checked) => setCompanyForceRestart(checked)}
                         companyQuickSync={companyQuickSync}
                         onCompanyQuickSyncChange={(checked) => setCompanyQuickSync(checked)}
+                        companyForceRefresh={companyForceRefresh}
+                        onCompanyForceRefreshChange={(checked) => setCompanyForceRefresh(checked)}
                         onRunCompanySync={handleRunCompanySync}
                         companyActive={companyActive}
                         anyJobActive={anyJobActive}

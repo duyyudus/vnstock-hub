@@ -532,6 +532,71 @@ async def get_subsidiaries(symbol: str):
     )
 
 
+@router.get("/company/{symbol}/ownership", response_model=FinancialDataResponse)
+async def get_ownership(symbol: str):
+    """
+    Get ownership composition for a specific stock.
+    """
+    data = await vnstock_service.get_ownership(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/capital-history", response_model=FinancialDataResponse)
+async def get_capital_history(symbol: str):
+    """
+    Get charter capital history for a specific stock.
+    """
+    data = await vnstock_service.get_capital_history(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/news", response_model=FinancialDataResponse)
+async def get_company_news(symbol: str):
+    """
+    Get company news for a specific stock.
+    """
+    data = await vnstock_service.get_news(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/events", response_model=FinancialDataResponse)
+async def get_company_events(symbol: str):
+    """
+    Get company events for a specific stock.
+    """
+    data = await vnstock_service.get_events(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
+@router.get("/company/{symbol}/insider-trading", response_model=FinancialDataResponse)
+async def get_insider_trading(symbol: str):
+    """
+    Get insider trading records for a specific stock.
+    """
+    data = await vnstock_service.get_insider_trading(symbol)
+    return FinancialDataResponse(
+        symbol=symbol,
+        data=data,
+        count=len(data)
+    )
+
+
 @router.get("/history/{symbol}/volume", response_model=VolumeHistoryResponse)
 async def get_volume_history(symbol: str, days: int = 30, auto_sync: bool = True):
     """

@@ -4,17 +4,37 @@ Schema keys are grouped by domain so related endpoints stay together.
 
 ## company
 
+### capital_history
+
+- [company.capital_history](company-capital-history.md)
+
+### events
+
+- [company.events](company-events.md)
+
 ### info
 
 - [company.info](company-info.md)
+
+### insider_trading
+
+- [company.insider_trading](company-insider-trading.md)
 
 ### margin_ratio
 
 - [company.margin_ratio](company-margin-ratio.md)
 
+### news
+
+- [company.news](company-news.md)
+
 ### officers
 
 - [company.officers](company-officers.md)
+
+### ownership
+
+- [company.ownership](company-ownership.md)
 
 ### shareholders
 

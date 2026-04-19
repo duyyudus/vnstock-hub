@@ -38,6 +38,11 @@ export const COMPANY_EXPORT_DEFINITIONS: ExportDefinition[] = [
     { suffix: 'shareholders', fetch: stockApi.getShareholders },
     { suffix: 'officers', fetch: stockApi.getOfficers },
     { suffix: 'subsidiaries', fetch: stockApi.getSubsidiaries },
+    { suffix: 'ownership', fetch: stockApi.getOwnership },
+    { suffix: 'capital_history', fetch: stockApi.getCapitalHistory },
+    { suffix: 'news', fetch: stockApi.getCompanyNews },
+    { suffix: 'events', fetch: stockApi.getCompanyEvents },
+    { suffix: 'insider_trading', fetch: stockApi.getInsiderTrading },
 ];
 
 export const FINANCE_EXPORT_DEFINITIONS: ExportDefinition[] = [

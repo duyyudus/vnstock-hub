@@ -5802,7 +5802,7 @@
           "name": "connector",
           "kind": "value",
           "qualified_name": "app.lib.vnstock_alt.connector",
-          "value": "<module 'app.lib.vnstock_alt.connector' from '/Users/duyyudus/Git/vnstock-hub/backend/app/lib/vnstock_alt/connector/__init__.py'>"
+          "value": "<module 'app.lib.vnstock_alt.connector' from '/home/duyyudus/git/vnstock-hub/backend/app/lib/vnstock_alt/connector/__init__.py'>"
         },
         {
           "name": "INDICES_INFO",
@@ -21578,113 +21578,240 @@
   ],
   "schemas": [
     {
+      "schema_key": "company.capital_history",
+      "summary": "Get company charter capital history.",
+      "docstring": "Get company charter capital history.",
+      "signature": "(show_log = False) -> DataFrame chứa lịch sử vốn điều lệ.",
+      "declared_signature": "()",
+      "parameters": [
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug."
+        }
+      ],
+      "return_type": "DataFrame chứa lịch sử vốn điều lệ.",
+      "class_name": "CompanyReference",
+      "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+      "method": "capital_history",
+      "strictness": "contractual",
+      "default_route": {
+        "source": "kbs",
+        "provider_type": "company",
+        "class_name": "Company",
+        "provider_method": "capital_history"
+      },
+      "supported_sources": [
+        "kbs"
+      ],
+      "raw_outputs": [
+        {
+          "source": "kbs",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "capital_history",
+          "raw_columns": [
+            "date",
+            "charter_capital",
+            "currency"
+          ],
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
+        }
+      ],
+      "normalized_output": {
+        "columns": [
+          "date",
+          "charter_capital",
+          "currency"
+        ],
+        "enum_map": {},
+        "coverage": "declared"
+      },
+      "live_samples": []
+    },
+    {
+      "schema_key": "company.events",
+      "summary": "Get company events.",
+      "docstring": "Get company events.",
+      "signature": "(event_type = None, page = 1, page_size = 10, show_log = False) -> DataFrame chứa danh sách sự kiện.",
+      "declared_signature": "()",
+      "parameters": [
+        {
+          "name": "event_type",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": null,
+          "required": false,
+          "description": "Loại sự kiện (1-5). None để lấy tất cả."
+        },
+        {
+          "name": "page",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 1,
+          "required": false,
+          "description": "Số trang. Mặc định 1."
+        },
+        {
+          "name": "page_size",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 10,
+          "required": false,
+          "description": "Số lượng bản ghi mỗi trang. Mặc định 10."
+        },
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug."
+        }
+      ],
+      "return_type": "DataFrame chứa danh sách sự kiện.",
+      "class_name": "CompanyReference",
+      "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+      "method": "events",
+      "strictness": "contractual",
+      "default_route": {
+        "source": "kbs",
+        "provider_type": "company",
+        "class_name": "Company",
+        "provider_method": "events"
+      },
+      "supported_sources": [
+        "kbs"
+      ],
+      "raw_outputs": [
+        {
+          "source": "kbs",
+          "coverage": "not-available",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "events",
+          "raw_columns": [],
+          "raw_to_normalized_map": {},
+          "notes": []
+        }
+      ],
+      "normalized_output": {
+        "columns": [],
+        "enum_map": {},
+        "coverage": "not-available"
+      },
+      "live_samples": []
+    },
+    {
       "schema_key": "company.info",
       "summary": "Get company info/overview.",
       "docstring": "Get company info/overview.",
-      "signature": "()",
+      "signature": "(show_log = False) -> DataFrame chứa thông tin tổng quan công ty.",
       "declared_signature": "()",
-      "parameters": [],
-      "return_type": "pd.DataFrame",
+      "parameters": [
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug.",
+          "observed_example": "omitted; default False"
+        }
+      ],
+      "return_type": "DataFrame chứa thông tin tổng quan công ty.",
       "class_name": "CompanyReference",
       "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
       "method": "info",
       "strictness": "contractual",
       "default_route": {
-        "source": "vci",
+        "source": "kbs",
         "provider_type": "company",
         "class_name": "Company",
         "provider_method": "overview"
       },
       "supported_sources": [
-        "kbs",
-        "vci"
+        "kbs"
       ],
       "raw_outputs": [
         {
           "source": "kbs",
-          "coverage": "declared",
-          "provider_class": null,
-          "provider_method": null,
-          "raw_columns": [
-            "symbol",
-            "business_model",
-            "history",
-            "charter_capital",
-            "num_employees",
-            "listing_date",
-            "founded_date",
-            "exchange",
-            "website",
-            "address",
-            "tax_id",
-            "phone",
-            "email"
-          ],
-          "raw_to_normalized_map": {
-            "symbol": "symbol",
-            "business_model": "profile",
-            "history": "history",
-            "charter_capital": "charter_capital",
-            "num_employees": "num_employees",
-            "listing_date": "listing_date",
-            "founded_date": "founded_date",
-            "exchange": "exchange",
-            "website": "website",
-            "address": "address",
-            "tax_id": "tax_id",
-            "phone": "phone",
-            "email": "email"
-          },
-          "notes": []
-        },
-        {
-          "source": "vci",
-          "coverage": "declared",
-          "provider_class": "app.lib.vnstock_data_alt.explorer.vci.company.Company",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
           "provider_method": "overview",
           "raw_columns": [
+            "business_model",
             "symbol",
-            "company_profile",
-            "history",
+            "founded_date",
             "charter_capital",
-            "icb_name3",
-            "icb_name2",
-            "issue_share",
-            "organ_name"
+            "charter_capital_vnd",
+            "number_of_employees",
+            "listing_date",
+            "par_value",
+            "exchange",
+            "listing_price",
+            "listed_volume",
+            "ceo_name",
+            "ceo_position",
+            "inspector_name",
+            "inspector_position",
+            "establishment_license",
+            "business_code",
+            "tax_id",
+            "auditor",
+            "company_type",
+            "address",
+            "phone",
+            "fax",
+            "email",
+            "website",
+            "branches",
+            "history",
+            "outstanding_shares",
+            "as_of_date"
           ],
-          "raw_to_normalized_map": {
-            "symbol": "symbol",
-            "company_profile": "profile",
-            "history": "history",
-            "charter_capital": "charter_capital",
-            "icb_name3": "industry",
-            "icb_name2": "sector",
-            "issue_share": "issued_share",
-            "organ_name": "name"
-          },
-          "notes": []
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
         }
       ],
       "normalized_output": {
         "columns": [
+          "business_model",
           "symbol",
-          "name",
-          "short_name",
-          "exchange",
-          "sector",
-          "industry",
-          "profile",
-          "history",
-          "num_employees",
           "founded_date",
-          "listing_date",
           "charter_capital",
-          "issued_share",
-          "website",
+          "charter_capital_vnd",
+          "number_of_employees",
+          "listing_date",
+          "par_value",
+          "exchange",
+          "listing_price",
+          "listed_volume",
+          "ceo_name",
+          "ceo_position",
+          "inspector_name",
+          "inspector_position",
+          "establishment_license",
+          "business_code",
+          "tax_id",
+          "auditor",
+          "company_type",
           "address",
           "phone",
+          "fax",
           "email",
-          "tax_id"
+          "website",
+          "branches",
+          "history",
+          "outstanding_shares",
+          "as_of_date"
         ],
         "enum_map": {
           "exchange": {
@@ -21794,6 +21921,70 @@
       ]
     },
     {
+      "schema_key": "company.insider_trading",
+      "summary": "Get insider trading data.",
+      "docstring": "Get insider trading data.",
+      "signature": "(page = 1, page_size = 10, show_log = False) -> DataFrame chứa thông tin giao dịch nội bộ.",
+      "declared_signature": "()",
+      "parameters": [
+        {
+          "name": "page",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 1,
+          "required": false,
+          "description": "Số trang. Mặc định 1."
+        },
+        {
+          "name": "page_size",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 10,
+          "required": false,
+          "description": "Số lượng bản ghi mỗi trang. Mặc định 10."
+        },
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug."
+        }
+      ],
+      "return_type": "DataFrame chứa thông tin giao dịch nội bộ.",
+      "class_name": "CompanyReference",
+      "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+      "method": "insider_trading",
+      "strictness": "contractual",
+      "default_route": {
+        "source": "kbs",
+        "provider_type": "company",
+        "class_name": "Company",
+        "provider_method": "insider_trading"
+      },
+      "supported_sources": [
+        "kbs"
+      ],
+      "raw_outputs": [
+        {
+          "source": "kbs",
+          "coverage": "not-available",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "insider_trading",
+          "raw_columns": [],
+          "raw_to_normalized_map": {},
+          "notes": []
+        }
+      ],
+      "normalized_output": {
+        "columns": [],
+        "enum_map": {},
+        "coverage": "not-available"
+      },
+      "live_samples": []
+    },
+    {
       "schema_key": "company.margin_ratio",
       "summary": "Get margin lending ratio for the company across brokers.",
       "docstring": "Get margin lending ratio for the company across brokers.",
@@ -21863,6 +22054,85 @@
       "live_samples": []
     },
     {
+      "schema_key": "company.news",
+      "summary": "Get company news.",
+      "docstring": "Get company news.",
+      "signature": "(page = 1, page_size = 10, show_log = False) -> DataFrame chứa danh sách tin tức.",
+      "declared_signature": "()",
+      "parameters": [
+        {
+          "name": "page",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 1,
+          "required": false,
+          "description": "Số trang. Mặc định 1."
+        },
+        {
+          "name": "page_size",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": 10,
+          "required": false,
+          "description": "Số lượng bản ghi mỗi trang. Mặc định 10.",
+          "example": "20"
+        },
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug."
+        }
+      ],
+      "return_type": "DataFrame chứa danh sách tin tức.",
+      "class_name": "CompanyReference",
+      "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+      "method": "news",
+      "strictness": "contractual",
+      "default_route": {
+        "source": "kbs",
+        "provider_type": "company",
+        "class_name": "Company",
+        "provider_method": "news"
+      },
+      "supported_sources": [
+        "kbs"
+      ],
+      "raw_outputs": [
+        {
+          "source": "kbs",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "news",
+          "raw_columns": [
+            "head",
+            "article_id",
+            "title",
+            "publish_time",
+            "url"
+          ],
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
+        }
+      ],
+      "normalized_output": {
+        "columns": [
+          "head",
+          "article_id",
+          "title",
+          "publish_time",
+          "url"
+        ],
+        "enum_map": {},
+        "coverage": "declared"
+      },
+      "live_samples": []
+    },
+    {
       "schema_key": "company.officers",
       "summary": "Get company officers.",
       "docstring": "Get company officers.\n\nArgs:\n    filter_by (str): 'working', 'resigned', or 'all'. Default 'working'.",
@@ -21891,63 +22161,40 @@
       "method": "officers",
       "strictness": "contractual",
       "default_route": {
-        "source": "vci",
+        "source": "kbs",
         "provider_type": "company",
         "class_name": "Company",
         "provider_method": "officers"
       },
       "supported_sources": [
-        "kbs",
-        "vci"
+        "kbs"
       ],
       "raw_outputs": [
         {
           "source": "kbs",
-          "coverage": "declared",
-          "provider_class": null,
-          "provider_method": null,
-          "raw_columns": [
-            "name",
-            "position",
-            "from_date",
-            "owner_code"
-          ],
-          "raw_to_normalized_map": {
-            "name": "name",
-            "position": "position",
-            "from_date": "from_date",
-            "owner_code": "owner_code"
-          },
-          "notes": []
-        },
-        {
-          "source": "vci",
-          "coverage": "declared",
-          "provider_class": "app.lib.vnstock_data_alt.explorer.vci.company.Company",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
           "provider_method": "officers",
           "raw_columns": [
-            "officer_name",
-            "officer_position",
-            "officer_own_percent",
-            "officer_own_quantity"
+            "from_date",
+            "position",
+            "name",
+            "position_en",
+            "owner_code"
           ],
-          "raw_to_normalized_map": {
-            "officer_name": "name",
-            "officer_position": "position",
-            "officer_own_percent": "rate",
-            "officer_own_quantity": "total_shares"
-          },
-          "notes": []
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
         }
       ],
       "normalized_output": {
         "columns": [
-          "symbol",
-          "name",
-          "position",
           "from_date",
-          "total_shares",
-          "rate"
+          "position",
+          "name",
+          "position_en",
+          "owner_code"
         ],
         "enum_map": {},
         "coverage": "declared"
@@ -22050,76 +22297,120 @@
       ]
     },
     {
+      "schema_key": "company.ownership",
+      "summary": "Get company ownership composition.",
+      "docstring": "Get company ownership composition.",
+      "signature": "(show_log = False) -> DataFrame chứa cơ cấu cổ đông.",
+      "declared_signature": "()",
+      "parameters": [
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug."
+        }
+      ],
+      "return_type": "DataFrame chứa cơ cấu cổ đông.",
+      "class_name": "CompanyReference",
+      "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
+      "method": "ownership",
+      "strictness": "contractual",
+      "default_route": {
+        "source": "kbs",
+        "provider_type": "company",
+        "class_name": "Company",
+        "provider_method": "ownership"
+      },
+      "supported_sources": [
+        "kbs"
+      ],
+      "raw_outputs": [
+        {
+          "source": "kbs",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "ownership",
+          "raw_columns": [
+            "owner_type",
+            "ownership_percentage",
+            "shares_owned",
+            "update_date"
+          ],
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
+        }
+      ],
+      "normalized_output": {
+        "columns": [
+          "owner_type",
+          "ownership_percentage",
+          "shares_owned",
+          "update_date"
+        ],
+        "enum_map": {},
+        "coverage": "declared"
+      },
+      "live_samples": []
+    },
+    {
       "schema_key": "company.shareholders",
       "summary": "Get company shareholders.",
       "docstring": "Get company shareholders.",
-      "signature": "()",
+      "signature": "(show_log = False) -> DataFrame chứa thông tin cổ đông.",
       "declared_signature": "()",
-      "parameters": [],
-      "return_type": "pd.DataFrame",
+      "parameters": [
+        {
+          "name": "show_log",
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": null,
+          "default": false,
+          "required": false,
+          "description": "Hiển thị log debug.",
+          "observed_example": "omitted; default False"
+        }
+      ],
+      "return_type": "DataFrame chứa thông tin cổ đông.",
       "class_name": "CompanyReference",
       "class_path": "app.lib.vnstock_data_alt.ui.domains.reference.company.CompanyReference",
       "method": "shareholders",
       "strictness": "contractual",
       "default_route": {
-        "source": "vci",
+        "source": "kbs",
         "provider_type": "company",
         "class_name": "Company",
         "provider_method": "shareholders"
       },
       "supported_sources": [
-        "kbs",
-        "vci"
+        "kbs"
       ],
       "raw_outputs": [
         {
           "source": "kbs",
-          "coverage": "declared",
-          "provider_class": null,
-          "provider_method": null,
-          "raw_columns": [
-            "name",
-            "shares_owned",
-            "ownership_percentage",
-            "update_date"
-          ],
-          "raw_to_normalized_map": {
-            "name": "name",
-            "shares_owned": "total_shares",
-            "ownership_percentage": "rate",
-            "update_date": "date"
-          },
-          "notes": []
-        },
-        {
-          "source": "vci",
-          "coverage": "declared",
-          "provider_class": "app.lib.vnstock_data_alt.explorer.vci.company.Company",
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
           "provider_method": "shareholders",
           "raw_columns": [
-            "symbol",
-            "share_holder",
-            "share_own_percent",
-            "quantity",
-            "update_date"
+            "name",
+            "update_date",
+            "shares_owned",
+            "ownership_percentage"
           ],
-          "raw_to_normalized_map": {
-            "symbol": "symbol",
-            "share_holder": "name",
-            "share_own_percent": "rate",
-            "quantity": "total_shares",
-            "update_date": "date"
-          },
-          "notes": []
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
         }
       ],
       "normalized_output": {
         "columns": [
-          "symbol",
           "name",
-          "total_shares",
-          "rate",
-          "date"
+          "update_date",
+          "shares_owned",
+          "ownership_percentage"
         ],
         "enum_map": {},
         "coverage": "declared"
@@ -22230,7 +22521,7 @@
     {
       "schema_key": "company.subsidiaries",
       "summary": "Get company subsidiaries.",
-      "docstring": "Get company subsidiaries.\n\nArgs:\n     filter_by (str): 'all', 'subsidiary', 'affiliate'. Default 'all'.",
+      "docstring": "Get company subsidiaries.\n\nArgs:\n    filter_by (str): 'all', 'subsidiary', or 'affiliate'. Default 'all'.",
       "signature": "(filter_by='all')",
       "declared_signature": "(filter_by='all')",
       "parameters": [
@@ -22240,7 +22531,7 @@
           "annotation": "str",
           "default": "all",
           "required": false,
-          "description": "'all', 'subsidiary', 'affiliate'. Default 'all'.",
+          "description": "'all', 'subsidiary', or 'affiliate'. Default 'all'.",
           "accepted_values": [
             "all",
             "subsidiary",
@@ -22256,64 +22547,41 @@
       "method": "subsidiaries",
       "strictness": "contractual",
       "default_route": {
-        "source": "vci",
+        "source": "kbs",
         "provider_type": "company",
         "class_name": "Company",
         "provider_method": "subsidiaries"
       },
       "supported_sources": [
-        "kbs",
-        "vci"
+        "kbs"
       ],
       "raw_outputs": [
         {
           "source": "kbs",
-          "coverage": "declared",
-          "provider_class": null,
-          "provider_method": null,
+          "coverage": "partially-derived",
+          "provider_class": "app.lib.vnstock_data_alt.explorer.kbs.company.Company",
+          "provider_method": "subsidiaries",
           "raw_columns": [
+            "update_date",
             "name",
-            "ownership_percent",
             "charter_capital",
+            "ownership_percent",
             "currency",
             "type"
           ],
-          "raw_to_normalized_map": {
-            "name": "name",
-            "ownership_percent": "rate",
-            "charter_capital": "charter_capital",
-            "currency": "currency",
-            "type": "type"
-          },
-          "notes": []
-        },
-        {
-          "source": "vci",
-          "coverage": "declared",
-          "provider_class": "app.lib.vnstock_data_alt.explorer.vci.company.Company",
-          "provider_method": "subsidiaries",
-          "raw_columns": [
-            "organ_name",
-            "ownership_percent",
-            "sub_organ_code",
-            "type"
-          ],
-          "raw_to_normalized_map": {
-            "organ_name": "name",
-            "ownership_percent": "rate",
-            "sub_organ_code": "sub_symbol",
-            "type": "type"
-          },
-          "notes": []
+          "raw_to_normalized_map": {},
+          "notes": [
+            "No source-specific raw mapping declared; using normalized columns as a best-effort approximation."
+          ]
         }
       ],
       "normalized_output": {
         "columns": [
-          "symbol",
+          "update_date",
           "name",
-          "rate",
-          "sub_symbol",
           "charter_capital",
+          "ownership_percent",
+          "currency",
           "type"
         ],
         "enum_map": {
@@ -22567,20 +22835,20 @@
       "schema_key": "equity.list",
       "summary": "List all equity symbols.",
       "docstring": "List all equity symbols.",
-      "signature": "(show_log = False, to_df = True)",
+      "signature": "(show_log: bool = False, to_df: bool = True)",
       "declared_signature": "()",
       "parameters": [
         {
           "name": "show_log",
           "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": null,
+          "annotation": "bool",
           "default": false,
           "required": false
         },
         {
           "name": "to_df",
           "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": null,
+          "annotation": "bool",
           "default": true,
           "required": false
         }

@@ -268,7 +268,12 @@ async def test_run_company_sync_with_admin_calls_service(client):
         ) as mock_run:
             response = await client.post(
                 "/api/v1/sync/company/run",
-                json={"force_restart": False, "index_symbol": "VN30", "quick_sync": True},
+                json={
+                    "force_restart": False,
+                    "index_symbol": "VN30",
+                    "quick_sync": True,
+                    "force_refresh": True,
+                },
             )
     finally:
         app.dependency_overrides.pop(get_current_admin_user, None)
@@ -281,6 +286,7 @@ async def test_run_company_sync_with_admin_calls_service(client):
     called_kwargs = mock_run.await_args.kwargs
     assert called_kwargs["index_symbol"] == "VN30"
     assert called_kwargs["quick_sync"] is True
+    assert called_kwargs["force_refresh"] is True
 
 
 @pytest.mark.asyncio

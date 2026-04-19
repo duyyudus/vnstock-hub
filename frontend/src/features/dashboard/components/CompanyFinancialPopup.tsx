@@ -4,6 +4,7 @@ import type { FinancialDataResponse } from '../../../api/stockApi';
 import useAuthUser from '../../auth/useAuthUser';
 import { downloadBlobWithPreference } from '../../../utils/downloadFile';
 import {
+    resolveCompanyExportCategory,
     resolveFinanceExportCategory,
     resolveTickerFolder,
     rowsToCsv,
@@ -29,19 +30,93 @@ interface CompanyFinancialPopupProps {
     onFocus: () => void;
 }
 
-type TabType = 'overview' | 'income' | 'balance' | 'cashflow' | 'ratios' | 'shareholders' | 'officers' | 'subsidiaries';
+type TabType =
+    | 'overview'
+    | 'income'
+    | 'balance'
+    | 'cashflow'
+    | 'ratios'
+    | 'shareholders'
+    | 'officers'
+    | 'subsidiaries'
+    | 'ownership'
+    | 'capital_history'
+    | 'news'
+    | 'events'
+    | 'insider_trading';
+
+type MainTabGroup = 'company' | 'finance';
+
+type TabRenderMode = 'overview' | 'list' | 'table';
 
 interface ExportFeedback {
     kind: 'success' | 'warning';
     message: string;
 }
 
+interface TabConfig {
+    label: string;
+    group: MainTabGroup;
+    renderMode: TabRenderMode;
+}
+
+interface TabGroupConfig {
+    key: MainTabGroup;
+    label: string;
+    tabs: TabType[];
+}
+
 const EXPORTABLE_TAB_SUFFIX: Partial<Record<TabType, string>> = {
+    overview: 'overview',
     income: 'income',
     balance: 'balance',
     cashflow: 'cashflow',
     ratios: 'ratios',
+    shareholders: 'shareholders',
+    officers: 'officers',
+    subsidiaries: 'subsidiaries',
+    ownership: 'ownership',
+    capital_history: 'capital_history',
+    news: 'news',
+    events: 'events',
+    insider_trading: 'insider_trading',
 };
+
+const TAB_CONFIG: Record<TabType, TabConfig> = {
+    overview: { label: 'Overview', group: 'company', renderMode: 'overview' },
+    shareholders: { label: 'Shareholders', group: 'company', renderMode: 'list' },
+    officers: { label: 'Officers', group: 'company', renderMode: 'list' },
+    subsidiaries: { label: 'Subsidiaries', group: 'company', renderMode: 'list' },
+    ownership: { label: 'Ownership', group: 'company', renderMode: 'list' },
+    capital_history: { label: 'Capital History', group: 'company', renderMode: 'list' },
+    news: { label: 'News', group: 'company', renderMode: 'list' },
+    events: { label: 'Events', group: 'company', renderMode: 'list' },
+    insider_trading: { label: 'Insider Trading', group: 'company', renderMode: 'list' },
+    income: { label: 'Income', group: 'finance', renderMode: 'table' },
+    balance: { label: 'Balance', group: 'finance', renderMode: 'table' },
+    cashflow: { label: 'Cash Flow', group: 'finance', renderMode: 'table' },
+    ratios: { label: 'Ratios', group: 'finance', renderMode: 'table' },
+};
+
+const TAB_GROUPS: TabGroupConfig[] = [
+    {
+        key: 'company',
+        label: 'Company',
+        tabs: ['overview', 'shareholders', 'officers', 'subsidiaries', 'ownership', 'capital_history', 'news', 'events', 'insider_trading'],
+    },
+    {
+        key: 'finance',
+        label: 'Finance Data',
+        tabs: ['income', 'balance', 'cashflow', 'ratios'],
+    },
+];
+
+const DEFAULT_ACTIVE_TABS: Record<MainTabGroup, TabType> = {
+    company: 'overview',
+    finance: 'income',
+};
+
+const COMPANY_TABS = TAB_GROUPS.find((group) => group.key === 'company')?.tabs ?? [];
 
 export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     ticker,
@@ -52,12 +127,13 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     onFocus,
 }) => {
     const user = useAuthUser();
-    const [activeTab, setActiveTab] = useState<TabType>('overview');
+    const [activeMainGroup, setActiveMainGroup] = useState<MainTabGroup>('company');
+    const [activeTabsByGroup, setActiveTabsByGroup] = useState<Record<MainTabGroup, TabType>>(DEFAULT_ACTIVE_TABS);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<Record<string, unknown>[]>([]);
     const [position, setPosition] = useState<Position>(initialPosition);
-    const [size, setSize] = useState<Size>({ width: 900, height: 550 });
+    const [size, setSize] = useState<Size>({ width: 900, height: 800 });
     const [attributeWidth, setAttributeWidth] = useState(200);
     const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
     const isDragging = useRef(false);
@@ -67,6 +143,9 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
     const resizeStart = useRef<{ x: number, y: number, w: number, h: number }>({ x: 0, y: 0, w: 0, h: 0 });
     const columnResizeStart = useRef<{ x: number, w: number }>({ x: 0, w: 0 });
     const popupRef = useRef<HTMLDivElement>(null);
+    const activeTab = activeTabsByGroup[activeMainGroup];
+    const activeTabConfig = TAB_CONFIG[activeTab];
+    const activeGroupConfig = TAB_GROUPS.find((group) => group.key === activeMainGroup) ?? TAB_GROUPS[0];
     const exportSuffix = EXPORTABLE_TAB_SUFFIX[activeTab];
     const isExportableTab = typeof exportSuffix === 'string';
     const isExportDisabled = loading || error !== null || data.length === 0;
@@ -102,6 +181,21 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                         break;
                     case 'subsidiaries':
                         response = await stockApi.getSubsidiaries(ticker);
+                        break;
+                    case 'ownership':
+                        response = await stockApi.getOwnership(ticker);
+                        break;
+                    case 'capital_history':
+                        response = await stockApi.getCapitalHistory(ticker);
+                        break;
+                    case 'news':
+                        response = await stockApi.getCompanyNews(ticker);
+                        break;
+                    case 'events':
+                        response = await stockApi.getCompanyEvents(ticker);
+                        break;
+                    case 'insider_trading':
+                        response = await stockApi.getInsiderTrading(ticker);
                         break;
                     default:
                         response = { symbol: ticker, data: [], count: 0 };
@@ -226,13 +320,14 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
 
         const getFormattedValue = () => {
             if (typeof val === 'number') {
-                // Handle percentages (0.15 -> 15%)
+                // Company datasets can carry either decimal ratios or whole-percent values.
                 if (lowerKey.includes('percent')) {
+                    const normalizedPercent = Math.abs(val) > 1 ? val / 100 : val;
                     return new Intl.NumberFormat('en-US', {
                         style: 'percent',
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                    }).format(val);
+                    }).format(normalizedPercent);
                 }
 
                 // Handle quantities (large integers)
@@ -273,15 +368,22 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
         }
         setExportFeedback(null);
 
-        const csvContent = rowsToCsv(data, transformFinanceCsvValue);
+        const csvContent = rowsToCsv(
+            data,
+            COMPANY_TABS.includes(activeTab)
+                ? undefined
+                : (value, key) => transformFinanceCsvValue(value, key),
+        );
         const tickerFolder = resolveTickerFolder(ticker);
-        const financeCategory = resolveFinanceExportCategory(user?.finance_export_category);
+        const category = COMPANY_TABS.includes(activeTab)
+            ? resolveCompanyExportCategory(user?.company_export_category)
+            : resolveFinanceExportCategory(user?.finance_export_category);
         const filename = `${exportSuffix}.csv`;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
         const result = await downloadBlobWithPreference({
             blob,
             filename,
-            subdirectories: [tickerFolder, financeCategory],
+            subdirectories: [tickerFolder, category],
             userId: user?.id,
             downloadFolder: user?.download_folder,
         });
@@ -311,14 +413,23 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
         const item = data[0];
 
         // Known long text fields
-        const longTextFields = ['company_profile', 'business_strategy', 'key_developments', 'history_dev', 'history', 'company_promise'];
+        const longTextFields = ['business_model', 'history'];
 
         // Financial or numeric fields for formatting
-        const numericFields = ['charter_capital', 'listing_volume', 'foreign_ownership_ratio'];
+        const numericFields = [
+            'charter_capital',
+            'listing_price',
+            'listed_volume',
+            'free_float_percentage',
+            'free_float',
+            'outstanding_shares',
+            'number_of_employees',
+            'par_value',
+        ];
 
         // Filter and group keys
         const keys = Object.keys(item).filter(key =>
-            !['ticker', 'Meta_ticker', 'id', 'Meta_yearReport', 'Meta_lengthReport'].includes(key)
+            !['ticker', 'Meta_ticker', 'id', 'Meta_yearReport', 'Meta_lengthReport', 'charter_capital_vnd'].includes(key)
         );
 
         const sections = {
@@ -326,9 +437,9 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
             detailed: keys.filter(k => longTextFields.includes(k)),
         };
 
-        const row1Keys = ['symbol', 'charter_capital', 'financial_ratio_issue_share', 'issue_share'];
-        const row2Keys = ['icb_name1', 'icb_name2', 'icb_name3', 'icb_name4'];
-        const specialFields = [...row1Keys, ...row2Keys];
+        const row1Keys = ['symbol', 'charter_capital', 'outstanding_shares', 'number_of_employees'];
+        const row2Keys = ['exchange', 'company_type', 'listing_date', 'founded_date'];
+        const specialFields = [...row1Keys, ...row2Keys, ...longTextFields];
 
         const remainingGeneral = sections.general.filter((k: string) => !specialFields.includes(k));
 
@@ -379,47 +490,38 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
 
         return (
             <div className="p-6 overflow-auto h-full space-y-8 bg-base-100 custom-scrollbar">
-                <div className="grid grid-cols-1 lg:grid-cols-10 gap-8 items-start">
-                    {/* Company Profile - Priority 1 */}
-                    <div className="lg:col-span-6">
-                        {Boolean(item['company_profile']) && renderDetailedSection('company_profile')}
-                    </div>
+                {Boolean(item['business_model']) && renderDetailedSection('business_model')}
 
-                    {/* General Information - Priority 2 */}
-                    {sections.general.length > 0 && (
-                        <section className="lg:col-span-4">
-                            <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-base-300 pb-2 text-primary flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                General Information
-                            </h3>
+                {sections.general.length > 0 && (
+                    <section className="space-y-6">
+                        <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-base-300 pb-2 text-primary flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            General Information
+                        </h3>
 
-                            <div className="space-y-6">
-                                {/* Row 1: Symbol & Shares */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
-                                    {row1Keys.map(k => item[k] !== undefined && renderField(k))}
-                                </div>
-
-                                {/* Row 2: ICB Hierarchy */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
-                                    {row2Keys.map(k => item[k] !== undefined && renderField(k))}
-                                </div>
-
-                                {/* Remaining General Info */}
-                                {remainingGeneral.length > 0 && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-                                        {remainingGeneral.map((k: string) => renderField(k))}
-                                    </div>
-                                )}
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
+                                {row1Keys.map(k => item[k] !== undefined && renderField(k))}
                             </div>
-                        </section>
-                    )}
-                </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/30 p-4 rounded-xl border border-base-300/30">
+                                {row2Keys.map(k => item[k] !== undefined && renderField(k))}
+                            </div>
+                        </div>
+
+                        {remainingGeneral.length > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 pt-2">
+                                {remainingGeneral.map((k: string) => renderField(k))}
+                            </div>
+                        )}
+                    </section>
+                )}
 
                 {/* Other Detailed Sections - Priority 3 */}
                 {sections.detailed
-                    .filter(k => k !== 'company_profile')
+                    .filter(k => k !== 'business_model')
                     .map((key: string) => renderDetailedSection(key))}
             </div>
         );
@@ -559,55 +661,37 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
             </div>
 
             {/* Tabs */}
-            <div className="tabs tabs-boxed rounded-none bg-base-200 p-1 shrink-0">
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'overview' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('overview')}
-                >
-                    Overview
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'income' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('income')}
-                >
-                    Income
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'balance' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('balance')}
-                >
-                    Balance
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'cashflow' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('cashflow')}
-                >
-                    Cash Flow
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'ratios' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('ratios')}
-                >
-                    Ratios
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'shareholders' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('shareholders')}
-                >
-                    Shareholders
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'officers' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('officers')}
-                >
-                    Officers
-                </button>
-                <button
-                    className={`tab tab-sm flex-1 ${activeTab === 'subsidiaries' ? 'tab-active' : ''}`}
-                    onClick={() => setActiveTab('subsidiaries')}
-                >
-                    Subsidiaries
-                </button>
+            <div className="bg-base-200 p-2 shrink-0 space-y-2">
+                <div className="overflow-x-auto">
+                    <div className="tabs tabs-xs tabs-boxed rounded-none w-max min-w-full">
+                        {TAB_GROUPS.map((group) => (
+                            <button
+                                key={group.key}
+                                className={`tab shrink-0 ${activeMainGroup === group.key ? 'tab-active' : ''}`}
+                                onClick={() => setActiveMainGroup(group.key)}
+                            >
+                                {group.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <div className="tabs tabs-xs tabs-boxed rounded-none w-max min-w-full">
+                        {activeGroupConfig.tabs.map((tab) => (
+                            <button
+                                key={tab}
+                                className={`tab shrink-0 ${activeTab === tab ? 'tab-active' : ''}`}
+                                onClick={() => setActiveTabsByGroup((current) => ({
+                                    ...current,
+                                    [activeMainGroup]: tab,
+                                }))}
+                            >
+                                {TAB_CONFIG[tab].label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
 
             {/* Content */}
@@ -621,8 +705,9 @@ export const CompanyFinancialPopup: React.FC<CompanyFinancialPopupProps> = ({
                         <span>{error}</span>
                     </div>
                 ) : (
-                    activeTab === 'overview' ? renderOverview() :
-                        ['shareholders', 'officers', 'subsidiaries'].includes(activeTab)
+                    activeTabConfig.renderMode === 'overview'
+                        ? renderOverview()
+                        : activeTabConfig.renderMode === 'list'
                             ? renderListTable()
                             : renderTable()
                 )}

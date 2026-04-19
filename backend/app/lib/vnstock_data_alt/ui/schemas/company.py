@@ -1,46 +1,131 @@
-'\nCompany schemas mapping definitions.\n'
-_p='margin_per'
-_o='updated_at'
-_n='prev_margin_rate'
-_m='margin_rate'
-_l='broker_name'
-_k='broker_code'
-_j='currency'
-_i='sub_symbol'
-_h='ownership_percent'
-_g='owner_code'
-_f='update_date'
-_e='issued_share'
-_d='sector'
-_c='industry'
-_b='organ_name'
-_a='company.margin_ratio'
-_Z='company.subsidiaries'
-_Y='company.officers'
-_X='company.shareholders'
-_W='company.info'
-_V='from_date'
-_U='date'
-_T='email'
-_S='phone'
-_R='tax_id'
-_Q='address'
-_P='website'
-_O='exchange'
-_N='founded_date'
-_M='listing_date'
-_L='num_employees'
-_K='profile'
-_J='position'
-_I='vci'
-_H='total_shares'
-_G='history'
-_F='kbs'
-_E='type'
-_D='rate'
-_C='charter_capital'
-_B='symbol'
-_A='name'
-SCHEMA_MAP={_W:{_I:{_B:_B,'company_profile':_K,_G:_G,_C:_C,'icb_name3':_c,'icb_name2':_d,'issue_share':_e,_b:_A},_F:{_B:_B,'business_model':_K,_G:_G,_C:_C,_L:_L,_M:_M,_N:_N,_O:_O,_P:_P,_Q:_Q,_R:_R,_S:_S,_T:_T}},_X:{_I:{_B:_B,'share_holder':_A,'share_own_percent':_D,'quantity':_H,_f:_U},_F:{_A:_A,'shares_owned':_H,'ownership_percentage':_D,_f:_U}},_Y:{_I:{'officer_name':_A,'officer_position':_J,'officer_own_percent':_D,'officer_own_quantity':_H},_F:{_A:_A,_J:_J,_V:_V,_g:_g}},_Z:{_I:{_b:_A,_h:_D,'sub_organ_code':_i,_E:_E},_F:{_A:_A,_h:_D,_C:_C,_j:_j,_E:_E}},_a:{_F:{'CompanyCode':_k,'Name':_l,'MarginRate':_m,'PrevMarginRate':_n,'ClosedDate':_o,'MarginPer':_p}}}
-STANDARD_COLUMNS={_W:[_B,_A,'short_name',_O,_d,_c,_K,_G,_L,_N,_M,_C,_e,_P,_Q,_S,_T,_R],_X:[_B,_A,_H,_D,_U],_Y:[_B,_A,_J,_V,_H,_D],_Z:[_B,_A,_D,_i,_C,_E],_a:[_k,_l,_m,_n,_p,_o]}
-ENUM_MAP={_E:{'công ty con':'Subsidiary','công ty liên kết':'Affiliate'}}
+"""
+Company schemas mapping definitions.
+"""
+
+SCHEMA_MAP = {
+    "company.info": {
+        "kbs": {},
+    },
+    "company.shareholders": {
+        "kbs": {},
+    },
+    "company.officers": {
+        "kbs": {},
+    },
+    "company.subsidiaries": {
+        "kbs": {},
+    },
+    "company.ownership": {
+        "kbs": {},
+    },
+    "company.capital_history": {
+        "kbs": {},
+    },
+    "company.news": {
+        "kbs": {},
+    },
+    "company.events": {
+        "kbs": {},
+    },
+    "company.insider_trading": {
+        "kbs": {},
+    },
+    "company.margin_ratio": {
+        "kbs": {
+            "CompanyCode": "broker_code",
+            "Name": "broker_name",
+            "MarginRate": "margin_rate",
+            "PrevMarginRate": "prev_margin_rate",
+            "ClosedDate": "updated_at",
+            "MarginPer": "margin_per",
+        },
+    },
+}
+
+STANDARD_COLUMNS = {
+    "company.info": [
+        "business_model",
+        "symbol",
+        "founded_date",
+        "charter_capital",
+        "charter_capital_vnd",
+        "number_of_employees",
+        "listing_date",
+        "par_value",
+        "exchange",
+        "listing_price",
+        "listed_volume",
+        "ceo_name",
+        "ceo_position",
+        "inspector_name",
+        "inspector_position",
+        "establishment_license",
+        "business_code",
+        "tax_id",
+        "auditor",
+        "company_type",
+        "address",
+        "phone",
+        "fax",
+        "email",
+        "website",
+        "branches",
+        "history",
+        "outstanding_shares",
+        "as_of_date",
+    ],
+    "company.shareholders": [
+        "name",
+        "update_date",
+        "shares_owned",
+        "ownership_percentage",
+    ],
+    "company.officers": [
+        "from_date",
+        "position",
+        "name",
+        "position_en",
+        "owner_code",
+    ],
+    "company.subsidiaries": [
+        "update_date",
+        "name",
+        "charter_capital",
+        "ownership_percent",
+        "currency",
+        "type",
+    ],
+    "company.ownership": [
+        "owner_type",
+        "ownership_percentage",
+        "shares_owned",
+        "update_date",
+    ],
+    "company.capital_history": [
+        "date",
+        "charter_capital",
+        "currency",
+    ],
+    "company.news": [
+        "head",
+        "article_id",
+        "title",
+        "publish_time",
+        "url",
+    ],
+    "company.margin_ratio": [
+        "broker_code",
+        "broker_name",
+        "margin_rate",
+        "prev_margin_rate",
+        "margin_per",
+        "updated_at",
+    ],
+}
+
+ENUM_MAP = {
+    "type": {
+        "công ty con": "Subsidiary",
+        "công ty liên kết": "Affiliate",
+    }
+}

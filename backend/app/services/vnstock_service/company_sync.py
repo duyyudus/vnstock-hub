@@ -31,6 +31,11 @@ class CompanyDataSyncService:
         CompanyService.DATA_TYPE_SHAREHOLDERS,
         CompanyService.DATA_TYPE_OFFICERS,
         CompanyService.DATA_TYPE_SUBSIDIARIES,
+        CompanyService.DATA_TYPE_OWNERSHIP,
+        CompanyService.DATA_TYPE_CAPITAL_HISTORY,
+        CompanyService.DATA_TYPE_NEWS,
+        CompanyService.DATA_TYPE_EVENTS,
+        CompanyService.DATA_TYPE_INSIDER_TRADING,
     )
 
     def __init__(self, company: CompanyService) -> None:
@@ -72,6 +77,7 @@ class CompanyDataSyncService:
         symbols: Optional[List[str]] = None,
         index_symbol: Optional[str] = None,
         quick_sync: bool = False,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         """Start company data sync as background task."""
         symbols_filter = await self._resolve_symbols_filter(symbols=symbols, index_symbol=index_symbol)
@@ -92,14 +98,15 @@ class CompanyDataSyncService:
                     pass
 
             company_sync_logger.info(
-                "Company sync requested (force_restart=%s, symbols=%s, index_symbol=%s, quick_sync=%s)",
+                "Company sync requested (force_restart=%s, symbols=%s, index_symbol=%s, quick_sync=%s, force_refresh=%s)",
                 force_restart,
                 len(symbols_filter) if symbols_filter else 0,
                 index_symbol or "",
                 quick_sync,
+                force_refresh,
             )
             self._sync_task = asyncio.create_task(
-                self._run_sync(symbols_filter, quick_sync=quick_sync)
+                self._run_sync(symbols_filter, quick_sync=quick_sync, force_refresh=force_refresh)
             )
 
         return {
@@ -108,16 +115,22 @@ class CompanyDataSyncService:
             "state": "running",
         }
 
-    async def _run_sync(self, symbols: Optional[List[str]], quick_sync: bool = False) -> None:
+    async def _run_sync(
+        self,
+        symbols: Optional[List[str]],
+        quick_sync: bool = False,
+        force_refresh: bool = False,
+    ) -> None:
         symbols_to_sync = await self._build_symbol_universe(symbols)
         if quick_sync:
             symbols_to_sync = await self._filter_quick_sync_symbols(symbols_to_sync)
         total = len(symbols_to_sync)
 
         company_sync_logger.info(
-            "Company sync started for %s symbols (quick_sync=%s)",
+            "Company sync started for %s symbols (quick_sync=%s, force_refresh=%s)",
             total,
             quick_sync,
+            force_refresh,
         )
         sync_status.start_company_sync(total_symbols=total)
         if total == 0:
@@ -166,7 +179,7 @@ class CompanyDataSyncService:
                         )
 
                     async with self._operation_worker_semaphore:
-                        await self._sync_symbol(symbol)
+                        await self._sync_symbol(symbol, force_refresh=force_refresh)
                 except asyncio.CancelledError:
                     was_cancelled = True
                     raise
@@ -248,6 +261,7 @@ class CompanyDataSyncService:
         self,
         symbol: str,
         data_type: str,
+        force_refresh: bool = False,
     ) -> int:
         attempt = 0
         total_rate_limit_wait_seconds = 0.0
@@ -263,7 +277,7 @@ class CompanyDataSyncService:
                     symbol=symbol,
                     data_type=data_type,
                     raise_on_failure=True,
-                    force_refresh=True,
+                    force_refresh=force_refresh,
                 )
                 elapsed = time.monotonic() - started
                 company_sync_logger.debug(
@@ -329,11 +343,12 @@ class CompanyDataSyncService:
 
                 await asyncio.sleep(sleep_seconds)
 
-    async def _sync_symbol(self, symbol: str) -> None:
+    async def _sync_symbol(self, symbol: str, force_refresh: bool = False) -> None:
         for data_type in self.DATA_TYPES:
             retries = await self._run_company_fetch_with_retry(
                 symbol=symbol,
                 data_type=data_type,
+                force_refresh=force_refresh,
             )
             if retries > 0:
                 company_sync_logger.debug(
@@ -379,7 +394,7 @@ class CompanyDataSyncService:
                 f"Supported groups include: {', '.join(sorted(VALID_GROUPS))}"
             )
 
-        listing = Listing(source='VCI')
+        listing = Listing(source='KBS')
         symbols_df = listing.symbols_by_group(group_code)
         if symbols_df is None or symbols_df.empty:
             return []
@@ -405,7 +420,7 @@ class CompanyDataSyncService:
 
         result: List[str] = []
         try:
-            df = Listing(source='VCI').all_symbols()
+            df = Listing(source='KBS').all_symbols()
             if df is None or df.empty:
                 return result
 

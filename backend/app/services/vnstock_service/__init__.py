@@ -160,6 +160,21 @@ class VnstockService:
     async def get_subsidiaries(self, symbol: str) -> List[Dict[str, Any]]:
         return await self.company.get_subsidiaries(symbol)
 
+    async def get_ownership(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_ownership(symbol)
+
+    async def get_capital_history(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_capital_history(symbol)
+
+    async def get_news(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_news(symbol)
+
+    async def get_events(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_events(symbol)
+
+    async def get_insider_trading(self, symbol: str) -> List[Dict[str, Any]]:
+        return await self.company.get_insider_trading(symbol)
+
     # History
     async def get_volume_history(self, symbol: str, days: int = 30, auto_sync: bool = True) -> Dict[str, Any]:
         return await self.history.get_volume_history(symbol, days=days, auto_sync=auto_sync)
@@ -269,12 +284,14 @@ class VnstockService:
         symbols: List[str] | None = None,
         index_symbol: str | None = None,
         quick_sync: bool = False,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         return await self.company_data_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,
             quick_sync=quick_sync,
+            force_refresh=force_refresh,
         )
 
     # Funds

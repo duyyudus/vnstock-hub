@@ -602,22 +602,18 @@ const buildClassification = (
     industryFamiliesByLevel2Name: Map<string, IndustryFamilyMeta>,
 ): TickerClassification => {
     const overview = overviewRows[0] || {};
-    const level1 = String(overview.icb_name1 ?? '').trim();
-    const level2 = String(overview.icb_name2 ?? stock.industry ?? '').trim();
-    const level3 = String(overview.icb_name3 ?? '').trim();
-    const sector = level2 || level3 || stock.industry || UNKNOWN_SECTOR;
-    const level2Family = industryFamiliesByLevel2Name.get(normalizeText(level2));
-    const shouldUseOverviewLevel1 = level1 && normalizeText(level1) !== normalizeText(level2);
-    const sectorFamily = shouldUseOverviewLevel1
-        ? level1
-        : (level2Family?.family_name || level1 || null);
+    const industry = String(stock.industry ?? '').trim();
+    const companyType = String(overview.company_type ?? '').trim();
+    const exchange = String(overview.exchange ?? stock.exchange ?? '').trim();
+    const sector = industry || companyType || UNKNOWN_SECTOR;
+    const level2Family = industryFamiliesByLevel2Name.get(normalizeText(industry));
+    const sectorFamily = level2Family?.family_name || null;
     const sectorFamilyCode = level2Family?.family_code || null;
 
-    const sectorText = normalizeText(`${level2} ${level3}`);
-    const level3Token = normalizeSectorToken(level3);
+    const sectorText = normalizeText(`${industry} ${companyType} ${exchange}`);
     const isFinancial = FINANCIAL_KEYWORDS.some((keyword) => sectorText.includes(keyword));
-    const isBank = level3Token.includes('nganhang') || level3Token.includes('bank');
-    const isManufacturing = MANUFACTURING_SECTORS.has(normalizeSectorToken(level2));
+    const isBank = sectorText.includes('ngan hang') || sectorText.includes('bank');
+    const isManufacturing = MANUFACTURING_SECTORS.has(normalizeSectorToken(industry));
 
     const ownership = extractStateOwnershipPercent(shareholdersRows);
     const isSOE = ownership > 30;

@@ -126,7 +126,7 @@ class StockCompanyDataCache(Base):
 
     id = Column(Integer, primary_key=True)
     symbol = Column(String(10), nullable=False)
-    data_type = Column(String(30), nullable=False)  # overview | shareholders | officers | subsidiaries
+    data_type = Column(String(30), nullable=False)  # overview | shareholders | officers | subsidiaries | ownership | capital_history | news | events | insider_trading
     data = Column(JSON, nullable=False, default=list)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

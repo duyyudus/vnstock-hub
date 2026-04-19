@@ -86,10 +86,15 @@ def test_collect_probe_definitions_auto_expands_manifest() -> None:
         ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "balance_sheet", "vci"),
         ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "cash_flow", "vci"),
         ("vnstock_alt", "app.lib.vnstock_alt.api.financial.Finance", "ratio", "vci"),
-        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "overview", "vci"),
-        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "shareholders", "vci"),
-        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "officers", "vci"),
-        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "subsidiaries", "vci"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "overview", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "shareholders", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "officers", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "subsidiaries", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "ownership", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "capital_history", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "news", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "events", "kbs"),
+        ("vnstock_alt", "app.lib.vnstock_alt.api.company.Company", "insider_trading", "kbs"),
         ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "listing", "fmarket"),
         ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "nav_report", "fmarket"),
         ("vnstock_alt", "app.lib.vnstock_alt.explorer.fmarket.fund.Fund", "top_holding", "fmarket"),
@@ -102,7 +107,7 @@ def test_collect_probe_definitions_auto_expands_manifest() -> None:
         ("vnstock_data_alt", "app.lib.vnstock_data_alt.explorer.fmarket.fund.Fund", "asset_holding", "fmarket"),
     }
 
-    assert len(manifest_only) == 29
+    assert len(manifest_only) == 34
     assert expected_backend_manifest_keys <= manifest_keys
     assert len(auto_expanded) > len(manifest_only)
 
@@ -168,26 +173,37 @@ def test_schema_metadata_matches_registered_schema_contract(docs_metadata: dict)
 
     company_info = schemas["company.info"]
     assert company_info["class_name"] == "CompanyReference"
-    assert company_info["default_route"]["source"] == "vci"
+    assert company_info["default_route"]["source"] == "kbs"
     assert company_info["normalized_output"]["columns"] == [
+        "business_model",
         "symbol",
-        "name",
-        "short_name",
-        "exchange",
-        "sector",
-        "industry",
-        "profile",
-        "history",
-        "num_employees",
         "founded_date",
-        "listing_date",
         "charter_capital",
-        "issued_share",
-        "website",
+        "charter_capital_vnd",
+        "number_of_employees",
+        "listing_date",
+        "par_value",
+        "exchange",
+        "listing_price",
+        "listed_volume",
+        "ceo_name",
+        "ceo_position",
+        "inspector_name",
+        "inspector_position",
+        "establishment_license",
+        "business_code",
+        "tax_id",
+        "auditor",
+        "company_type",
         "address",
         "phone",
+        "fax",
         "email",
-        "tax_id",
+        "website",
+        "branches",
+        "history",
+        "outstanding_shares",
+        "as_of_date",
     ]
 
     ohlcv = schemas["market.equity.ohlcv"]

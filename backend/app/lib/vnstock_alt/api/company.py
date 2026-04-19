@@ -13,19 +13,25 @@ class Company(BaseAdapter):
       - shareholders
       - officers
       - subsidiaries
+      - ownership
+      - capital_history
       - affiliate
       - news
       - events
+      - insider_trading
 
     Usage:
-        c = Company(source="vci", symbol="VCI", random_agent=False, show_log=True)
+        c = Company(source="KBS", symbol="VCB", random_agent=False, show_log=True)
         df_ov = c.overview()
         df_sh = c.shareholders()
         df_of = c.officers(filter_by="all")
         df_sub = c.subsidiaries(filter_by="subsidiary")
+        df_owner = c.ownership()
+        df_capital = c.capital_history()
         df_aff = c.affiliate()
         df_news = c.news()
         df_evt = c.events()
+        df_it = c.insider_trading()
     """
     def __init__(
         self,
@@ -125,6 +131,32 @@ class Company(BaseAdapter):
         )
     )
     @dynamic_method
+    def ownership(self, *args: Any, **kwargs: Any) -> Any:
+        """Retrieve company ownership composition."""
+        pass
+
+    @retry(
+        stop=stop_after_attempt(Config.RETRIES),
+        wait=wait_exponential(
+            multiplier=Config.BACKOFF_MULTIPLIER,
+            min=Config.BACKOFF_MIN,
+            max=Config.BACKOFF_MAX
+        )
+    )
+    @dynamic_method
+    def capital_history(self, *args: Any, **kwargs: Any) -> Any:
+        """Retrieve company charter capital history."""
+        pass
+
+    @retry(
+        stop=stop_after_attempt(Config.RETRIES),
+        wait=wait_exponential(
+            multiplier=Config.BACKOFF_MULTIPLIER,
+            min=Config.BACKOFF_MIN,
+            max=Config.BACKOFF_MAX
+        )
+    )
+    @dynamic_method
     def affiliate(self, *args: Any, **kwargs: Any) -> Any:
         """Retrieve company affiliate data."""
         pass
@@ -153,6 +185,19 @@ class Company(BaseAdapter):
     @dynamic_method
     def events(self, *args: Any, **kwargs: Any) -> Any:
         """Retrieve company events."""
+        pass
+
+    @retry(
+        stop=stop_after_attempt(Config.RETRIES),
+        wait=wait_exponential(
+            multiplier=Config.BACKOFF_MULTIPLIER,
+            min=Config.BACKOFF_MIN,
+            max=Config.BACKOFF_MAX
+        )
+    )
+    @dynamic_method
+    def insider_trading(self, *args: Any, **kwargs: Any) -> Any:
+        """Retrieve insider trading data."""
         pass
         
     def _delegate_to_provider(self, method_name: str, symbol: str = None, **kwargs: Any) -> Any:

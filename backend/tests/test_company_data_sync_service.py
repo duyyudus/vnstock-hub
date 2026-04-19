@@ -1,8 +1,6 @@
 import asyncio
-from concurrent.futures import Future
 
 import pytest
-from tenacity import RetryError
 
 import app.services.vnstock_service.company_sync as company_sync_module
 from app.services.sync_status import sync_status
@@ -25,8 +23,9 @@ async def test_company_sync_parallel_workers_update_counters(monkeypatch):
     async def _fake_build_symbol_universe(_symbols=None):
         return symbols
 
-    async def _fake_sync_symbol(_symbol: str):
+    async def _fake_sync_symbol(_symbol: str, force_refresh: bool = False):
         nonlocal in_flight, max_in_flight
+        assert force_refresh is False
         async with counter_lock:
             in_flight += 1
             max_in_flight = max(max_in_flight, in_flight)
@@ -62,11 +61,13 @@ async def test_company_sync_tracks_failed_tickers_and_resets(monkeypatch):
     async def _fake_build_symbol_universe(_symbols=None):
         return symbols
 
-    async def _fail_on_bbb(symbol: str):
+    async def _fail_on_bbb(symbol: str, force_refresh: bool = False):
+        assert force_refresh is False
         if symbol == "BBB":
             raise RuntimeError("sync failed")
 
-    async def _all_success(_symbol: str):
+    async def _all_success(_symbol: str, force_refresh: bool = False):
+        assert force_refresh is False
         return None
 
     monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
@@ -129,7 +130,8 @@ async def test_company_sync_normal_mode_does_not_apply_quick_filter(monkeypatch)
 
     processed = []
 
-    async def _fake_sync_symbol(symbol: str):
+    async def _fake_sync_symbol(symbol: str, force_refresh: bool = False):
+        assert force_refresh is False
         processed.append(symbol)
 
     monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
@@ -139,6 +141,26 @@ async def test_company_sync_normal_mode_does_not_apply_quick_filter(monkeypatch)
     await service._run_sync(symbols=None, quick_sync=False)
 
     assert processed == ["AAA", "BBB"]
+
+
+@pytest.mark.asyncio
+async def test_company_sync_force_refresh_flows_to_symbol_sync(monkeypatch):
+    service = CompanyDataSyncService(company=CompanyService())
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return ["AAA", "BBB"]
+
+    processed = []
+
+    async def _fake_sync_symbol(symbol: str, force_refresh: bool = False):
+        processed.append((symbol, force_refresh))
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_sync_symbol", _fake_sync_symbol)
+
+    await service._run_sync(symbols=None, quick_sync=False, force_refresh=True)
+
+    assert processed == [("AAA", True), ("BBB", True)]
 
 
 @pytest.mark.asyncio
@@ -191,6 +213,7 @@ async def test_company_fetch_rate_limit_then_success(monkeypatch):
     retries = await service._run_company_fetch_with_retry(
         symbol="AAA",
         data_type=CompanyService.DATA_TYPE_OVERVIEW,
+        force_refresh=True,
     )
 
     assert retries == 2
@@ -271,6 +294,7 @@ async def test_company_fetch_half_open_non_rate_limit_reopens_and_recovers(monke
         retries = await service._run_company_fetch_with_retry(
             symbol="AAA",
             data_type=CompanyService.DATA_TYPE_OVERVIEW,
+            force_refresh=True,
         )
     finally:
         api_circuit_breaker.config.failure_threshold = original_failure_threshold
@@ -313,6 +337,7 @@ async def test_company_fetch_non_rate_limit_does_not_retry(monkeypatch):
         await service._run_company_fetch_with_retry(
             symbol="AAA",
             data_type=CompanyService.DATA_TYPE_OVERVIEW,
+            force_refresh=True,
         )
 
     assert len(attempts) == 1
@@ -367,6 +392,7 @@ async def test_company_fetch_rate_limit_exceeds_max_wait_cap(monkeypatch):
         await service._run_company_fetch_with_retry(
             symbol="AAA",
             data_type=CompanyService.DATA_TYPE_OVERVIEW,
+            force_refresh=True,
         )
 
     assert len(attempts) == 3
@@ -408,7 +434,12 @@ async def test_sync_symbol_fetches_each_data_type_once(monkeypatch):
     service = CompanyDataSyncService(company=CompanyService())
     calls = []
 
-    async def _fake_run_company_fetch_with_retry(symbol: str, data_type: str) -> int:
+    async def _fake_run_company_fetch_with_retry(
+        symbol: str,
+        data_type: str,
+        force_refresh: bool = False,
+    ) -> int:
+        assert force_refresh is False
         calls.append((symbol, data_type))
         return 0
 
@@ -444,8 +475,9 @@ async def test_run_sync_force_restart(monkeypatch):
     async def _fake_resolve_symbols_filter(symbols=None, index_symbol=None):
         return ["AAA"]
 
-    async def _fake_run_sync(_symbols, quick_sync=False):
+    async def _fake_run_sync(_symbols, quick_sync=False, force_refresh=False):
         assert quick_sync is False
+        assert force_refresh is False
         await asyncio.sleep(0)
 
     monkeypatch.setattr(service, "_resolve_symbols_filter", _fake_resolve_symbols_filter)
@@ -465,45 +497,53 @@ async def test_run_sync_force_restart(monkeypatch):
 
     # Let newly created task run and clean up.
     await asyncio.sleep(0)
-
-
-def _build_retry_error(inner_error: BaseException) -> RetryError:
-    future: Future = Future()
-    future.set_exception(inner_error)
-    return RetryError(future)
-
-
-def test_fetch_subsidiaries_known_organ_code_retry_error_returns_empty(monkeypatch):
+def test_company_service_fetchers_preserve_kbs_native_payloads(monkeypatch):
     service = CompanyService()
     api_circuit_breaker.reset()
 
     class _Client:
+        def overview(self):
+            return [{"symbol": "AAA", "business_model": "Banking", "outstanding_shares": 123}]
+
+        def shareholders(self):
+            return [{"name": "State", "ownership_percentage": 74.8, "shares_owned": 100}]
+
+        def officers(self):
+            return [{"name": "Alice", "position": "CEO", "position_en": "Chief Executive Officer"}]
+
         def subsidiaries(self):
-            raise _build_retry_error(KeyError("['organ_code'] not found in axis"))
+            return [{"name": "AAA Leasing", "ownership_percent": 60.0, "type": "công ty con"}]
+
+        def ownership(self):
+            return [{"owner_type": "State", "ownership_percentage": 74.8, "shares_owned": 100}]
+
+        def capital_history(self):
+            return [{"date": "2025-01-01", "charter_capital": 1000, "currency": "VND"}]
+
+        def news(self):
+            return [{"head": "corp", "article_id": 1, "title": "Headline", "publish_time": "2026-04-19", "url": "https://example.com/news"}]
+
+        def events(self):
+            return [{"event_name": "AGM", "event_date": "2026-05-01"}]
+
+        def insider_trading(self):
+            return [{"person_name": "Alice", "action": "Buy"}]
 
     monkeypatch.setattr(service, "_build_company_client", lambda _symbol: _Client())
 
-    records = service._fetch_subsidiaries_sync("AAA")
-
-    assert records == []
-
-
-def test_fetch_subsidiaries_non_matching_retry_error_still_raises(monkeypatch):
-    service = CompanyService()
-    api_circuit_breaker.reset()
-
-    class _Client:
-        def subsidiaries(self):
-            raise _build_retry_error(KeyError("['unexpected_col'] not found in axis"))
-
-    monkeypatch.setattr(service, "_build_company_client", lambda _symbol: _Client())
-
-    with pytest.raises(RetryError):
-        service._fetch_subsidiaries_sync("AAA")
+    assert service._fetch_company_overview_sync("AAA") == [{"symbol": "AAA", "business_model": "Banking", "outstanding_shares": 123}]
+    assert service._fetch_shareholders_sync("AAA") == [{"name": "State", "ownership_percentage": 74.8, "shares_owned": 100}]
+    assert service._fetch_officers_sync("AAA") == [{"name": "Alice", "position": "CEO", "position_en": "Chief Executive Officer"}]
+    assert service._fetch_subsidiaries_sync("AAA") == [{"name": "AAA Leasing", "ownership_percent": 60.0, "type": "công ty con"}]
+    assert service._fetch_ownership_sync("AAA") == [{"owner_type": "State", "ownership_percentage": 74.8, "shares_owned": 100}]
+    assert service._fetch_capital_history_sync("AAA") == [{"date": "2025-01-01", "charter_capital": 1000, "currency": "VND"}]
+    assert service._fetch_news_sync("AAA") == [{"head": "corp", "article_id": 1, "title": "Headline", "publish_time": "2026-04-19", "url": "https://example.com/news"}]
+    assert service._fetch_events_sync("AAA") == [{"event_name": "AGM", "event_date": "2026-05-01"}]
+    assert service._fetch_insider_trading_sync("AAA") == [{"person_name": "Alice", "action": "Buy"}]
 
 
 @pytest.mark.asyncio
-async def test_sync_symbol_keeps_success_when_subsidiaries_known_retry_error(monkeypatch):
+async def test_sync_symbol_upserts_all_kbs_company_datasets(monkeypatch):
     company = CompanyService()
     service = CompanyDataSyncService(company=company)
     api_circuit_breaker.reset()
@@ -511,16 +551,31 @@ async def test_sync_symbol_keeps_success_when_subsidiaries_known_retry_error(mon
 
     class _Client:
         def overview(self):
-            return [{"symbol": "AAA"}]
+            return [{"symbol": "AAA", "business_model": "Banking"}]
 
         def shareholders(self):
-            return [{"name": "holder"}]
+            return [{"name": "holder", "ownership_percentage": 60.0}]
 
         def officers(self):
-            return [{"name": "officer"}]
+            return [{"name": "officer", "position": "CEO"}]
 
         def subsidiaries(self):
-            raise _build_retry_error(KeyError("['organ_code'] not found in axis"))
+            return [{"name": "AAA Leasing", "ownership_percent": 60.0, "type": "công ty con"}]
+
+        def ownership(self):
+            return [{"owner_type": "State", "ownership_percentage": 60.0}]
+
+        def capital_history(self):
+            return [{"date": "2025-01-01", "charter_capital": 1000, "currency": "VND"}]
+
+        def news(self):
+            return [{"head": "corp", "article_id": 1}]
+
+        def events(self):
+            return [{"event_name": "AGM"}]
+
+        def insider_trading(self):
+            return [{"person_name": "Alice", "action": "Buy"}]
 
     upsert_calls = []
 
@@ -550,5 +605,13 @@ async def test_sync_symbol_keeps_success_when_subsidiaries_known_retry_error(mon
 
     assert [entry[1] for entry in upsert_calls] == list(service.DATA_TYPES)
     assert all(entry[0] == "AAA" for entry in upsert_calls)
-    assert upsert_calls[-1][1] == CompanyService.DATA_TYPE_SUBSIDIARIES
-    assert upsert_calls[-1][2] == []
+    payloads = {data_type: data for _, data_type, data in upsert_calls}
+    assert payloads[CompanyService.DATA_TYPE_OVERVIEW] == [{"symbol": "AAA", "business_model": "Banking"}]
+    assert payloads[CompanyService.DATA_TYPE_SHAREHOLDERS] == [{"name": "holder", "ownership_percentage": 60.0}]
+    assert payloads[CompanyService.DATA_TYPE_OFFICERS] == [{"name": "officer", "position": "CEO"}]
+    assert payloads[CompanyService.DATA_TYPE_SUBSIDIARIES] == [{"name": "AAA Leasing", "ownership_percent": 60.0, "type": "công ty con"}]
+    assert payloads[CompanyService.DATA_TYPE_OWNERSHIP] == [{"owner_type": "State", "ownership_percentage": 60.0}]
+    assert payloads[CompanyService.DATA_TYPE_CAPITAL_HISTORY] == [{"date": "2025-01-01", "charter_capital": 1000, "currency": "VND"}]
+    assert payloads[CompanyService.DATA_TYPE_NEWS] == [{"head": "corp", "article_id": 1}]
+    assert payloads[CompanyService.DATA_TYPE_EVENTS] == [{"event_name": "AGM"}]
+    assert payloads[CompanyService.DATA_TYPE_INSIDER_TRADING] == [{"person_name": "Alice", "action": "Buy"}]

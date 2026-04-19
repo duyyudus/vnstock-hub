@@ -18,6 +18,8 @@ interface CompanySyncTabProps {
     onCompanyForceRestartChange: (checked: boolean) => void;
     companyQuickSync: boolean;
     onCompanyQuickSyncChange: (checked: boolean) => void;
+    companyForceRefresh: boolean;
+    onCompanyForceRefreshChange: (checked: boolean) => void;
     onRunCompanySync: () => void | Promise<void>;
     companyActive: boolean;
     anyJobActive: boolean;
@@ -40,6 +42,8 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
     onCompanyForceRestartChange,
     companyQuickSync,
     onCompanyQuickSyncChange,
+    companyForceRefresh,
+    onCompanyForceRefreshChange,
     onRunCompanySync,
     companyActive,
     anyJobActive,
@@ -119,6 +123,15 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
                             onChange={(event) => onCompanyQuickSyncChange(event.target.checked)}
                         />
                         <span className="label-text">Quick sync</span>
+                    </label>
+                    <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={companyForceRefresh}
+                            onChange={(event) => onCompanyForceRefreshChange(event.target.checked)}
+                        />
+                        <span className="label-text">Force refresh cached datasets</span>
                     </label>
                     <button
                         className="btn btn-warning"

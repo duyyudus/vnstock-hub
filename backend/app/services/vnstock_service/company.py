@@ -29,6 +29,11 @@ class CompanyService:
     DATA_TYPE_SHAREHOLDERS = "shareholders"
     DATA_TYPE_OFFICERS = "officers"
     DATA_TYPE_SUBSIDIARIES = "subsidiaries"
+    DATA_TYPE_OWNERSHIP = "ownership"
+    DATA_TYPE_CAPITAL_HISTORY = "capital_history"
+    DATA_TYPE_NEWS = "news"
+    DATA_TYPE_EVENTS = "events"
+    DATA_TYPE_INSIDER_TRADING = "insider_trading"
 
     def __init__(self) -> None:
         self._refresh_locks: Dict[str, asyncio.Lock] = {}
@@ -38,6 +43,11 @@ class CompanyService:
             self.DATA_TYPE_SHAREHOLDERS: self._fetch_shareholders_sync,
             self.DATA_TYPE_OFFICERS: self._fetch_officers_sync,
             self.DATA_TYPE_SUBSIDIARIES: self._fetch_subsidiaries_sync,
+            self.DATA_TYPE_OWNERSHIP: self._fetch_ownership_sync,
+            self.DATA_TYPE_CAPITAL_HISTORY: self._fetch_capital_history_sync,
+            self.DATA_TYPE_NEWS: self._fetch_news_sync,
+            self.DATA_TYPE_EVENTS: self._fetch_events_sync,
+            self.DATA_TYPE_INSIDER_TRADING: self._fetch_insider_trading_sync,
         }
 
     async def get_company_overview(self, symbol: str) -> List[Dict[str, Any]]:
@@ -66,6 +76,41 @@ class CompanyService:
         return await self._get_company_dataset(
             symbol=symbol,
             data_type=self.DATA_TYPE_SUBSIDIARIES,
+        )
+
+    async def get_ownership(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch ownership for a given stock symbol."""
+        return await self._get_company_dataset(
+            symbol=symbol,
+            data_type=self.DATA_TYPE_OWNERSHIP,
+        )
+
+    async def get_capital_history(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch capital history for a given stock symbol."""
+        return await self._get_company_dataset(
+            symbol=symbol,
+            data_type=self.DATA_TYPE_CAPITAL_HISTORY,
+        )
+
+    async def get_news(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch company news for a given stock symbol."""
+        return await self._get_company_dataset(
+            symbol=symbol,
+            data_type=self.DATA_TYPE_NEWS,
+        )
+
+    async def get_events(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch company events for a given stock symbol."""
+        return await self._get_company_dataset(
+            symbol=symbol,
+            data_type=self.DATA_TYPE_EVENTS,
+        )
+
+    async def get_insider_trading(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch insider trading for a given stock symbol."""
+        return await self._get_company_dataset(
+            symbol=symbol,
+            data_type=self.DATA_TYPE_INSIDER_TRADING,
         )
 
     async def refresh_company_dataset(
@@ -278,112 +323,94 @@ class CompanyService:
         from vnstock import Company
 
         _ensure_pandas_applymap()
-        return Company(symbol=symbol[:3], source='VCI')
+        return Company(symbol=symbol[:3], source='KBS')
+
+    def _fetch_company_method_sync(self, symbol: str, method_name: str, label: str) -> List[Dict[str, Any]]:
+        if not api_circuit_breaker.can_proceed():
+            raise CircuitOpenError(f"Circuit breaker open - cannot fetch {label} for {symbol}")
+
+        try:
+            company = self._build_company_client(symbol)
+            payload = getattr(company, method_name)()
+            api_circuit_breaker.record_success()
+            return self._normalize_company_payload(payload)
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching {label} for {symbol}: {e}")
+            logger.warning(f"Error fetching {label} for {symbol}: {e}")
+            raise
 
     def _fetch_company_overview_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch company overview synchronously from source API."""
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch company overview for {symbol}")
-
-        try:
-            company = self._build_company_client(symbol)
-            payload = company.overview()
-            api_circuit_breaker.record_success()
-            return self._normalize_company_payload(payload)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching company overview for {symbol}: {e}")
-            logger.warning(f"Error fetching company overview for {symbol}: {e}")
-            raise
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="overview",
+            label="company overview",
+        )
 
     def _fetch_shareholders_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch shareholders synchronously from source API."""
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch shareholders for {symbol}")
-
-        try:
-            company = self._build_company_client(symbol)
-            payload = company.shareholders()
-            api_circuit_breaker.record_success()
-            return self._normalize_company_payload(payload)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching shareholders for {symbol}: {e}")
-            logger.warning(f"Error fetching shareholders for {symbol}: {e}")
-            raise
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="shareholders",
+            label="shareholders",
+        )
 
     def _fetch_officers_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch officers synchronously from source API."""
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch officers for {symbol}")
-
-        try:
-            company = self._build_company_client(symbol)
-            payload = company.officers()
-            api_circuit_breaker.record_success()
-            return self._normalize_company_payload(payload)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching officers for {symbol}: {e}")
-            logger.warning(f"Error fetching officers for {symbol}: {e}")
-            raise
-
-    def _is_known_subsidiaries_no_data_error(self, error: BaseException) -> bool:
-        # vnstock may wrap a KeyError("['organ_code'] not found in axis") in tenacity.RetryError.
-        # Treat this as an upstream no-data shape mismatch for subsidiaries only.
-        error_candidates: List[BaseException] = [error]
-        try:
-            from tenacity import RetryError
-        except Exception:
-            RetryError = None  # type: ignore[assignment]
-
-        if RetryError is not None and isinstance(error, RetryError):
-            last_attempt = getattr(error, "last_attempt", None)
-            if last_attempt is not None and hasattr(last_attempt, "exception"):
-                try:
-                    nested_error = last_attempt.exception()
-                except Exception:
-                    nested_error = None
-                if isinstance(nested_error, BaseException):
-                    error_candidates.append(nested_error)
-
-        for candidate in error_candidates:
-            if isinstance(candidate, KeyError) and "organ_code" in str(candidate).lower():
-                return True
-        return False
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="officers",
+            label="officers",
+        )
 
     def _fetch_subsidiaries_sync(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetch subsidiaries synchronously from source API."""
-        if not api_circuit_breaker.can_proceed():
-            raise CircuitOpenError(f"Circuit breaker open - cannot fetch subsidiaries for {symbol}")
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="subsidiaries",
+            label="subsidiaries",
+        )
 
-        try:
-            company = self._build_company_client(symbol)
-            payload = company.subsidiaries()
-            api_circuit_breaker.record_success()
-            return self._normalize_company_payload(payload)
-        except CircuitOpenError:
-            raise
-        except (SystemExit, Exception) as e:
-            if _is_rate_limit_error(e):
-                _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching subsidiaries for {symbol}: {e}")
-            if self._is_known_subsidiaries_no_data_error(e):
-                logger.info(
-                    "Subsidiaries data unavailable for %s due to known upstream schema mismatch "
-                    "(missing organ_code); caching empty dataset",
-                    symbol,
-                )
-                api_circuit_breaker.record_success()
-                return []
-            logger.warning(f"Error fetching subsidiaries for {symbol}: {e}")
-            raise
+    def _fetch_ownership_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch ownership synchronously from source API."""
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="ownership",
+            label="ownership",
+        )
+
+    def _fetch_capital_history_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch capital history synchronously from source API."""
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="capital_history",
+            label="capital history",
+        )
+
+    def _fetch_news_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch news synchronously from source API."""
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="news",
+            label="news",
+        )
+
+    def _fetch_events_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch events synchronously from source API."""
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="events",
+            label="events",
+        )
+
+    def _fetch_insider_trading_sync(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetch insider trading synchronously from source API."""
+        return self._fetch_company_method_sync(
+            symbol=symbol,
+            method_name="insider_trading",
+            label="insider trading",
+        )

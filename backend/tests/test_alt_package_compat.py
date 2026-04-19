@@ -325,7 +325,12 @@ def test_vnstock_alt_root_public_methods_match_upstream(
     alt = _import("app.lib.vnstock_alt")
 
     assert _public_methods(getattr(upstream, class_name)) == expected_methods
-    assert _public_methods(getattr(alt, class_name)) == expected_methods
+    alt_methods = _public_methods(getattr(alt, class_name))
+    if class_name == "Company":
+        assert set(expected_methods) <= set(alt_methods)
+        assert {"ownership", "capital_history", "insider_trading"} <= set(alt_methods)
+    else:
+        assert alt_methods == expected_methods
 
 
 @pytest.mark.parametrize("class_name,expected_methods", VNSTOCK_DATA_ROOT_METHODS.items())
@@ -340,7 +345,12 @@ def test_vnstock_data_alt_root_public_methods_match_upstream(
     alt = _import("app.lib.vnstock_data_alt")
 
     assert _public_methods(getattr(upstream, class_name)) == expected_methods
-    assert _public_methods(getattr(alt, class_name)) == expected_methods
+    alt_methods = _public_methods(getattr(alt, class_name))
+    if class_name == "Company":
+        assert set(expected_methods) <= set(alt_methods)
+        assert {"ownership"} <= set(alt_methods)
+    else:
+        assert alt_methods == expected_methods
 
 
 def test_vnstock_data_alt_index_group_enum_matches_upstream(
@@ -607,122 +617,85 @@ def test_vnstock_data_alt_vci_trading_history_and_flow_contract(monkeypatch: pyt
 
 
 def test_vnstock_alt_company_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
-    company_module = _import("app.lib.vnstock_alt.explorer.vci.company")
+    company_module = _import("app.lib.vnstock_alt.explorer.kbs.company")
+
+    profile_payload = {
+        "SB": "VCB",
+        "SM": "<p>Profile</p>",
+        "FD": "1963-04-01",
+        "CC": 1000,
+        "LD": "2009-06-30",
+        "FV": 10000,
+        "EX": "HSX",
+        "LP": 100000,
+        "VL": 123456789,
+        "CTP": "CEO",
+        "CTPP": "Chief Executive Officer",
+        "IS": "Chief Inspector",
+        "ISP": "Chief Inspector",
+        "TC": "123456789",
+        "TY": "Bank",
+        "ADD": "1 Main St",
+        "PHONE": "0123",
+        "EMAIL": "info@example.com",
+        "URL": "https://example.com",
+        "HS": "<p>History</p>",
+        "SFV": 1000,
+        "KLCPLH": 2000,
+        "AD": "2026-04-19",
+        "Shareholders": [
+            {"NM": "State Bank", "D": "2026-01-01", "V": 100, "OR": 74.8},
+        ],
+        "Leaders": [
+            {"FD": "2026-01-01", "PN": "CEO", "NM": "Alice", "PO": "Chief Executive Officer", "PI": "VCB001"},
+        ],
+        "Subsidiaries": [
+            {"D": "2026-01-01", "NM": "VCB Leasing", "CC": 500, "OR": 60.0, "CR": "VND"},
+        ],
+        "Ownership": [
+            {"NM": "State", "OR": 74.8, "SH": 100, "D": "2026-01-01"},
+        ],
+        "CharterCapital": [
+            {"D": "2025-01-01", "V": 1000, "C": "VND"},
+        ],
+        "LaborStructure": [
+            {"Value": 10},
+            {"Value": 20},
+        ],
+    }
 
     def fake_send_request(*args, **kwargs):
-        return {
-            "data": {
-                "AnalysisReportFiles": [],
-                "News": [],
-                "TickerPriceInfo": {
-                    "financialRatio": [
-                        {
-                            "yearReport": 2025,
-                            "lengthReport": 4,
-                            "updateDate": 1735689600000,
-                            "pe": 13.2,
-                            "__typename": "Ratio",
-                        }
-                    ],
-                    "ticker": "VCB",
-                    "exchange": "HOSE",
-                    "referencePrice": 90000,
-                    "matchPrice": 91500,
-                    "__typename": "TickerPriceInfo",
-                },
-                "Subsidiary": [
-                    {
-                        "id": 1,
-                        "organCode": "VCB",
-                        "subOrganCode": "VCBL",
-                        "percentage": 60.0,
-                        "subOrListingInfo": {
-                            "organName": "VCB Leasing",
-                            "enOrganName": "VCB Leasing",
-                            "__typename": "SubInfo",
-                        },
-                        "__typename": "Subsidiary",
-                    }
-                ],
-                "Affiliate": [
-                    {
-                        "id": 2,
-                        "organCode": "VCB",
-                        "subOrganCode": "VCBA",
-                        "percentage": 20.0,
-                        "subOrListingInfo": {
-                            "organName": "VCB Affiliate",
-                            "enOrganName": "VCB Affiliate",
-                            "__typename": "AffiliateInfo",
-                        },
-                        "__typename": "Affiliate",
-                    }
-                ],
-                "CompanyListingInfo": {
-                    "id": 1,
-                    "ticker": "VCB",
-                    "issueShare": 100,
-                    "history": "<p>History</p>",
-                    "companyProfile": "<p>Profile</p>",
-                    "icbName2": "Banks",
-                    "enIcbName2": "Banks",
-                    "icbName3": "Commercial Banks",
-                    "enIcbName3": "Commercial Banks",
-                    "icbName4": "Large Banks",
-                    "enIcbName4": "Large Banks",
-                    "financialRatio": {
-                        "id": 1,
-                        "ticker": "VCB",
-                        "issueShare": 100,
-                        "charterCapital": 200,
-                        "__typename": "Ratio",
-                    },
-                    "__typename": "CompanyListingInfo",
-                },
-                "OrganizationManagers": [
-                    {
-                        "id": 1,
-                        "ticker": "VCB",
-                        "fullName": "Alice",
-                        "positionName": "CEO",
-                        "positionShortName": "CEO",
-                        "en_PositionName": "CEO",
-                        "en_PositionShortName": "CEO",
-                        "updateDate": 1735689600000,
-                        "percentage": 1.2,
-                        "quantity": 1000,
-                        "__typename": "Manager",
-                    }
-                ],
-                "OrganizationShareHolders": [
-                    {
-                        "id": 1,
-                        "ticker": "VCB",
-                        "ownerFullName": "State Bank",
-                        "en_OwnerFullName": "State Bank",
-                        "quantity": 100,
-                        "percentage": 74.8,
-                        "updateDate": 1735689600000,
-                        "__typename": "Holder",
-                    }
-                ],
-                "OrganizationResignedManagers": [],
-                "OrganizationEvents": [],
-            }
-        }
+        url = kwargs.get("url") or (args[0] if args else "")
+        if "/news/internal-trading/" in url:
+            return [{"personName": "Alice", "action": "Buy"}]
+        if "/event/" in url:
+            return [{"eventName": "AGM", "eventDate": "2026-05-01"}]
+        if "/news/" in url:
+            return [{"head": "corp", "articleId": 1, "title": "Title", "publishTime": "2026-04-19", "url": "https://example.com/news"}]
+        return profile_payload
 
-    monkeypatch.setattr(company_module.client, "send_request", fake_send_request)
+    monkeypatch.setattr(company_module, "send_request", fake_send_request)
 
     company = company_module.Company("VCB")
     overview = company.overview()
     shareholders = company.shareholders()
     officers = company.officers()
     subsidiaries = company.subsidiaries()
+    ownership = company.ownership()
+    capital_history = company.capital_history()
+    news = company.news()
+    events = company.events()
+    insider_trading = company.insider_trading()
 
-    assert "symbol" in overview.columns
-    assert {"share_holder", "share_own_percent"}.issubset(shareholders.columns)
-    assert {"officer_name", "officer_position"}.issubset(officers.columns)
-    assert {"sub_organ_code", "organ_name", "ownership_percent"}.issubset(subsidiaries.columns)
+    assert {"symbol", "business_model", "outstanding_shares", "company_type"}.issubset(overview.columns)
+    assert {"name", "shares_owned", "ownership_percentage", "update_date"}.issubset(shareholders.columns)
+    assert {"name", "position", "position_en", "owner_code", "from_date"}.issubset(officers.columns)
+    assert {"name", "charter_capital", "ownership_percent", "currency", "type", "update_date"}.issubset(subsidiaries.columns)
+    assert {"owner_type", "ownership_percentage", "shares_owned", "update_date"}.issubset(ownership.columns)
+    assert {"date", "charter_capital", "currency"}.issubset(capital_history.columns)
+    assert {"head", "article_id", "title", "publish_time", "url"}.issubset(news.columns)
+    assert {"event_name", "event_date"}.issubset(events.columns)
+    assert {"person_name", "action"}.issubset(insider_trading.columns)
 
 
 def test_vnstock_alt_fund_details_contract(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -750,7 +723,7 @@ def test_vnstock_alt_fund_details_contract(monkeypatch: pytest.MonkeyPatch) -> N
 def test_vnstock_alt_vnstock_chain_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     vnstock_alt = _import("app.lib.vnstock_alt")
 
-    stock = vnstock_alt.Vnstock().stock(symbol="VCB", source="VCI")
+    stock = vnstock_alt.Vnstock().stock(symbol="VCB", source="KBS")
 
     quote_df = pd.DataFrame(
         {
