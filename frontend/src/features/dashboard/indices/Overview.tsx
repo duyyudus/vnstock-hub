@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import type { Stock, BookmarkGroup } from '../../../api/stockApi';
+import { PriceChangeTradedValueScatter } from './PriceChangeTradedValueScatter';
 import { StocksTable } from './StocksTable';
 import type {
     PortfolioHoldingSummary,
@@ -73,6 +74,7 @@ export const Overview: React.FC<OverviewProps> = ({
 
     return (
         <div className="space-y-3">
+            <PriceChangeTradedValueScatter stocks={stocks} />
             <StocksTable
                 stocks={stocks}
                 industrySections={industrySections}
