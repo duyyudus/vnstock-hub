@@ -91,6 +91,13 @@ const formatValue = (value: number | null, signed: boolean = false) => {
     return `${prefix}${value.toFixed(2)} B VND`;
 };
 
+const getSignedValueClass = (value: number | null) => {
+    if (value === null || value === 0) {
+        return 'text-base-content/70';
+    }
+    return value > 0 ? 'text-success' : 'text-error';
+};
+
 const formatImpactRatio = (flowValue: number | null, totalValue: number | null) => {
     if (flowValue === null || totalValue === null || totalValue === 0) {
         return null;
@@ -220,6 +227,29 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
         }));
     }, [volumeData]);
 
+    const rangeNetTotals = useMemo(() => {
+        let foreignTotal = 0;
+        let propTotal = 0;
+        let hasForeign = false;
+        let hasProp = false;
+
+        chartData.forEach((point) => {
+            if (point.foreign_net_value !== null) {
+                foreignTotal += point.foreign_net_value;
+                hasForeign = true;
+            }
+            if (point.prop_net_value !== null) {
+                propTotal += point.prop_net_value;
+                hasProp = true;
+            }
+        });
+
+        return {
+            foreign: hasForeign ? foreignTotal : null,
+            prop: hasProp ? propTotal : null,
+        };
+    }, [chartData]);
+
     const sharedValueDomain = useMemo<[number, number]>(() => {
         const values = chartData.flatMap((point) => [
             point.display_value,
@@ -260,16 +290,22 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                     <p className="text-xs text-sky-500">
                         {data.using_total_value ? 'Total trade value' : 'Trade value (fallback)'}: {formatValue(data.display_value)}
                     </p>
-                    <p className="text-xs text-emerald-500">
-                        Foreign net: {formatValue(data.foreign_net_value, true)}
+                    <p className="text-xs">
+                        <span className="text-emerald-500">Foreign net:</span>{' '}
+                        <span className={getSignedValueClass(data.foreign_net_value)}>
+                            {formatValue(data.foreign_net_value, true)}
+                        </span>
                     </p>
                     {foreignImpact ? (
                         <p className="text-[11px] text-base-content/60">
                             Foreign impact: {foreignImpact}
                         </p>
                     ) : null}
-                    <p className="text-xs text-amber-500 mt-1">
-                        Proprietary net: {formatValue(data.prop_net_value, true)}
+                    <p className="text-xs mt-1">
+                        <span className="text-amber-500">Proprietary net:</span>{' '}
+                        <span className={getSignedValueClass(data.prop_net_value)}>
+                            {formatValue(data.prop_net_value, true)}
+                        </span>
                     </p>
                     {propImpact ? (
                         <p className="text-[11px] text-base-content/60">
@@ -370,6 +406,20 @@ export const VolumeChartPopup: React.FC<VolumeChartPopupProps> = ({
                                 <span className="text-xs">{syncBanner.text}</span>
                             </div>
                         ) : null}
+                        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-base-content/70">
+                            <span>
+                                <span className="text-emerald-500">Foreign net sum:</span>{' '}
+                                <span className={`font-medium ${getSignedValueClass(rangeNetTotals.foreign)}`}>
+                                    {formatValue(rangeNetTotals.foreign, true)}
+                                </span>
+                            </span>
+                            <span>
+                                <span className="text-amber-500">Proprietary net sum:</span>{' '}
+                                <span className={`font-medium ${getSignedValueClass(rangeNetTotals.prop)}`}>
+                                    {formatValue(rangeNetTotals.prop, true)}
+                                </span>
+                            </span>
+                        </div>
                         {flowAvailabilityNote ? (
                             <div className="mb-2 text-[11px] text-base-content/60">
                                 {flowAvailabilityNote}
