@@ -10,7 +10,7 @@ import {
     YAxis,
     ZAxis,
 } from 'recharts';
-import type { Stock } from '../../../api/stockApi';
+import type { Stock } from '../../../../api/stockApi';
 
 interface PriceChangeTradedValueScatterProps {
     stocks: Stock[];

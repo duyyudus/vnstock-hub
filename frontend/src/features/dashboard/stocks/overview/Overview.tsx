@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { Stock, BookmarkGroup } from '../../../api/stockApi';
+import type { Stock, BookmarkGroup } from '../../../../api/stockApi';
 import { PriceChangeTradedValueScatter } from './PriceChangeTradedValueScatter';
 import { StocksTable } from './StocksTable';
 import type {

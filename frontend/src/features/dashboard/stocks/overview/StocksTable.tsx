@@ -1,19 +1,19 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { stockApi } from '../../../api/stockApi';
-import type { Stock, BookmarkGroup } from '../../../api/stockApi';
-import { useAuthUser } from '../../auth/useAuthUser';
+import { stockApi } from '../../../../api/stockApi';
+import type { Stock, BookmarkGroup } from '../../../../api/stockApi';
+import { useAuthUser } from '../../../auth/useAuthUser';
 import {
     resolveCompanyExportCategory,
     resolveFinanceExportCategory,
-} from '../../../utils/exportCsv';
+} from '../../../../utils/exportCsv';
 import {
     COMPANY_EXPORT_DEFINITIONS,
     FINANCE_EXPORT_DEFINITIONS,
     PRICE_HISTORY_EXPORT_DEFINITIONS,
     type ExportDefinition,
     runTickerExportDefinitions,
-} from './stockExport';
+} from '../stockExport';
 
 interface StocksTableProps {
     /** List of stocks to display */
