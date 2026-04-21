@@ -18,6 +18,8 @@ import {
 interface StocksTableProps {
     /** List of stocks to display */
     stocks: Stock[];
+    /** Industry sections precomputed by the overview container */
+    industrySections?: StockIndustrySection[];
     /** Aggregate foreign net value for the selected index universe */
     foreignNetSummaryValue?: number | null;
     /** Label for the selected index summary */
@@ -63,7 +65,7 @@ interface ExportNotice {
     message: string;
 }
 
-interface IndustrySection {
+export interface StockIndustrySection {
     industry: string;
     totalMarketCap: number;
     stocks: Stock[];
@@ -75,11 +77,6 @@ interface TickerTooltipState {
     y: number;
     placeLeft: boolean;
 }
-
-const normalizeIndustryLabel = (industry: string | null | undefined): string => {
-    const normalized = industry?.trim() || '';
-    return normalized || 'Other';
-};
 
 const getRemainingRoomRatioValue = (
     currentRoom: number | null | undefined,
@@ -129,8 +126,33 @@ const compareStocksForSort = (a: Stock, b: Stock, sortConfig: SortConfig) => {
     return sortConfig.direction === 'asc' ? comparison : comparison * -1;
 };
 
+const formatForeignNetSummaryValue = (value: number | null | undefined): string => {
+    if (value == null) {
+        return '-';
+    }
+    const formatted = new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 2,
+    }).format(Math.abs(value));
+    const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+    return `${prefix}${formatted}`;
+};
+
+const getForeignNetSummaryClassName = (value: number | null | undefined): string => {
+    if (value == null) {
+        return 'text-base-content/60';
+    }
+    if (value > 0) {
+        return 'text-success';
+    }
+    if (value < 0) {
+        return 'text-error';
+    }
+    return 'text-base-content';
+};
+
 export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
+    industrySections = [],
     foreignNetSummaryValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
@@ -252,17 +274,6 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(value);
-    };
-
-    const formatForeignNetSummaryValue = (value: number | null | undefined): string => {
-        if (value == null) {
-            return '-';
-        }
-        const formatted = new Intl.NumberFormat('en-US', {
-            maximumFractionDigits: 2,
-        }).format(Math.abs(value));
-        const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
-        return `${prefix}${formatted}`;
     };
 
     const formatHoldingPercent = (value: number): string => {
@@ -685,36 +696,12 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         return [...stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig));
     }, [stocks, sortConfig]);
 
-    const industrySections = useMemo<IndustrySection[]>(() => {
-        const groupedStocks = new Map<string, { totalMarketCap: number; stocks: Stock[] }>();
-
-        stocks.forEach((stock) => {
-            const industry = normalizeIndustryLabel(stock.industry);
-            const currentSection = groupedStocks.get(industry) ?? {
-                totalMarketCap: 0,
-                stocks: [],
-            };
-            const marketCap = Number(stock.market_cap);
-            currentSection.stocks.push(stock);
-            if (Number.isFinite(marketCap)) {
-                currentSection.totalMarketCap += marketCap;
-            }
-            groupedStocks.set(industry, currentSection);
-        });
-
-        return Array.from(groupedStocks.entries())
-            .map(([industry, section]) => ({
-                industry,
-                totalMarketCap: section.totalMarketCap,
-                stocks: [...section.stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig)),
-            }))
-            .sort((a, b) => {
-                if (b.totalMarketCap !== a.totalMarketCap) {
-                    return b.totalMarketCap - a.totalMarketCap;
-                }
-                return a.industry.localeCompare(b.industry);
-            });
-    }, [stocks, sortConfig]);
+    const sortedIndustrySections = useMemo<StockIndustrySection[]>(() => {
+        return industrySections.map((section) => ({
+            ...section,
+            stocks: [...section.stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig)),
+        }));
+    }, [industrySections, sortConfig]);
 
     const renderSortIcon = (key: SortKey) => {
         if (sortConfig.key !== key) {
@@ -756,16 +743,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     };
 
     const totalColumns = isLoggedIn ? 17 : 16;
-    const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
-    const foreignNetSummaryClassName = foreignNetSummaryValue == null
-        ? 'text-base-content/60'
-        : foreignNetSummaryValue > 0
-            ? 'text-success'
-            : foreignNetSummaryValue < 0
-                ? 'text-error'
-                : 'text-base-content';
     const showForeignNetSummary = foreignNetSummaryValue !== undefined;
-
+    const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
+    const foreignNetSummaryClassName = getForeignNetSummaryClassName(foreignNetSummaryValue);
     const renderTableHeader = () => (
         <thead className="sticky top-0 z-20 bg-base-200">
             <tr>
@@ -1173,9 +1153,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     />
                 </label>
             </div>
-            {groupByIndustry && stocks.length > 0 ? (
+            {groupByIndustry && sortedIndustrySections.length > 0 ? (
                 <div className="space-y-4">
-                    {industrySections.map((section) => (
+                    {sortedIndustrySections.map((section) => (
                         <section key={section.industry} className="space-y-2">
                             <div className="px-1">
                                 <h3 className="text-sm font-semibold uppercase tracking-wide text-base-content/80">

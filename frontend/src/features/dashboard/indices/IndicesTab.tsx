@@ -11,7 +11,7 @@ import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
 import { StocksTradeFlowChart } from './StocksTradeFlowChart';
-import { StocksTable } from './StocksTable';
+import { Overview } from './Overview';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './StocksTable';
 import type { IndexConfig } from './indexConfig';
 import { deriveIndexIndustryScope } from './indexIndustryScope';
@@ -41,7 +41,7 @@ interface IndicesTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'performance_table' | 'growth' | 'comparison' | 'risk_return' | 'volume' | 'trade_flow';
+type ViewMode = 'overview' | 'growth' | 'comparison' | 'risk_return' | 'volume' | 'trade_flow';
 
 interface ExportNotice {
     kind: 'success' | 'warning';
@@ -113,7 +113,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     const [openTradingPositions, setOpenTradingPositions] = useState<Record<string, TradingPositionSummary>>({});
 
     // --- View State ---
-    const [viewMode, setViewMode] = useState<ViewMode>('performance_table');
+    const [viewMode, setViewMode] = useState<ViewMode>('overview');
     const [searchQuery, setSearchQuery] = useState('');
     const indexDetailsDialogRef = useRef<HTMLDialogElement>(null);
     const batchExportDialogRef = useRef<HTMLDialogElement>(null);
@@ -1008,13 +1008,13 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                 <div className="overflow-x-auto">
                     <div className="join min-w-max">
                         <button
-                            className={`join-item btn btn-sm ${viewMode === 'performance_table' ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setViewMode('performance_table')}
+                            className={`join-item btn btn-sm ${viewMode === 'overview' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('overview')}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
-                            Price Table
+                            Overview
                         </button>
                         <button
                             className={`join-item btn btn-sm ${viewMode === 'growth' ? 'btn-primary' : 'btn-ghost'}`}
@@ -1107,7 +1107,7 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
                                 dateRange={appliedDateRange}
                             />
                         ) : (
-                            <StocksTable
+                            <Overview
                                 stocks={filteredStocks}
                                 foreignNetSummaryValue={showSelectedIndexForeignNetSum ? selectedIndexForeignNetSum : undefined}
                                 foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
