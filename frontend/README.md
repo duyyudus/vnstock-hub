@@ -33,11 +33,11 @@ frontend/
 
 ## Key Features
 
-- Dashboard tabs: `Indices`, `Funds`, and `Portfolio` (portfolio tab shown when logged in).
-- Indices workflows: search, index/industry/bookmark filters, table + growth/comparison/risk-return chart modes.
+- Dashboard tabs: `Stocks`, `Funds`, and `Portfolio` (portfolio tab shown when logged in).
+- Stocks workflows: search, index/industry/bookmark filters, table + growth/comparison/risk-return chart modes.
 - Stock tooling: draggable financial popup, volume history popup, and price history popup.
 - Bookmark workflows: group CRUD and per-group ticker management from the stock table.
-- Batch export flow from indices tab for company + finance CSV datasets.
+- Batch export flow from stocks tab for company + finance CSV datasets.
 - Funds analytics: NAV charts, holdings breakdowns, cumulative growth, risk-return scatter, periodic return heatmap.
 - Portfolio workflows: position CRUD, quote refresh, CSV export, fresh CSV import, and LLM-assisted import using broker presets.
 - Admin page (`/admin`): live sync status polling and trigger actions for price, audit, repair, finance sync, and company sync.

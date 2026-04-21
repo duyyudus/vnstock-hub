@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, IndustryInfo, BookmarkGroup } from '../../../api/stockApi';
-import { IndexSelector } from '../indices/IndexSelector';
-import { IndustrySelector } from '../indices/IndustrySelector';
-import { BookmarkSelector } from '../indices/BookmarkSelector';
-import type { IndexConfig } from '../indices/indexConfig';
-import { deriveIndexIndustryScope } from '../indices/indexIndustryScope';
+import { IndexSelector } from '../stocks/IndexSelector';
+import { IndustrySelector } from '../stocks/IndustrySelector';
+import { BookmarkSelector } from '../stocks/BookmarkSelector';
+import type { IndexConfig } from '../stocks/indexConfig';
+import { deriveIndexIndustryScope } from '../stocks/indexIndustryScope';
 import { useAuthUser } from '../../auth/useAuthUser';
 import { FinancialHealthScreener } from './FinancialHealthScreener';
 import { ValuationScreener } from './ValuationScreener';
@@ -267,7 +267,7 @@ export const ScreenersTab: React.FC<ScreenersTabProps> = ({ indices }) => {
     if (!selectedIndex && !selectedBookmarkGroupId) {
         return (
             <div className="flex items-center justify-center h-64">
-                <p className="text-base-content/60">No indices available for screeners.</p>
+                <p className="text-base-content/60">No stock indices available for screeners.</p>
             </div>
         );
     }

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useEffectEvent } from 'react';
 import TabNavigation from '../../components/TabNavigation';
-import IndicesTab from './indices/IndicesTab';
+import StocksTab from './stocks/StocksTab';
 import { ScreenersTab } from './screeners/ScreenersTab';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { AppInfoResponse } from '../../api/stockApi';
-import type { IndexConfig } from './indices/indexConfig';
+import type { IndexConfig } from './stocks/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
 import { ThemeSelector } from './components/ThemeSelector';
@@ -16,7 +16,7 @@ import { NewsTab } from './news/NewsTab';
 
 // Tab definitions
 const DASHBOARD_TABS = [
-    { id: 'indices', label: 'Indices' },
+    { id: 'stocks', label: 'Stocks' },
     { id: 'screeners', label: 'Screeners' },
     { id: 'news', label: 'News' },
     { id: 'funds', label: 'Funds' },
@@ -24,7 +24,7 @@ const DASHBOARD_TABS = [
     { id: 'trading', label: 'Trading' },
 ];
 
-const DEFAULT_DASHBOARD_TAB = 'indices';
+const DEFAULT_DASHBOARD_TAB = 'stocks';
 const DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'vnstock_dashboard_active_tab';
 const DASHBOARD_TAB_IDS = new Set(DASHBOARD_TABS.map((tab) => tab.id));
 const AUTH_REQUIRED_TAB_IDS = new Set(['portfolio', 'trading']);
@@ -247,7 +247,7 @@ export const Dashboard: React.FC = () => {
 
     // Render content based on active tab
     const renderContent = () => {
-        if ((activeTab === 'indices' || activeTab === 'screeners') && loadingIndices) {
+        if ((activeTab === 'stocks' || activeTab === 'screeners') && loadingIndices) {
             return (
                 <div className="flex flex-col items-center justify-center h-64">
                     <span className="loading loading-spinner loading-lg text-primary"></span>
@@ -257,8 +257,8 @@ export const Dashboard: React.FC = () => {
         }
 
         switch (activeTab) {
-            case 'indices':
-                return <IndicesTab indices={indices} />;
+            case 'stocks':
+                return <StocksTab indices={indices} />;
             case 'screeners':
                 return <ScreenersTab indices={indices} />;
             case 'news':

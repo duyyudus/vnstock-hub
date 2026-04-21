@@ -36,7 +36,7 @@ import {
     type DateRangePreset,
 } from './dateRange';
 
-interface IndicesTabProps {
+interface StocksTabProps {
     /** List of available indices */
     indices: IndexConfig[];
 }
@@ -85,10 +85,10 @@ const getStoredSelectedIndex = (indices: IndexConfig[]) => {
 };
 
 /**
- * Indices Tab - Main container for Index/Industry stock views.
+ * Stocks Tab - Main container for Index/Industry stock views.
  * Manages state for selection, fetching, and view switching.
  */
-export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
+export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     const user = useAuthUser();
 
     // --- Selection State ---
@@ -876,12 +876,12 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
         if (!selectedBookmarkGroupId) return null;
         return bookmarkGroups.find(group => group.id === selectedBookmarkGroupId) || null;
     }, [bookmarkGroups, selectedBookmarkGroupId]);
-    const title = selectedPositionsLabel || selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex?.title || 'Indices';
+    const title = selectedPositionsLabel || selectedBookmarkGroup?.name || selectedIndustryName || selectedIndex?.title || 'Stocks';
 
     // --- Render ---
 
     if (!selectedIndex) {
-        return <div>No indices available.</div>;
+        return <div>No stock indices available.</div>;
     }
 
     return (
@@ -1249,4 +1249,4 @@ export const IndicesTab: React.FC<IndicesTabProps> = ({ indices }) => {
     );
 };
 
-export default IndicesTab;
+export default StocksTab;
