@@ -10,7 +10,7 @@ import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
-import { StocksTradeFlowChart } from './StocksTradeFlowChart';
+import { TradeFlow } from './tradeflow/TradeFlow';
 import { Overview } from './overview';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './overview';
 import type { IndexConfig } from './indexConfig';
@@ -1102,7 +1102,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                                 dateRange={appliedDateRange}
                             />
                         ) : viewMode === 'trade_flow' ? (
-                            <StocksTradeFlowChart
+                            <TradeFlow
                                 stocks={filteredStocks}
                                 dateRange={appliedDateRange}
                             />
