@@ -4,6 +4,7 @@ import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi
 import type { DateRange } from '../dateRange';
 import { AggregatedTradeFlowChart } from './AggregatedTradeFlowChart';
 import { ContributionTradeFlowChart } from './ContributionTradeFlowChart';
+import { SectorRotationHeatmap } from './SectorRotationHeatmap';
 
 interface TradeFlowProps {
     stocks: Stock[];
@@ -202,6 +203,11 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
                         colors={TRADE_FLOW_COLORS}
                         dateRange={dateRange}
                         stockCount={symbols.length}
+                    />
+                    <SectorRotationHeatmap
+                        stocks={stocks}
+                        flowResponse={flowResponse}
+                        dateRange={dateRange}
                     />
                     <ContributionTradeFlowChart
                         stocks={stocks}
