@@ -9,11 +9,14 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
+import type { DateRange } from '../dateRange';
 import type { TradeFlowAggregatedPoint, TradeFlowChartColors } from './TradeFlow';
 
 interface AggregatedTradeFlowChartProps {
     aggregatedPoints: TradeFlowAggregatedPoint[];
     colors: TradeFlowChartColors;
+    dateRange: DateRange;
+    stockCount: number;
 }
 
 interface SplitPoint {
@@ -54,6 +57,20 @@ const formatBilVnd = (value: number): string => {
     if (absolute >= 100) return `${value < 0 ? '-' : ''}${absolute.toFixed(0)}`;
     if (absolute >= 10) return `${value < 0 ? '-' : ''}${absolute.toFixed(1)}`;
     return `${value < 0 ? '-' : ''}${absolute.toFixed(2)}`;
+};
+
+const formatRangeNetValue = (value: number | null): string => {
+    if (value === null) {
+        return 'N/A';
+    }
+    return `${value >= 0 ? '+' : '-'}${formatBilVnd(Math.abs(value))} Bil`;
+};
+
+const getSignedValueClassName = (value: number | null): string => {
+    if (value === null) {
+        return 'font-medium text-base-content/70';
+    }
+    return value >= 0 ? 'font-medium text-success' : 'font-medium text-error';
 };
 
 const formatTooltipValue = (value: number | null): string => {
@@ -106,6 +123,23 @@ const buildYAxisTicks = (domain: [number, number]): number[] => {
     return Array.from(tickSet).sort((a, b) => a - b);
 };
 
+const getRangeNetTotal = (
+    aggregatedPoints: TradeFlowAggregatedPoint[],
+    key: 'foreignNetTotal' | 'propNetTotal'
+): number | null => {
+    let total = 0;
+    let hasValue = false;
+
+    aggregatedPoints.forEach((point) => {
+        if (point[key] !== null) {
+            total += point[key];
+            hasValue = true;
+        }
+    });
+
+    return hasValue ? roundToTwo(total) : null;
+};
+
 const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
     const point = payload?.[0]?.payload;
     if (!active || !point) {
@@ -125,7 +159,12 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
     );
 };
 
-export const AggregatedTradeFlowChart: React.FC<AggregatedTradeFlowChartProps> = ({ aggregatedPoints, colors }) => {
+export const AggregatedTradeFlowChart: React.FC<AggregatedTradeFlowChartProps> = ({
+    aggregatedPoints,
+    colors,
+    dateRange,
+    stockCount,
+}) => {
     const chartData = useMemo<SplitPoint[]>(() => {
         return aggregatedPoints.map((point) => ({
             x: point.x,
@@ -140,9 +179,55 @@ export const AggregatedTradeFlowChart: React.FC<AggregatedTradeFlowChartProps> =
     }, [aggregatedPoints]);
     const yDomain = useMemo(() => computeDomain(aggregatedPoints), [aggregatedPoints]);
     const yAxisTicks = useMemo(() => buildYAxisTicks(yDomain), [yDomain]);
+    const foreignRangeNetTotal = useMemo(
+        () => getRangeNetTotal(aggregatedPoints, 'foreignNetTotal'),
+        [aggregatedPoints]
+    );
+    const propRangeNetTotal = useMemo(
+        () => getRangeNetTotal(aggregatedPoints, 'propNetTotal'),
+        [aggregatedPoints]
+    );
 
     return (
-        <div className="min-h-0 flex-1">
+        <section className="min-h-0 flex-1 space-y-4">
+            <div className="flex flex-col gap-2 border-b border-base-300 pb-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-sm font-medium text-base-content">Aggregated trade flow</div>
+                    <div className="text-xs text-base-content/60">
+                        Range: {dateRange.startDate} to {dateRange.endDate} | {stockCount} stocks
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-0.5 w-5" style={{ backgroundColor: colors.foreign }} />
+                        Foreign
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-0.5 w-5" style={{ backgroundColor: colors.proprietary }} />
+                        Proprietary
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-0.5 w-5" style={{ backgroundColor: colors.foreignPositive }} />
+                        Positive = brighter
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-0.5 w-5" style={{ backgroundColor: colors.foreign }} />
+                        Negative = base shade
+                    </span>
+                    <span className="text-xs">
+                        <span style={{ color: colors.foreign }}>Foreign net sum:</span>{' '}
+                        <span className={getSignedValueClassName(foreignRangeNetTotal)}>
+                            {formatRangeNetValue(foreignRangeNetTotal)}
+                        </span>
+                    </span>
+                    <span className="text-xs">
+                        <span style={{ color: colors.proprietary }}>Proprietary net sum:</span>{' '}
+                        <span className={getSignedValueClassName(propRangeNetTotal)}>
+                            {formatRangeNetValue(propRangeNetTotal)}
+                        </span>
+                    </span>
+                </div>
+            </div>
             <ResponsiveContainer width="100%" height={560} debounce={50}>
                 <LineChart
                     data={chartData}
@@ -216,7 +301,7 @@ export const AggregatedTradeFlowChart: React.FC<AggregatedTradeFlowChartProps> =
                     />
                 </LineChart>
             </ResponsiveContainer>
-        </div>
+        </section>
     );
 };
 

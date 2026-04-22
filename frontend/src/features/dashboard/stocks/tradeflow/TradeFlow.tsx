@@ -3,6 +3,7 @@ import { stockApi } from '../../../../api/stockApi';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi';
 import type { DateRange } from '../dateRange';
 import { AggregatedTradeFlowChart } from './AggregatedTradeFlowChart';
+import { ContributionTradeFlowChart } from './ContributionTradeFlowChart';
 
 interface TradeFlowProps {
     stocks: Stock[];
@@ -31,38 +32,6 @@ const TRADE_FLOW_COLORS: TradeFlowChartColors = {
 };
 
 const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
-
-const formatBilVnd = (value: number): string => {
-    const absolute = Math.abs(value);
-    if (absolute >= 1000) return `${value < 0 ? '-' : ''}${(absolute / 1000).toFixed(1)}K`;
-    if (absolute >= 100) return `${value < 0 ? '-' : ''}${absolute.toFixed(0)}`;
-    if (absolute >= 10) return `${value < 0 ? '-' : ''}${absolute.toFixed(1)}`;
-    return `${value < 0 ? '-' : ''}${absolute.toFixed(2)}`;
-};
-
-const formatRangeNetValue = (value: number | null): string => {
-    if (value === null) {
-        return 'N/A';
-    }
-    return `${value >= 0 ? '+' : '-'}${formatBilVnd(Math.abs(value))} Bil`;
-};
-
-const getRangeNetTotal = (
-    aggregatedPoints: TradeFlowAggregatedPoint[],
-    key: 'foreignNetTotal' | 'propNetTotal'
-): number | null => {
-    let total = 0;
-    let hasValue = false;
-
-    aggregatedPoints.forEach((point) => {
-        if (point[key] !== null) {
-            total += point[key];
-            hasValue = true;
-        }
-    });
-
-    return hasValue ? roundToTwo(total) : null;
-};
 
 export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
     const requestIdRef = useRef(0);
@@ -162,15 +131,6 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
             .sort((a, b) => a.x - b.x);
     }, [flowResponse]);
 
-    const foreignRangeNetTotal = useMemo(
-        () => getRangeNetTotal(aggregatedPoints, 'foreignNetTotal'),
-        [aggregatedPoints]
-    );
-    const propRangeNetTotal = useMemo(
-        () => getRangeNetTotal(aggregatedPoints, 'propNetTotal'),
-        [aggregatedPoints]
-    );
-
     const hasForeignFlowData = useMemo(
         () => aggregatedPoints.some((point) => point.foreignNetTotal !== null),
         [aggregatedPoints]
@@ -203,39 +163,6 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
 
     return (
         <div className="flex h-full w-full flex-col space-y-4">
-            <div className="flex flex-col gap-2 border-b border-base-300 pb-3">
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="text-sm font-medium text-base-content">Aggregated trade flow</div>
-                    <div className="text-xs text-base-content/60">
-                        Range: {dateRange.startDate} to {dateRange.endDate} | {symbols.length} stocks
-                    </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
-                    <span className="inline-flex items-center gap-2">
-                        <span className="h-0.5 w-5" style={{ backgroundColor: TRADE_FLOW_COLORS.foreign }} />
-                        Foreign
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                        <span className="h-0.5 w-5" style={{ backgroundColor: TRADE_FLOW_COLORS.proprietary }} />
-                        Proprietary
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                        <span className="h-0.5 w-5" style={{ backgroundColor: TRADE_FLOW_COLORS.foreignPositive }} />
-                        Positive = brighter
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                        <span className="h-0.5 w-5" style={{ backgroundColor: TRADE_FLOW_COLORS.foreign }} />
-                        Negative = base shade
-                    </span>
-                    <span className="text-xs text-base-content/70">
-                        Foreign net sum: <span className="font-medium" style={{ color: TRADE_FLOW_COLORS.foreign }}>{formatRangeNetValue(foreignRangeNetTotal)}</span>
-                    </span>
-                    <span className="text-xs text-base-content/70">
-                        Proprietary net sum: <span className="font-medium" style={{ color: TRADE_FLOW_COLORS.proprietary }}>{formatRangeNetValue(propRangeNetTotal)}</span>
-                    </span>
-                </div>
-            </div>
-
             {flowResponse?.is_stale && !flowResponse.is_syncing ? (
                 <div className="alert alert-info py-2">
                     <span className="text-xs">Showing cached data. Fresh data sync is pending.</span>
@@ -269,10 +196,19 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
                     No trade flow data available for the selected range.
                 </div>
             ) : (
-                <AggregatedTradeFlowChart
-                    aggregatedPoints={aggregatedPoints}
-                    colors={TRADE_FLOW_COLORS}
-                />
+                <>
+                    <AggregatedTradeFlowChart
+                        aggregatedPoints={aggregatedPoints}
+                        colors={TRADE_FLOW_COLORS}
+                        dateRange={dateRange}
+                        stockCount={symbols.length}
+                    />
+                    <ContributionTradeFlowChart
+                        stocks={stocks}
+                        flowResponse={flowResponse}
+                        dateRange={dateRange}
+                    />
+                </>
             )}
         </div>
     );
