@@ -197,7 +197,7 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
                     No trade flow data available for the selected range.
                 </div>
             ) : (
-                <>
+                <div className="flex flex-col gap-8">
                     <AggregatedTradeFlowChart
                         aggregatedPoints={aggregatedPoints}
                         colors={TRADE_FLOW_COLORS}
@@ -214,7 +214,7 @@ export const TradeFlow: React.FC<TradeFlowProps> = ({ stocks, dateRange }) => {
                         flowResponse={flowResponse}
                         dateRange={dateRange}
                     />
-                </>
+                </div>
             )}
         </div>
     );
