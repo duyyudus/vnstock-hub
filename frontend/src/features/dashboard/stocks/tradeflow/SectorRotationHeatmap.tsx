@@ -190,7 +190,7 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
     flowResponse,
     dateRange,
 }) => {
-    const [useToday, setUseToday] = useState(false);
+    const [useToday, setUseToday] = useState(true);
 
     const rows = useMemo(() => {
         if (useToday) {

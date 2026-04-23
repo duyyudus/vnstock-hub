@@ -334,7 +334,7 @@ export const ContributionTradeFlowChart: React.FC<ContributionTradeFlowChartProp
     flowResponse,
     dateRange,
 }) => {
-    const [useToday, setUseToday] = useState(false);
+    const [useToday, setUseToday] = useState(true);
 
     const foreignChartData = useMemo(() => {
         if (useToday) {
