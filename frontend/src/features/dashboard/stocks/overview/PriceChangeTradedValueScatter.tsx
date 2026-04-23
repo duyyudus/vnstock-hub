@@ -54,6 +54,7 @@ const MIN_FLOW_OPACITY = 0.38;
 const MAX_FLOW_OPACITY = 0.95;
 const MAJOR_PRICE_CHANGE_POINTS = [-7, -5, -3, -1, 1, 3, 5, 7];
 const PRICE_CHANGE_AXIS_TICKS = [-7, -5, -3, -1, 0, 1, 3, 5, 7];
+const LOW_VALUE_REFERENCE_TICKS = [20, 50, 100, 200, 300, 400, 500];
 
 const formatPercent = (value: number): string => {
     const prefix = value > 0 ? '+' : '';
@@ -98,19 +99,6 @@ const getFlowColor = (foreignNet: number | null): string => {
     return NEGATIVE_FLOW_COLOR;
 };
 
-const getMedian = (values: number[]): number => {
-    if (values.length === 0) {
-        return 0;
-    }
-
-    const sorted = [...values].sort((a, b) => a - b);
-    const midpoint = Math.floor(sorted.length / 2);
-    if (sorted.length % 2 === 0) {
-        return (sorted[midpoint - 1] + sorted[midpoint]) / 2;
-    }
-    return sorted[midpoint];
-};
-
 const getQuantile = (values: number[], quantile: number): number => {
     if (values.length === 0) {
         return 0;
@@ -146,37 +134,66 @@ const getPercentDomain = (points: ScatterPoint[]): [number, number] => {
 const getValueDomain = (points: ScatterPoint[]): [number, number] => {
     const values = points.map((point) => point.y).filter((value) => value > 0);
     if (values.length === 0) {
-        return [1, 10];
+        return [0, 10];
     }
 
     const min = Math.min(...values);
     const max = Math.max(...values);
     if (min === max) {
-        return [Math.max(min * 0.5, 0.01), max * 1.5];
+        return [0, max * 1.15];
     }
-    return [Math.max(min * 0.75, 0.01), max * 1.25];
+    return [0, max * 1.1];
 };
 
-const buildLogTicks = (domain: [number, number], referenceValue: number): number[] => {
+const getNiceStep = (rawStep: number): number => {
+    if (!Number.isFinite(rawStep) || rawStep <= 0) {
+        return 1;
+    }
+
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const normalized = rawStep / magnitude;
+
+    if (normalized <= 1.5) return magnitude;
+    if (normalized <= 2.25) return 2 * magnitude;
+    if (normalized <= 3.75) return 2.5 * magnitude;
+    if (normalized <= 7.5) return 5 * magnitude;
+    return 10 * magnitude;
+};
+
+const buildValueTicks = (domain: [number, number], targetTickCount = 7): number[] => {
     const [min, max] = domain;
-    const tickSet = new Set<number>();
-    const startPower = Math.floor(Math.log10(Math.max(min, 0.01)));
-    const endPower = Math.ceil(Math.log10(Math.max(max, 1)));
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+        return [0, Math.max(1, Number(max.toFixed(2)) || 1)];
+    }
 
-    for (let power = startPower; power <= endPower; power += 1) {
-        [1, 2, 5].forEach((multiplier) => {
-            const value = multiplier * Math.pow(10, power);
-            if (value >= min && value <= max) {
-                tickSet.add(Number(value.toFixed(2)));
+    const buildTicksForStep = (step: number): number[] => {
+        const tickStart = Math.ceil(min / step) * step;
+        const ticks: number[] = [];
+
+        for (let value = tickStart; value <= max + (step * 0.001); value += step) {
+            const roundedValue = Number(value.toFixed(6));
+            if (roundedValue >= min && roundedValue <= max) {
+                ticks.push(roundedValue);
             }
-        });
+        }
+
+        return ticks;
+    };
+
+    const lowValueTicks = LOW_VALUE_REFERENCE_TICKS.filter((value) => value >= min && value <= max);
+    const highTickStart = Math.max(min, LOW_VALUE_REFERENCE_TICKS[LOW_VALUE_REFERENCE_TICKS.length - 1]);
+    const highTickRange = max - highTickStart;
+    const highStep = getNiceStep(highTickRange / 4);
+    let ticks = highTickRange > 0
+        ? [...lowValueTicks, ...buildTicksForStep(highStep).filter((value) => value > highTickStart)]
+        : lowValueTicks;
+
+    if (ticks.length < 4) {
+        const fallbackStep = getNiceStep((max - min) / Math.max(targetTickCount - 1, 1));
+        ticks = buildTicksForStep(fallbackStep / 2);
     }
 
-    if (referenceValue >= min && referenceValue <= max) {
-        tickSet.add(Number(referenceValue.toFixed(2)));
-    }
-
-    return Array.from(tickSet).sort((a, b) => a - b);
+    return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
 const ScatterTooltip: React.FC<ScatterTooltipProps> = ({ active, payload }) => {
@@ -290,11 +307,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
 
     const xDomain = useMemo(() => getPercentDomain(chartData), [chartData]);
     const yDomain = useMemo(() => getValueDomain(chartData), [chartData]);
-    const highValueReference = useMemo(
-        () => getMedian(chartData.map((point) => point.y)),
-        [chartData],
-    );
-    const yTicks = useMemo(() => buildLogTicks(yDomain, highValueReference), [highValueReference, yDomain]);
+    const yTicks = useMemo(() => buildValueTicks(yDomain), [yDomain]);
     const marketCapDomain = useMemo<[number, number]>(() => {
         if (chartData.length === 0) {
             return [MIN_BUBBLE_MARKET_CAP, MIN_BUBBLE_MARKET_CAP];
@@ -391,7 +404,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                             type="number"
                             dataKey="y"
                             domain={yDomain}
-                            scale="log"
+                            scale="sqrt"
                             allowDataOverflow
                             ticks={yTicks}
                             width={62}
