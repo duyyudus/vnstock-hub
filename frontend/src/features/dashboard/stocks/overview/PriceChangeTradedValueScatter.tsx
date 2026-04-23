@@ -52,6 +52,8 @@ const MIN_BUBBLE_MARKET_CAP = 1;
 const CHART_MARGIN = { top: 28, right: 34, left: 24, bottom: 46 };
 const MIN_FLOW_OPACITY = 0.38;
 const MAX_FLOW_OPACITY = 0.95;
+const MAJOR_PRICE_CHANGE_POINTS = [-7, -5, -3, -1, 1, 3, 5, 7];
+const PRICE_CHANGE_AXIS_TICKS = [-7, -5, -3, -1, 0, 1, 3, 5, 7];
 
 const formatPercent = (value: number): string => {
     const prefix = value > 0 ? '+' : '';
@@ -132,7 +134,11 @@ const getPercentDomain = (points: ScatterPoint[]): [number, number] => {
     const values = points.map((point) => point.x);
     const min = Math.min(...values, 0);
     const max = Math.max(...values, 0);
-    const amplitude = Math.max(Math.abs(min), Math.abs(max), 1);
+    const amplitude = Math.max(
+        Math.abs(min),
+        Math.abs(max),
+        Math.max(...MAJOR_PRICE_CHANGE_POINTS.map((value) => Math.abs(value))),
+    );
     const padded = amplitude * 1.15;
     return [-Number(padded.toFixed(2)), Number(padded.toFixed(2))];
 };
@@ -370,6 +376,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                             type="number"
                             dataKey="x"
                             domain={xDomain}
+                            ticks={PRICE_CHANGE_AXIS_TICKS}
                             tick={{ fontSize: 11 }}
                             stroke="currentColor"
                             opacity={0.55}
@@ -411,6 +418,15 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                             isAnimationActive={false}
                         />
 
+                        {MAJOR_PRICE_CHANGE_POINTS.map((value) => (
+                            <ReferenceLine
+                                key={value}
+                                x={value}
+                                stroke="currentColor"
+                                strokeDasharray="3 3"
+                                strokeOpacity={0.12}
+                            />
+                        ))}
                         <ReferenceLine x={0} stroke="#94a3b8" strokeOpacity={0.65} />
                         {activePoint ? (
                             <>
