@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi';
 import type { DateRange } from '../dateRange';
 
@@ -11,14 +12,27 @@ interface SectorRotationHeatmapProps {
 interface SectorRotationRow {
     industry: string;
     stockCount: number;
+    stocks: SectorRotationStock[];
     tradedValue: number | null;
     foreignNetFlow: number | null;
     propNetFlow: number | null;
 }
 
+interface SectorRotationStock {
+    ticker: string;
+    companyName: string | null;
+}
+
+interface SectorStocksTooltip {
+    text: string;
+    x: number;
+    y: number;
+    placeLeft: boolean;
+}
+
 interface MutableSectorRow {
     industry: string;
-    stockCount: number;
+    stocksByTicker: Map<string, SectorRotationStock>;
     tradedValueSum: number;
     hasTradedValue: boolean;
     foreignNetFlowSum: number;
@@ -59,6 +73,19 @@ const formatSignedBilVnd = (value: number | null): string => {
     return `${sign}${formatBilVnd(Math.abs(value))} Bil VND`;
 };
 
+const formatSectorStocksTooltip = (row: SectorRotationRow): string => {
+    if (row.stocks.length === 0) {
+        return `${row.industry}\nNo stocks available`;
+    }
+
+    return [
+        `${row.industry} (${row.stockCount} ${row.stockCount === 1 ? 'stock' : 'stocks'})`,
+        ...row.stocks.map((stock) => (
+            stock.companyName ? `${stock.ticker} - ${stock.companyName}` : stock.ticker
+        )),
+    ].join('\n');
+};
+
 const getStockMetaMap = (stocks: Stock[]): Map<string, Stock> => {
     return new Map(stocks.map((stock) => [stock.ticker.toUpperCase(), stock]));
 };
@@ -71,7 +98,7 @@ const getOrCreateSectorRow = (rowsByIndustry: Map<string, MutableSectorRow>, ind
 
     const row: MutableSectorRow = {
         industry,
-        stockCount: 0,
+        stocksByTicker: new Map<string, SectorRotationStock>(),
         tradedValueSum: 0,
         hasTradedValue: false,
         foreignNetFlowSum: 0,
@@ -83,6 +110,18 @@ const getOrCreateSectorRow = (rowsByIndustry: Map<string, MutableSectorRow>, ind
     return row;
 };
 
+const addSectorStock = (row: MutableSectorRow, ticker: string, companyName?: string | null): void => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    if (!normalizedTicker) {
+        return;
+    }
+
+    row.stocksByTicker.set(normalizedTicker, {
+        ticker: normalizedTicker,
+        companyName: companyName?.trim() || null,
+    });
+};
+
 const toSectorRows = (rowsByIndustry: Map<string, MutableSectorRow>): SectorRotationRow[] => {
     return Array.from(rowsByIndustry.values())
         .flatMap((row) => {
@@ -92,7 +131,8 @@ const toSectorRows = (rowsByIndustry: Map<string, MutableSectorRow>): SectorRota
 
             return [{
                 industry: row.industry,
-                stockCount: row.stockCount,
+                stockCount: row.stocksByTicker.size,
+                stocks: Array.from(row.stocksByTicker.values()).sort((a, b) => a.ticker.localeCompare(b.ticker)),
                 tradedValue: row.hasTradedValue ? roundToTwo(row.tradedValueSum) : null,
                 foreignNetFlow: row.hasForeignNetFlow ? roundToTwo(row.foreignNetFlowSum) : null,
                 propNetFlow: row.hasPropNetFlow ? roundToTwo(row.propNetFlowSum) : null,
@@ -122,7 +162,7 @@ const buildHistoricalRows = (
         const ticker = stockSeries.ticker.toUpperCase();
         const stockMeta = stockMetaMap.get(ticker);
         const row = getOrCreateSectorRow(rowsByIndustry, normalizeIndustry(stockMeta?.industry));
-        row.stockCount += 1;
+        addSectorStock(row, ticker, stockMeta?.company_name);
 
         stockSeries.data.forEach((point) => {
             if (point.value !== null) {
@@ -148,7 +188,7 @@ const buildTodayRows = (stocks: Stock[]): SectorRotationRow[] => {
 
     stocks.forEach((stock) => {
         const row = getOrCreateSectorRow(rowsByIndustry, normalizeIndustry(stock.industry));
-        row.stockCount += 1;
+        addSectorStock(row, stock.ticker, stock.company_name);
 
         if (stock.accumulated_value !== null) {
             row.tradedValueSum += stock.accumulated_value;
@@ -185,12 +225,29 @@ const getTradedCellStyle = (value: number | null, maxValue: number): React.CSSPr
     return { backgroundColor: `rgba(100, 116, 139, ${intensity})` };
 };
 
+const getSectorTooltipPosition = (
+    event: React.MouseEvent<HTMLElement>,
+    text: string,
+): SectorStocksTooltip => {
+    const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
+    const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
+    const placeLeft = viewportWidth > 0 && event.clientX > viewportWidth - 448;
+
+    return {
+        text,
+        x: placeLeft ? event.clientX - 12 : event.clientX + 12,
+        y: viewportHeight > 0 ? Math.min(event.clientY + 12, viewportHeight - 16) : event.clientY + 12,
+        placeLeft,
+    };
+};
+
 export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
     stocks,
     flowResponse,
     dateRange,
 }) => {
     const [useToday, setUseToday] = useState(true);
+    const [sectorTooltip, setSectorTooltip] = useState<SectorStocksTooltip | null>(null);
 
     const rows = useMemo(() => {
         if (useToday) {
@@ -282,9 +339,16 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
                             {rows.map((row) => (
                                 <tr key={row.industry} className="border-base-300">
                                     <td>
-                                        <div className="font-semibold text-base-content">{row.industry}</div>
-                                        <div className="mt-1 text-xs text-base-content/50">
-                                            {row.stockCount} {row.stockCount === 1 ? 'stock' : 'stocks'}
+                                        <div
+                                            className="inline-block text-left"
+                                            onMouseEnter={(event) => setSectorTooltip(getSectorTooltipPosition(event, formatSectorStocksTooltip(row)))}
+                                            onMouseMove={(event) => setSectorTooltip(getSectorTooltipPosition(event, formatSectorStocksTooltip(row)))}
+                                            onMouseLeave={() => setSectorTooltip(null)}
+                                        >
+                                            <div className="font-semibold text-base-content">{row.industry}</div>
+                                            <div className="mt-1 text-xs text-base-content/50">
+                                                {row.stockCount} {row.stockCount === 1 ? 'stock' : 'stocks'}
+                                            </div>
                                         </div>
                                     </td>
                                     <td>
@@ -311,6 +375,22 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
                     </table>
                 </div>
             )}
+
+            {sectorTooltip && typeof document !== 'undefined'
+                ? createPortal(
+                    <div
+                        className="pointer-events-none fixed z-[140] max-h-[min(32rem,calc(100vh-2rem))] max-w-[min(28rem,calc(100vw-2rem))] overflow-hidden whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-xs leading-relaxed text-base-content shadow-xl"
+                        style={{
+                            left: sectorTooltip.x,
+                            top: sectorTooltip.y,
+                            transform: sectorTooltip.placeLeft ? 'translateX(-100%)' : undefined,
+                        }}
+                    >
+                        {sectorTooltip.text}
+                    </div>,
+                    document.body,
+                )
+                : null}
         </section>
     );
 };
