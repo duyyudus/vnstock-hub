@@ -83,6 +83,7 @@ class PortfolioImportResponse(BaseModel):
     imported_positions: List[PortfolioImportPosition]
     created_count: int
     updated_count: int
+    deleted_count: int
     skipped_count: int
     positions: List[PortfolioPositionResponse]
 
@@ -500,6 +501,7 @@ async def import_portfolio_positions(
 
     created_count = 0
     updated_count = 0
+    deleted_count = 0
     skipped_count = 0
     imported_positions: List[PortfolioImportPosition] = []
 
@@ -582,10 +584,10 @@ async def import_portfolio_positions(
         )
 
         tickers = [position.ticker.strip().upper() for position in merged_positions]
+        seen_tickers = set(tickers) | {ticker.strip().upper() for ticker in conflicted_tickers}
         existing_result = await db.execute(
             select(PortfolioPosition).where(
-                PortfolioPosition.user_id == current_user.id,
-                PortfolioPosition.ticker.in_(tickers)
+                PortfolioPosition.user_id == current_user.id
             )
         )
         existing_positions = {position.ticker.upper(): position for position in existing_result.scalars().all()}
@@ -624,6 +626,11 @@ async def import_portfolio_positions(
                     purchase_date=None,
                 ))
                 created_count += 1
+
+        for existing_ticker, existing_position in existing_positions.items():
+            if existing_ticker not in seen_tickers:
+                await db.delete(existing_position)
+                deleted_count += 1
     else:
         try:
             rows = await load_cropped_rows(files[0], crop_settings)
@@ -725,10 +732,11 @@ async def import_portfolio_positions(
     positions = refreshed.scalars().all()
 
     import_logger.info(
-        "portfolio_import_complete user_id=%s created=%s updated=%s skipped=%s",
+        "portfolio_import_complete user_id=%s created=%s updated=%s deleted=%s skipped=%s",
         current_user.id,
         created_count,
         updated_count,
+        deleted_count,
         skipped_count,
     )
 
@@ -736,6 +744,7 @@ async def import_portfolio_positions(
         imported_positions=imported_positions,
         created_count=created_count,
         updated_count=updated_count,
+        deleted_count=deleted_count,
         skipped_count=skipped_count,
         positions=[_build_position_response(position) for position in positions],
     )

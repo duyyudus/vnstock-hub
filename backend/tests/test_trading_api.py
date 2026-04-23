@@ -320,6 +320,85 @@ async def test_trading_import_upserts_positions_from_images(client: AsyncClient,
 
 
 @pytest.mark.asyncio
+async def test_trading_import_deletes_stale_positions_only_in_selected_account(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import trading as trading_api
+    from app.services.llm.llm_client import ImagePositionItem
+
+    await _create_trading_position(
+        client,
+        auth_headers,
+        {
+            "account_label": "SSI Swing",
+            "ticker": "SSI",
+            "quantity": 50,
+            "average_entry_cost": 24000,
+        },
+    )
+    await _create_trading_position(
+        client,
+        auth_headers,
+        {
+            "account_label": "SSI Swing",
+            "ticker": "HPG",
+            "quantity": 80,
+            "average_entry_cost": 28000,
+        },
+    )
+    await _create_trading_position(
+        client,
+        auth_headers,
+        {
+            "account_label": "Other Account",
+            "ticker": "SSI",
+            "quantity": 10,
+            "average_entry_cost": 23000,
+        },
+    )
+
+    async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        return [
+            ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100),
+            ImagePositionItem(ticker="VCI", average_cost=38.2, quantity=40),
+        ]
+
+    monkeypatch.setattr(trading_api, "extract_positions_from_image", fake_extract_positions_from_image)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
+
+    response = await client.post(
+        "/api/v1/trading/import",
+        files={"file": ("positions.png", b"fake-image", "image/png")},
+        data={
+            "broker_id": "vpbanks",
+            "account_label": "SSI Swing",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 1
+    assert data["updated_count"] == 1
+    assert data["deleted_count"] == 1
+
+    list_response = await client.get("/api/v1/trading/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    positions_by_account = {
+        (item["account_label"], item["ticker"]): item
+        for item in list_response.json()["positions"]
+    }
+    assert set(positions_by_account) == {
+        ("SSI Swing", "SSI"),
+        ("SSI Swing", "VCI"),
+        ("Other Account", "SSI"),
+    }
+    assert positions_by_account[("SSI Swing", "SSI")]["quantity"] == 100
+    assert positions_by_account[("Other Account", "SSI")]["quantity"] == 10
+
+
+@pytest.mark.asyncio
 async def test_trading_import_allows_missing_opened_date_for_new_positions(client: AsyncClient, auth_headers, monkeypatch):
     from app.core import config
     from app.api.v1 import trading as trading_api
@@ -405,6 +484,27 @@ async def test_trading_import_reports_conflicting_ticker_values(client: AsyncCli
     from app.api.v1 import trading as trading_api
     from app.services.llm.llm_client import ImagePositionItem
 
+    await _create_trading_position(
+        client,
+        auth_headers,
+        {
+            "account_label": "Conflict Account",
+            "ticker": "SSI",
+            "quantity": 50,
+            "average_entry_cost": 24000,
+        },
+    )
+    await _create_trading_position(
+        client,
+        auth_headers,
+        {
+            "account_label": "Conflict Account",
+            "ticker": "HPG",
+            "quantity": 80,
+            "average_entry_cost": 28000,
+        },
+    )
+
     async def fake_extract_positions_from_image(file, providers, timeout_seconds):
         if file.filename == "position-1.png":
             return [ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100)]
@@ -432,6 +532,7 @@ async def test_trading_import_reports_conflicting_ticker_values(client: AsyncCli
     data = response.json()
     assert data["created_count"] == 0
     assert data["updated_count"] == 0
+    assert data["deleted_count"] == 1
     assert data["skipped_count"] == 1
     assert data["imported_positions"] == []
     assert data["import_outcomes"] == [
@@ -443,3 +544,9 @@ async def test_trading_import_reports_conflicting_ticker_values(client: AsyncCli
             "reason": "Conflicting values for this ticker across screenshots",
         }
     ]
+
+    list_response = await client.get("/api/v1/trading/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    positions = {item["ticker"]: item for item in list_response.json()["positions"]}
+    assert set(positions) == {"SSI"}
+    assert positions["SSI"]["quantity"] == 50

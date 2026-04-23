@@ -1011,6 +1011,7 @@ export interface PortfolioImportResponse {
     imported_positions: PortfolioImportPosition[];
     created_count: number;
     updated_count: number;
+    deleted_count: number;
     skipped_count: number;
     positions: PortfolioPosition[];
 }
@@ -1086,6 +1087,7 @@ export interface TradingImportResponse {
     import_outcomes: TradingImportOutcome[];
     created_count: number;
     updated_count: number;
+    deleted_count: number;
     skipped_count: number;
     positions: TradingPosition[];
 }

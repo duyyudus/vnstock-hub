@@ -132,7 +132,7 @@ export const TradingTab: React.FC = () => {
                             {importResult.imported_positions.length === 1 ? '' : 's'} from screenshots.
                         </div>
                         <div>
-                            Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
+                            Created {importResult.created_count}, updated {importResult.updated_count}, deleted {importResult.deleted_count}, skipped {importResult.skipped_count}.
                         </div>
                     </div>
                     {importResult.import_outcomes.length > 0 ? (
@@ -1115,7 +1115,7 @@ export const TradingTab: React.FC = () => {
                 <div className="modal-box">
                     <h3 className="font-bold text-lg">Import trading positions from screenshots</h3>
                     <p className="text-sm text-base-content/70 mt-1">
-                        Upload one or more broker app screenshots. The LLM will extract ticker, quantity, and average entry cost.
+                        Upload one or more broker app screenshots. Positions in this account that are not shown will be removed.
                     </p>
 
                     <div className="mt-4 space-y-4">
@@ -1201,7 +1201,7 @@ export const TradingTab: React.FC = () => {
                                 </label>
 
                                 <p className="text-xs text-base-content/60">
-                                    Existing trades in the same account are refreshed with the imported quantity and average entry cost.
+                                    Existing trades in the same account are refreshed from screenshots; missing tickers are removed from that account.
                                 </p>
                             </>
                         )}

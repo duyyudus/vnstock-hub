@@ -518,3 +518,150 @@ async def test_portfolio_image_import_uses_position_image_task_config(client: As
     assert data["created_count"] == 1
     assert data["imported_positions"][0]["ticker"] == "SSI"
     assert data["imported_positions"][0]["average_cost"] == 25500
+
+
+@pytest.mark.asyncio
+async def test_portfolio_image_import_deletes_positions_missing_from_screenshots(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import portfolio as portfolio_api
+    from app.services.llm.llm_client import ImagePositionItem
+
+    await _create_position(
+        client,
+        auth_headers,
+        {"ticker": "SSI", "quantity": 50, "average_cost": 24000},
+    )
+    await _create_position(
+        client,
+        auth_headers,
+        {"ticker": "HPG", "quantity": 80, "average_cost": 28000},
+    )
+
+    async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        return [
+            ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100),
+            ImagePositionItem(ticker="VCI", average_cost=38.2, quantity=40),
+        ]
+
+    monkeypatch.setattr(portfolio_api, "extract_positions_from_image", fake_extract_positions_from_image)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
+
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files={"file": ("positions.png", b"fake-image", "image/png")},
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 1
+    assert data["updated_count"] == 1
+    assert data["deleted_count"] == 1
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    positions = {item["ticker"]: item for item in list_response.json()["positions"]}
+    assert set(positions) == {"SSI", "VCI"}
+    assert positions["SSI"]["quantity"] == 100
+    assert positions["SSI"]["average_cost"] == 25500
+
+
+@pytest.mark.asyncio
+async def test_portfolio_spreadsheet_import_keeps_positions_missing_from_import(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import portfolio as portfolio_api
+    from app.services.portfolio_import import import_service
+
+    await _create_position(
+        client,
+        auth_headers,
+        {"ticker": "HPG", "quantity": 80, "average_cost": 28000},
+    )
+
+    async def fake_extract_positions_from_rows(rows, providers, timeout_seconds):
+        return [
+            import_service.PositionItem(ticker="TCB", quantity=100),
+        ]
+
+    monkeypatch.setattr(portfolio_api, "extract_positions_from_rows", fake_extract_positions_from_rows)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
+
+    rows = [["" for _ in range(5)] for _ in range(8)]
+    rows.append(["TCB", "buy", "100", "2024-01-01", ""])
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerows(rows)
+
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files={"file": ("import.csv", buffer.getvalue(), "text/csv")},
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 1
+    assert data["deleted_count"] == 0
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    assert {item["ticker"] for item in list_response.json()["positions"]} == {"HPG", "TCB"}
+
+
+@pytest.mark.asyncio
+async def test_portfolio_image_import_keeps_conflicted_ticker_from_stale_deletion(client: AsyncClient, auth_headers, monkeypatch):
+    from app.core import config
+    from app.api.v1 import portfolio as portfolio_api
+    from app.services.llm.llm_client import ImagePositionItem
+
+    await _create_position(
+        client,
+        auth_headers,
+        {"ticker": "VCB", "quantity": 50, "average_cost": 90000},
+    )
+    await _create_position(
+        client,
+        auth_headers,
+        {"ticker": "HPG", "quantity": 80, "average_cost": 28000},
+    )
+
+    async def fake_extract_positions_from_image(file, providers, timeout_seconds):
+        if file.filename == "position-1.png":
+            return [
+                ImagePositionItem(ticker="SSI", average_cost=25.5, quantity=100),
+                ImagePositionItem(ticker="VCB", average_cost=88.0, quantity=50),
+            ]
+        return [ImagePositionItem(ticker="VCB", average_cost=89.0, quantity=50)]
+
+    monkeypatch.setattr(portfolio_api, "extract_positions_from_image", fake_extract_positions_from_image)
+    monkeypatch.setattr(config.settings, "llm_providers", json.dumps([
+        {"name": "test", "base_url": "http://example.com", "api_key": "test", "model": "test"}
+    ]))
+    monkeypatch.setattr(config.settings, "llm_task_config", "{}")
+
+    response = await client.post(
+        "/api/v1/portfolio/import",
+        files=[
+            ("file", ("position-1.png", b"fake-image-1", "image/png")),
+            ("file", ("position-2.png", b"fake-image-2", "image/png")),
+        ],
+        data={"broker_id": "vpbanks"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created_count"] == 1
+    assert data["deleted_count"] == 1
+    assert data["skipped_count"] == 1
+
+    list_response = await client.get("/api/v1/portfolio/positions", headers=auth_headers)
+    assert list_response.status_code == 200
+    positions = {item["ticker"]: item for item in list_response.json()["positions"]}
+    assert set(positions) == {"SSI", "VCB"}
+    assert positions["VCB"]["average_cost"] == 90000

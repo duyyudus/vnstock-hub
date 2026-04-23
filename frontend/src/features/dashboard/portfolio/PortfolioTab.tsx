@@ -1210,7 +1210,7 @@ export const PortfolioTab: React.FC = () => {
                 <div className="modal-box">
                     <h3 className="font-bold text-lg">Import portfolio positions</h3>
                     <p className="text-sm text-base-content/70 mt-1">
-                        Upload a broker export or one or more screenshots; crop fields are ignored for images.
+                        Upload a broker export or one or more screenshots; screenshot imports remove positions not shown.
                     </p>
 
                     <div className="mt-4 space-y-4">
@@ -1307,7 +1307,7 @@ export const PortfolioTab: React.FC = () => {
                                         {importResult.imported_positions.length === 1 ? '' : 's'}.
                                     </div>
                                     <div>
-                                        Created {importResult.created_count}, updated {importResult.updated_count}, skipped {importResult.skipped_count}.
+                                        Created {importResult.created_count}, updated {importResult.updated_count}, deleted {importResult.deleted_count}, skipped {importResult.skipped_count}.
                                     </div>
                                 </div>
                             </div>

@@ -84,6 +84,7 @@ class TradingImportResponse(BaseModel):
     import_outcomes: List[TradingImportOutcome]
     created_count: int
     updated_count: int
+    deleted_count: int
     skipped_count: int
     positions: List[TradingPositionResponse]
 
@@ -253,6 +254,7 @@ async def import_trading_positions(
     import_outcomes: List[TradingImportOutcome] = []
     created_count = 0
     updated_count = 0
+    deleted_count = 0
     skipped_count = 0
     aggregated_positions = []
 
@@ -316,20 +318,18 @@ async def import_trading_positions(
             detail="LLM did not return any positions",
         )
 
-    existing_positions = {}
-    if merged_positions:
-        tickers = [position.ticker.strip().upper() for position in merged_positions]
-        existing_result = await db.execute(
-            select(TradingPosition).where(
-                TradingPosition.user_id == current_user.id,
-                func.lower(TradingPosition.account_label) == normalized_account_label.lower(),
-                TradingPosition.ticker.in_(tickers),
-            )
+    tickers = [position.ticker.strip().upper() for position in merged_positions]
+    seen_tickers = set(tickers) | {ticker.strip().upper() for ticker in conflicted_tickers}
+    existing_result = await db.execute(
+        select(TradingPosition).where(
+            TradingPosition.user_id == current_user.id,
+            func.lower(TradingPosition.account_label) == normalized_account_label.lower(),
         )
-        existing_positions = {
-            position.ticker.upper(): position
-            for position in existing_result.scalars().all()
-        }
+    )
+    existing_positions = {
+        position.ticker.upper(): position
+        for position in existing_result.scalars().all()
+    }
 
     for position in merged_positions:
         ticker = position.ticker.strip().upper()
@@ -399,14 +399,20 @@ async def import_trading_positions(
         )
         created_count += 1
 
+    for existing_ticker, existing_position in existing_positions.items():
+        if existing_ticker not in seen_tickers:
+            await db.delete(existing_position)
+            deleted_count += 1
+
     await db.commit()
     positions = await _list_user_positions(db, current_user.id)
     import_logger.info(
-        "trading_import_complete user_id=%s account=%s created=%s updated=%s skipped=%s",
+        "trading_import_complete user_id=%s account=%s created=%s updated=%s deleted=%s skipped=%s",
         current_user.id,
         normalized_account_label,
         created_count,
         updated_count,
+        deleted_count,
         skipped_count,
     )
     return TradingImportResponse(
@@ -414,6 +420,7 @@ async def import_trading_positions(
         import_outcomes=import_outcomes,
         created_count=created_count,
         updated_count=updated_count,
+        deleted_count=deleted_count,
         skipped_count=skipped_count,
         positions=[_build_position_response(position) for position in positions],
     )
