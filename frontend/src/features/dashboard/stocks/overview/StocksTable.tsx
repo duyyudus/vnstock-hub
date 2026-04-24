@@ -289,6 +289,12 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(value);
     };
 
+    const formatRoundedHoldingValue = (value: number): string => {
+        return new Intl.NumberFormat('en-US', {
+            maximumFractionDigits: 0,
+        }).format(value);
+    };
+
     const formatSignedValue = (value: number): string => {
         const formatted = new Intl.NumberFormat('en-US', {
             maximumFractionDigits: 2,
@@ -390,11 +396,41 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(ratio);
     };
 
+    const getForeignHoldingInfo = (
+        currentRoom: number | null | undefined,
+        totalRoom: number | null | undefined,
+        price: number | null | undefined
+    ): { shares: number; valueBilVnd: number } | null => {
+        if (
+            currentRoom == null
+            || totalRoom == null
+            || totalRoom <= 0
+            || currentRoom > totalRoom
+            || price == null
+            || !Number.isFinite(price)
+        ) {
+            return null;
+        }
+
+        const shares = totalRoom - currentRoom;
+        return {
+            shares,
+            valueBilVnd: (shares * price) / 1e9,
+        };
+    };
+
     const formatRoomTooltip = (
         currentRoom: number | null | undefined,
-        totalRoom: number | null | undefined
+        totalRoom: number | null | undefined,
+        price: number | null | undefined
     ): string => {
-        return `Current room: ${formatForeignValue(currentRoom)}\nTotal room: ${formatForeignValue(totalRoom)}`;
+        const holdingInfo = getForeignHoldingInfo(currentRoom, totalRoom, price);
+        return [
+            `Current room: ${formatForeignValue(currentRoom)}`,
+            `Total room: ${formatForeignValue(totalRoom)}`,
+            `Foreign holding: ${formatForeignValue(holdingInfo?.shares)} shares`,
+            `Foreign holding value: ${holdingInfo ? `${formatRoundedHoldingValue(holdingInfo.valueBilVnd)} B VND` : '-'}`,
+        ].join('\n');
     };
 
     const formatPriceChange = (change: number | null): { text: string; className: string } => {
@@ -954,7 +990,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     );
                     const hasRoomData = stock.current_room != null || stock.total_room != null;
                     const roomRatioText = formatRemainingRoomRatio(stock.current_room, stock.total_room);
-                    const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room);
+                    const roomTooltipText = formatRoomTooltip(stock.current_room, stock.total_room, stock.price);
                     const atlTooltipText = stock.atl_date ? `Recorded on ${stock.atl_date}` : '';
                     const athTooltipText = stock.ath_date ? `Recorded on ${stock.ath_date}` : '';
 
@@ -1050,7 +1086,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             <td className="text-right font-mono whitespace-nowrap text-base-content">
                                 {hasRoomData ? (
                                     <div
-                                        className="tooltip z-30 [&:before]:z-30 [&:before]:whitespace-pre-line [&:after]:z-30"
+                                        className="tooltip z-30 [&:before]:z-30 [&:before]:max-w-none [&:before]:whitespace-pre [&:after]:z-30"
                                         data-tip={roomTooltipText}
                                     >
                                         <span className="cursor-help">{roomRatioText}</span>
