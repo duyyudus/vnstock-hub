@@ -257,6 +257,22 @@ def _normalize_discussion_text(text: str, *, limit: int) -> str:
     return f"{normalized[: max(0, limit - 1)].rstrip()}…"
 
 
+def _normalize_quick_glance_text(text: str, *, limit: int) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if len(normalized) > limit:
+        normalized = normalized[: max(0, limit)].rstrip()
+
+    if re.search(r"(?:\.\.\.|…)\s*$", normalized):
+        normalized = re.sub(r"(?:\.\.\.|…)\s*$", "", normalized).rstrip(" ,;:-–—")
+        last_sentence_match = list(re.finditer(r"[.!?。！？](?:[\"')\]]*)", normalized))
+        if last_sentence_match:
+            normalized = normalized[: last_sentence_match[-1].end()].strip()
+        elif normalized and not re.search(r"[.!?。！？]$", normalized):
+            normalized = f"{normalized}."
+
+    return normalized
+
+
 def _normalize_discussion_query(text: str, *, limit: int = 240) -> str:
     normalized = re.sub(r"\s+", " ", text).strip()
     if len(normalized) <= limit:
@@ -573,6 +589,7 @@ async def generate_quick_glance_digest(
         "unusual importance or sentiment clusters, and stories repeated across multiple sources.\n"
         f"Write one concise executive summary under {QUICK_GLANCE_SUMMARY_SOFT_MAX_WORDS} words.\n"
         f"Return 3-{highlights_target} highlights when the evidence supports it. Each highlight body should stay under {QUICK_GLANCE_HIGHLIGHT_SOFT_MAX_WORDS} words.\n"
+        "Do not use ellipses or trailing incomplete phrases; every summary and highlight must end as a complete sentence.\n"
         "For each highlight, article_ids must contain only article_id values from the evidence list below.\n"
         "Prefer complete, grounded statements over vague market commentary.\n"
         "Always write the summary and every highlight in Vietnamese."
@@ -598,8 +615,8 @@ async def generate_quick_glance_digest(
     for raw_highlight in llm_payload.get("highlights", []):
         if not isinstance(raw_highlight, dict):
             continue
-        title = _normalize_discussion_text(str(raw_highlight.get("title") or ""), limit=140)
-        body = _normalize_discussion_text(str(raw_highlight.get("body") or ""), limit=420)
+        title = _normalize_quick_glance_text(str(raw_highlight.get("title") or ""), limit=240)
+        body = _normalize_quick_glance_text(str(raw_highlight.get("body") or ""), limit=1200)
         article_ids: list[int] = []
         for raw_id in raw_highlight.get("article_ids", []):
             try:

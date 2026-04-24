@@ -378,6 +378,46 @@ def test_normalize_discussion_text_preserves_markdown_lists_and_paragraph_breaks
     assert normalized == "- First point\n- second point\n\nFollow-up paragraph with cleanup."
 
 
+@pytest.mark.asyncio
+async def test_generate_quick_glance_digest_removes_cut_off_highlight_fragments(monkeypatch):
+    async def _fake_call_json_llm(*args, **kwargs):
+        return {
+            "summary": "Tin ngân hàng và mục tiêu tăng trưởng là hai điểm chính.",
+            "highlights": [
+                {
+                    "title": "Cụm đại hội cổ đông ngân hàng",
+                    "body": (
+                        "Nhiều ngân hàng công bố mục tiêu lợi nhuận năm 2026 và phương án chia cổ tức để tăng vốn. "
+                        "Vietcombank đặt tăng trưởng tín dụng khoảng 10%, BIDV báo lãi quý I tăng 17,6%, "
+                        "TPBank chia cổ tức 20%, Se..."
+                    ),
+                    "article_ids": [101],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(semantics, "_call_json_llm", _fake_call_json_llm)
+
+    payload = await semantics.generate_quick_glance_digest(
+        window_hours=24,
+        article_count=1,
+        highlights_target=5,
+        evidence_items=[
+            {
+                "article_id": 101,
+                "title": "Bank AGM updates",
+                "published_at": "2026-04-24T12:00:00",
+                "summary_text": "Banks published profit targets and capital plans.",
+            }
+        ],
+    )
+
+    assert payload is not None
+    assert payload["highlights"][0]["body"] == (
+        "Nhiều ngân hàng công bố mục tiêu lợi nhuận năm 2026 và phương án chia cổ tức để tăng vốn."
+    )
+
+
 def test_normalize_label_transliterates_vietnamese_text():
     assert semantics._normalize_label("phát hành cổ phiếu riêng lẻ") == "phat_hanh_co_phieu_rieng_le"
 

@@ -1295,13 +1295,13 @@ export const NewsTab: React.FC = () => {
                                     {quickGlanceDigest.highlights.length > 0 ? (
                                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                                             {quickGlanceDigest.highlights.map((highlight, index) => (
-                                                <article key={`${highlight.title}-${index}`} className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm">
+                                                <article key={`${highlight.title}-${index}`} className="min-w-0 rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm">
                                                     <div className="space-y-3">
-                                                        <div>
-                                                            <h4 className="font-semibold text-base-content">{highlight.title}</h4>
-                                                            <p className="mt-2 text-sm leading-6 text-base-content/80">{highlight.body}</p>
+                                                        <div className="min-w-0">
+                                                            <h4 className="break-words font-semibold text-base-content">{highlight.title}</h4>
+                                                            <p className="mt-2 break-words text-sm leading-6 text-base-content/80">{highlight.body}</p>
                                                         </div>
-                                                        <div className="flex flex-wrap gap-2">
+                                                        <div className="flex min-w-0 flex-wrap gap-2">
                                                             {highlight.article_ids.map((articleId) => {
                                                                 const article = quickGlanceArticlesById.get(articleId);
                                                                 if (!article) {
@@ -1311,7 +1311,7 @@ export const NewsTab: React.FC = () => {
                                                                     <button
                                                                         key={articleId}
                                                                         type="button"
-                                                                        className="btn btn-ghost btn-xs"
+                                                                        className="btn btn-ghost btn-xs h-auto max-w-full min-h-0 whitespace-normal break-words px-2 py-1 text-left leading-5"
                                                                         onClick={() => void handleOpenRelatedArticle(articleId)}
                                                                     >
                                                                         {article.title}
@@ -1352,15 +1352,15 @@ export const NewsTab: React.FC = () => {
                                                         <button
                                                             key={article.id}
                                                             type="button"
-                                                            className="rounded-2xl border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-base-200/50"
+                                                            className="min-w-0 rounded-2xl border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-base-200/50"
                                                             onClick={() => void handleOpenRelatedArticle(article.id)}
                                                         >
-                                                            <div className="space-y-2">
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    <span className="text-sm font-semibold text-base-content">{article.title}</span>
+                                                            <div className="min-w-0 space-y-2">
+                                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                                    <span className="min-w-0 break-words text-sm font-semibold text-base-content">{article.title}</span>
                                                                     {article.importance ? <span className="badge badge-outline badge-sm">{article.importance}</span> : null}
                                                                 </div>
-                                                                <p className="text-xs text-base-content/60">
+                                                                <p className="break-words text-xs text-base-content/60">
                                                                     {article.source_title || 'Unknown source'}
                                                                     {article.published_at ? ` · ${formatRelativeTime(article.published_at)}` : ''}
                                                                     {article.story_source_count > 1 ? ` · ${article.story_source_count} sources` : ''}
