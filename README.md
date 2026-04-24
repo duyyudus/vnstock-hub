@@ -14,6 +14,39 @@ VNStock Hub is a full-stack application for tracking and analyzing Vietnamese st
 - Trading views with position tracking and P&L details for signed-in users.
 - Admin control panel for running and monitoring sync jobs, scheduler settings, and news ingestion.
 
+<details>
+<summary><h2>Product Tour</h2></summary>
+
+The dashboard opens with live Vietnamese market index cards, index constituent analytics, and multiple chart modes for comparing price change, traded value, liquidity, and foreign flow.
+
+![Stocks dashboard with VN30 market overview](docs/screenshots/vnstock-hub-stocks.png)
+
+Screeners rank index universes with valuation, margin trend, liquidity/volatility, and financial health models. Rows are computed from the selected benchmark and industry filters, with fallback indicators shown when data is partial.
+
+![Valuation screener for the VN100 universe](docs/screenshots/vnstock-hub-screeners.png)
+
+News combines the public source pack with semantic summaries, timeframe filters, article clustering, and private source/topic controls for signed-in users.
+
+![News dashboard with quick-glance digest](docs/screenshots/vnstock-hub-news.png)
+
+Fund analytics compare stock, bond, and balanced funds against VN-Index with growth, risk-return, and yearly heatmap views.
+
+![Fund performance comparison chart](docs/screenshots/vnstock-hub-funds.png)
+
+Signed-in users get portfolio tracking with current prices, market value, CSV export/import workflows, and per-position P&L.
+
+![Authenticated portfolio positions](docs/screenshots/vnstock-hub-portfolio.png)
+
+Trading views keep short-term positions separate from the long-term portfolio, with broker account filtering and open P&L.
+
+![Authenticated trading positions](docs/screenshots/vnstock-hub-trading.png)
+
+The admin surface is protected by authentication and hosts sync jobs, scheduler controls, runtime settings, and news ingestion monitoring.
+
+![Authenticated admin control panel](docs/screenshots/vnstock-hub-admin.png)
+
+</details>
+
 ## Repository Layout
 
 ```text
