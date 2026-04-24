@@ -10,6 +10,7 @@ import { StocksGrowthChart } from './StocksGrowthChart';
 import { StocksComparisonChart } from './StocksComparisonChart';
 import { StocksRiskReturnScatterPlot } from './StocksRiskReturnScatterPlot';
 import { StocksVolumeChart } from './StocksVolumeChart';
+import { IndexContribution } from './IndexContribution';
 import { TradeFlow } from './tradeflow/TradeFlow';
 import { Overview } from './overview';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './overview';
@@ -41,7 +42,7 @@ interface StocksTabProps {
     indices: IndexConfig[];
 }
 
-type ViewMode = 'overview' | 'growth' | 'comparison' | 'risk_return' | 'volume' | 'trade_flow';
+type ViewMode = 'overview' | 'growth' | 'comparison' | 'risk_return' | 'volume' | 'trade_flow' | 'index_contribution';
 
 interface ExportNotice {
     kind: 'success' | 'warning';
@@ -129,7 +130,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     const hasPortfolioPositions = portfolioPositionTickers.length > 0;
     const hasTradingPositions = tradingPositionTickers.length > 0;
     const isIndexContextActive = selectedPositionsFilter === 'all' && !selectedIndustryName && !selectedBookmarkGroupId;
-    const shouldShowDateRangeControls = viewMode !== 'comparison';
+    const shouldShowDateRangeControls = viewMode !== 'comparison' && viewMode !== 'index_contribution';
     const selectedPositionsLabel = selectedPositionsFilter === 'portfolio'
         ? 'Portfolio Positions'
         : selectedPositionsFilter === 'trading'
@@ -1061,6 +1062,16 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                             </svg>
                             Trade Flow
                         </button>
+                        <button
+                            className={`join-item btn btn-sm ${viewMode === 'index_contribution' ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setViewMode('index_contribution')}
+                            disabled={!selectedIndex}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19h16M7 16V9m5 7V5m5 11v-4M6 9l3-3 3 3 5-5" />
+                            </svg>
+                            Index Contribution
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1105,6 +1116,10 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                             <TradeFlow
                                 stocks={filteredStocks}
                                 dateRange={appliedDateRange}
+                            />
+                        ) : viewMode === 'index_contribution' ? (
+                            <IndexContribution
+                                selectedIndex={selectedIndex}
                             />
                         ) : (
                             <Overview

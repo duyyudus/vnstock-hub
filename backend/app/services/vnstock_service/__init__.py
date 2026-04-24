@@ -10,7 +10,7 @@ from app.lib.vnstock_runtime import install_vnstock_aliases, runtime_vnstock_tar
 install_vnstock_aliases()
 
 from .core import logger, retry_with_backoff, async_retry_with_backoff, RateLimitError
-from .models import IndexValue, StockInfo
+from .models import IndexContribution, IndexValue, StockInfo
 from .indices import IndicesService
 from .stocks import StocksService
 from .stock_metadata import StockMetadataService
@@ -112,6 +112,16 @@ class VnstockService:
         range_end: date | None = None,
     ) -> List[StockInfo]:
         return await self.stocks.get_index_stocks(index_symbol, limit, range_start, range_end)
+
+    async def get_index_contribution(self, index_symbol: str) -> IndexContribution:
+        index_symbol_key = index_symbol.upper()
+        index_values = await self.indices.get_index_values([index_symbol_key])
+        index_value = index_values[0] if index_values else None
+        return await self.stocks.get_index_contribution(
+            index_symbol=index_symbol_key,
+            index_value=index_value,
+            company_overview_fetcher=self.company.get_company_overview,
+        )
 
     async def get_industry_list(self) -> List[Dict[str, str]]:
         return await self.stocks.get_industry_list()

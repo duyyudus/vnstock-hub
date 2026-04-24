@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import patch
 from app.db.models import StockIndex
 from app.services.vnstock_service import vnstock_service, StockInfo
+from app.services.vnstock_service.models import IndexContribution, IndexContributionTotals
+from app.services.vnstock_service.stocks import StocksService
 
 @pytest.mark.asyncio
 async def test_get_indices(client):
@@ -91,6 +93,118 @@ async def test_get_stocks_by_index(client):
     assert data["stocks"][1]["foreign_sell_value"] is None
     assert data["stocks"][1]["current_room"] is None
     assert data["stocks"][1]["total_room"] is None
+
+
+def test_build_index_contribution_rows_uses_adjusted_weights_and_points():
+    stocks = [
+        StockInfo(ticker="AAA", price=110, market_cap=1000, company_name="AAA Corp", price_change_24h=10),
+        StockInfo(ticker="BBB", price=90, market_cap=1000, company_name="BBB Corp", price_change_24h=-10),
+    ]
+    overview_by_ticker = {
+        "AAA": {"outstanding_shares": 10_000_000, "free_float": 50},
+        "BBB": {"outstanding_shares": 20_000_000, "free_float": 25},
+    }
+
+    rows, excluded = StocksService.build_index_contribution_rows(
+        stocks=stocks,
+        overview_by_ticker=overview_by_ticker,
+        index_change_value=-5.0,
+        apply_single_stock_cap=False,
+    )
+
+    assert excluded == 0
+    rows_by_ticker = {row.ticker: row for row in rows}
+    assert rows_by_ticker["AAA"].free_float_ratio == 0.5
+    assert rows_by_ticker["BBB"].free_float_ratio == 0.25
+    assert rows_by_ticker["AAA"].effective_weight == pytest.approx(0.5)
+    assert rows_by_ticker["BBB"].effective_weight == pytest.approx(0.5)
+    assert rows_by_ticker["AAA"].percent_contribution == pytest.approx(5.0)
+    assert rows_by_ticker["BBB"].percent_contribution == pytest.approx(-5.0)
+    assert rows_by_ticker["AAA"].point_contribution is None
+    assert rows_by_ticker["BBB"].point_contribution is None
+
+
+def test_build_index_contribution_rows_applies_single_stock_cap():
+    stocks = [
+        StockInfo(ticker="BIG", price=100, market_cap=9000, company_name="Big", price_change_24h=1),
+    ]
+    stocks.extend(
+        StockInfo(ticker=f"S{i}", price=100, market_cap=100, company_name=f"Small {i}", price_change_24h=1)
+        for i in range(1, 10)
+    )
+    overview_by_ticker = {
+        "BIG": {"outstanding_shares": 90_000_000, "free_float": 100},
+    }
+    overview_by_ticker.update({
+        f"S{i}": {"outstanding_shares": 1_000_000, "free_float": 100}
+        for i in range(1, 10)
+    })
+
+    rows, excluded = StocksService.build_index_contribution_rows(
+        stocks=stocks,
+        overview_by_ticker=overview_by_ticker,
+        index_change_value=3.0,
+        apply_single_stock_cap=True,
+    )
+
+    assert excluded == 0
+    rows_by_ticker = {row.ticker: row for row in rows}
+    assert rows_by_ticker["BIG"].effective_weight == pytest.approx(0.1)
+    assert rows_by_ticker["S1"].effective_weight == pytest.approx(0.1)
+    assert sum(row.effective_weight for row in rows) == pytest.approx(1.0)
+
+
+def test_build_index_contribution_rows_flags_missing_company_data_fallbacks():
+    stocks = [
+        StockInfo(ticker="AAA", price=100, market_cap=1000, company_name="AAA Corp", price_change_24h=2),
+    ]
+
+    rows, excluded = StocksService.build_index_contribution_rows(
+        stocks=stocks,
+        overview_by_ticker={},
+        index_change_value=2.5,
+        apply_single_stock_cap=False,
+    )
+
+    assert excluded == 0
+    assert rows[0].missing_outstanding_shares is True
+    assert rows[0].missing_free_float is True
+    assert rows[0].used_market_cap_shares_fallback is True
+
+
+@pytest.mark.asyncio
+async def test_get_index_contribution(client):
+    contribution = IndexContribution(
+        symbol="VN30",
+        name="VN30 Index",
+        value=1234.5,
+        change=-0.4,
+        change_value=-5.0,
+        rows=[],
+        totals=IndexContributionTotals(
+            positive_percent=0.1,
+            negative_percent=-0.5,
+            net_percent=-0.4,
+            positive_points=1.25,
+            negative_points=-6.25,
+            net_points=-5.0,
+            excluded_count=2,
+            missing_outstanding_shares_count=1,
+            missing_free_float_count=1,
+        ),
+    )
+
+    with patch.object(vnstock_service, 'get_index_contribution', return_value=contribution) as mock_get_contribution:
+        response = await client.get("/api/v1/stocks/index/VN30/contribution")
+        assert response.status_code == 200
+        data = response.json()
+
+    mock_get_contribution.assert_called_once_with("VN30")
+    assert data["symbol"] == "VN30"
+    assert data["name"] == "VN30 Index"
+    assert data["change_value"] == -5.0
+    assert data["totals"]["net_points"] == -5.0
+    assert data["totals"]["excluded_count"] == 2
 
 @pytest.mark.asyncio
 async def test_get_industries(client):

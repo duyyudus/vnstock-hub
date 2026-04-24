@@ -100,6 +100,48 @@ class IndexValuesResponse(BaseModel):
     count: int
 
 
+class IndexContributionRowResponse(BaseModel):
+    """Per-stock index contribution row."""
+    ticker: str
+    company_name: str
+    price: float
+    prior_price: float
+    session_return: float
+    outstanding_shares: float
+    free_float_ratio: float
+    capping_factor: float
+    effective_weight: float
+    percent_contribution: float
+    point_contribution: Optional[float] = None
+    missing_outstanding_shares: bool = False
+    missing_free_float: bool = False
+    used_market_cap_shares_fallback: bool = False
+
+
+class IndexContributionTotalsResponse(BaseModel):
+    """Index contribution aggregate totals."""
+    positive_percent: float
+    negative_percent: float
+    net_percent: float
+    positive_points: Optional[float] = None
+    negative_points: Optional[float] = None
+    net_points: Optional[float] = None
+    excluded_count: int
+    missing_outstanding_shares_count: int
+    missing_free_float_count: int
+
+
+class IndexContributionResponse(BaseModel):
+    """Current-session index contribution response."""
+    symbol: str
+    name: str
+    value: Optional[float] = None
+    change: Optional[float] = None
+    change_value: Optional[float] = None
+    rows: List[IndexContributionRowResponse]
+    totals: IndexContributionTotalsResponse
+
+
 class VolumeDataPoint(BaseModel):
     """A single data point for volume history."""
     date: str
@@ -335,6 +377,51 @@ async def get_stocks_by_index(
         stocks=[serialize_stock_response(stock) for stock in stocks],
         count=len(stocks),
         index_symbol=index_symbol
+    )
+
+
+@router.get("/index/{index_symbol}/contribution", response_model=IndexContributionResponse)
+async def get_index_contribution(index_symbol: str):
+    """
+    Get current-session contribution rows for a specific index.
+    """
+    contribution = await vnstock_service.get_index_contribution(index_symbol)
+    return IndexContributionResponse(
+        symbol=contribution.symbol,
+        name=contribution.name,
+        value=contribution.value,
+        change=contribution.change,
+        change_value=contribution.change_value,
+        rows=[
+            IndexContributionRowResponse(
+                ticker=row.ticker,
+                company_name=row.company_name,
+                price=row.price,
+                prior_price=row.prior_price,
+                session_return=row.session_return,
+                outstanding_shares=row.outstanding_shares,
+                free_float_ratio=row.free_float_ratio,
+                capping_factor=row.capping_factor,
+                effective_weight=row.effective_weight,
+                percent_contribution=row.percent_contribution,
+                point_contribution=row.point_contribution,
+                missing_outstanding_shares=row.missing_outstanding_shares,
+                missing_free_float=row.missing_free_float,
+                used_market_cap_shares_fallback=row.used_market_cap_shares_fallback,
+            )
+            for row in contribution.rows
+        ],
+        totals=IndexContributionTotalsResponse(
+            positive_percent=contribution.totals.positive_percent,
+            negative_percent=contribution.totals.negative_percent,
+            net_percent=contribution.totals.net_percent,
+            positive_points=contribution.totals.positive_points,
+            negative_points=contribution.totals.negative_points,
+            net_points=contribution.totals.net_points,
+            excluded_count=contribution.totals.excluded_count,
+            missing_outstanding_shares_count=contribution.totals.missing_outstanding_shares_count,
+            missing_free_float_count=contribution.totals.missing_free_float_count,
+        ),
     )
 
 

@@ -42,3 +42,48 @@ class StockInfo:
     ath_date: str | None = None
     ath_diff_pct: float | None = None  # Percentage
     industry: str = ""  # ICB Level 2 industry classification
+
+
+@dataclass
+class IndexContributionRow:
+    """Per-stock contribution to an index or basket current-session move."""
+    ticker: str
+    company_name: str
+    price: float
+    prior_price: float
+    session_return: float
+    outstanding_shares: float
+    free_float_ratio: float
+    capping_factor: float
+    effective_weight: float
+    percent_contribution: float
+    point_contribution: float | None
+    missing_outstanding_shares: bool = False
+    missing_free_float: bool = False
+    used_market_cap_shares_fallback: bool = False
+
+
+@dataclass
+class IndexContributionTotals:
+    """Aggregate contribution summary."""
+    positive_percent: float
+    negative_percent: float
+    net_percent: float
+    positive_points: float | None
+    negative_points: float | None
+    net_points: float | None
+    excluded_count: int
+    missing_outstanding_shares_count: int
+    missing_free_float_count: int
+
+
+@dataclass
+class IndexContribution:
+    """Index contribution result."""
+    symbol: str
+    name: str
+    value: float | None
+    change: float | None
+    change_value: float | None
+    rows: list[IndexContributionRow]
+    totals: IndexContributionTotals

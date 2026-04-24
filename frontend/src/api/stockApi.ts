@@ -415,6 +415,45 @@ export interface IndexValuesResponse {
     count: number;
 }
 
+export interface IndexContributionRow {
+    ticker: string;
+    company_name: string;
+    price: number;
+    prior_price: number;
+    session_return: number;
+    outstanding_shares: number;
+    free_float_ratio: number;
+    capping_factor: number;
+    effective_weight: number;
+    percent_contribution: number;
+    point_contribution: number | null;
+    missing_outstanding_shares: boolean;
+    missing_free_float: boolean;
+    used_market_cap_shares_fallback: boolean;
+}
+
+export interface IndexContributionTotals {
+    positive_percent: number;
+    negative_percent: number;
+    net_percent: number;
+    positive_points: number | null;
+    negative_points: number | null;
+    net_points: number | null;
+    excluded_count: number;
+    missing_outstanding_shares_count: number;
+    missing_free_float_count: number;
+}
+
+export interface IndexContributionResponse {
+    symbol: string;
+    name: string;
+    value: number | null;
+    change: number | null;
+    change_value: number | null;
+    rows: IndexContributionRow[];
+    totals: IndexContributionTotals;
+}
+
 export interface IndustryStocksResponse {
     stocks: Stock[];
     count: number;
@@ -1448,6 +1487,13 @@ export const stockApi = {
         const query = params.toString();
         const response = await apiClient.get<IndexStocksResponse>(
             `/stocks/index/${indexSymbol}${query ? `?${query}` : ''}`
+        );
+        return response.data;
+    },
+
+    async getIndexContribution(indexSymbol: string): Promise<IndexContributionResponse> {
+        const response = await apiClient.get<IndexContributionResponse>(
+            `/stocks/index/${indexSymbol}/contribution`
         );
         return response.data;
     },

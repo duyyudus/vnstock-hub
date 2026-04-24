@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import List, Dict, Optional
+from typing import Any, Awaitable, Callable, List, Dict, Optional
 import asyncio
+import math
 import pandas as pd
 
 from .core import (
@@ -15,7 +16,7 @@ from .core import (
     _is_rate_limit_error,
     _flatten_columns,
 )
-from .models import StockInfo
+from .models import IndexContribution, IndexContributionRow, IndexContributionTotals, IndexValue, StockInfo
 from .symbols import get_group_code_for_index
 from .stock_metadata import StockMetadataService
 from .history import HistoryService
@@ -32,6 +33,282 @@ class StocksService:
     def __init__(self, metadata: StockMetadataService, history: HistoryService):
         self._metadata = metadata
         self._history = history
+
+    async def get_index_contribution(
+        self,
+        index_symbol: str,
+        index_value: IndexValue | None,
+        company_overview_fetcher: Callable[[str], Awaitable[List[Dict[str, Any]]]],
+    ) -> IndexContribution:
+        """
+        Estimate current-session index contribution using HOSE-style adjusted caps.
+
+        HOSE index calculation uses price * outstanding shares * rounded free-float
+        * capping factor, divided by a divisor. The official divisor and capping
+        factors are not exposed by the current data sources, so this computes
+        effective weights from available company overview data and reconciles
+        point contribution to the official index move when available.
+        """
+        stocks = await self.get_index_stocks(index_symbol, limit=1000)
+        overview_by_ticker = await self._fetch_contribution_overviews(stocks, company_overview_fetcher)
+        rows, excluded_count = self.build_index_contribution_rows(
+            stocks=stocks,
+            overview_by_ticker=overview_by_ticker,
+            index_change_value=index_value.change_value if index_value else None,
+            apply_single_stock_cap=self._should_apply_single_stock_cap(index_symbol),
+        )
+
+        totals = self._build_index_contribution_totals(rows, excluded_count)
+        return IndexContribution(
+            symbol=index_symbol.upper(),
+            name=index_value.name if index_value else index_symbol.upper(),
+            value=index_value.value if index_value else None,
+            change=index_value.change if index_value else None,
+            change_value=index_value.change_value if index_value else None,
+            rows=rows,
+            totals=totals,
+        )
+
+    async def _fetch_contribution_overviews(
+        self,
+        stocks: List[StockInfo],
+        company_overview_fetcher: Callable[[str], Awaitable[List[Dict[str, Any]]]],
+    ) -> Dict[str, Dict[str, Any]]:
+        async def fetch_one(stock: StockInfo) -> tuple[str, Dict[str, Any]]:
+            ticker = stock.ticker.upper()
+            try:
+                records = await company_overview_fetcher(ticker)
+            except Exception as e:
+                logger.warning(f"Could not fetch company overview for {ticker}: {e}")
+                return ticker, {}
+            first_record = records[0] if records else {}
+            return ticker, first_record if isinstance(first_record, dict) else {}
+
+        pairs = await asyncio.gather(*(fetch_one(stock) for stock in stocks))
+        return dict(pairs)
+
+    @classmethod
+    def build_index_contribution_rows(
+        cls,
+        stocks: List[StockInfo],
+        overview_by_ticker: Dict[str, Dict[str, Any]],
+        index_change_value: float | None,
+        apply_single_stock_cap: bool = True,
+    ) -> tuple[List[IndexContributionRow], int]:
+        candidates: List[Dict[str, Any]] = []
+        excluded_count = 0
+
+        for stock in stocks:
+            ticker = stock.ticker.upper()
+            session_return = cls._safe_float(stock.price_change_24h)
+            price = cls._safe_float(stock.price)
+            if session_return is None or price is None or price <= 0 or session_return <= -100:
+                excluded_count += 1
+                continue
+
+            prior_price = price / (1 + (session_return / 100))
+            if not math.isfinite(prior_price) or prior_price <= 0:
+                excluded_count += 1
+                continue
+
+            overview = overview_by_ticker.get(ticker, {})
+            outstanding_shares, missing_outstanding, used_market_cap_fallback = cls._resolve_outstanding_shares(
+                stock,
+                overview,
+            )
+            if outstanding_shares is None or outstanding_shares <= 0:
+                excluded_count += 1
+                continue
+
+            free_float_ratio, missing_free_float = cls._resolve_free_float_ratio(overview)
+            rounded_free_float = cls._round_hose_free_float(free_float_ratio)
+            adjusted_cap = prior_price * outstanding_shares * rounded_free_float
+            if not math.isfinite(adjusted_cap) or adjusted_cap <= 0:
+                excluded_count += 1
+                continue
+
+            candidates.append({
+                "stock": stock,
+                "ticker": ticker,
+                "price": price,
+                "prior_price": prior_price,
+                "session_return": session_return,
+                "outstanding_shares": outstanding_shares,
+                "free_float_ratio": rounded_free_float,
+                "missing_outstanding": missing_outstanding,
+                "missing_free_float": missing_free_float,
+                "used_market_cap_fallback": used_market_cap_fallback,
+                "adjusted_cap": adjusted_cap,
+            })
+
+        if not candidates:
+            return [], excluded_count
+
+        caps = [0.10 if apply_single_stock_cap else 1.0 for _ in candidates]
+        weights = cls._apply_weight_caps([item["adjusted_cap"] for item in candidates], caps)
+        raw_total = sum(item["adjusted_cap"] for item in candidates)
+
+        provisional_rows: List[IndexContributionRow] = []
+        for item, effective_weight in zip(candidates, weights):
+            raw_weight = item["adjusted_cap"] / raw_total if raw_total > 0 else 0
+            capping_factor = effective_weight / raw_weight if raw_weight > 0 else 1
+            percent_contribution = effective_weight * item["session_return"]
+            stock = item["stock"]
+
+            provisional_rows.append(IndexContributionRow(
+                ticker=item["ticker"],
+                company_name=stock.company_name or item["ticker"],
+                price=round(item["price"], 4),
+                prior_price=round(item["prior_price"], 4),
+                session_return=round(item["session_return"], 4),
+                outstanding_shares=round(item["outstanding_shares"], 4),
+                free_float_ratio=round(item["free_float_ratio"], 6),
+                capping_factor=round(capping_factor, 6),
+                effective_weight=round(effective_weight, 8),
+                percent_contribution=percent_contribution,
+                point_contribution=None,
+                missing_outstanding_shares=item["missing_outstanding"],
+                missing_free_float=item["missing_free_float"],
+                used_market_cap_shares_fallback=item["used_market_cap_fallback"],
+            ))
+
+        net_percent = sum(row.percent_contribution for row in provisional_rows)
+        rows: List[IndexContributionRow] = []
+        for row in provisional_rows:
+            point_contribution = None
+            can_scale_to_points = (
+                index_change_value is not None
+                and abs(net_percent) > 1e-9
+                and (
+                    abs(index_change_value) <= 1e-9
+                    or (net_percent > 0 and index_change_value > 0)
+                    or (net_percent < 0 and index_change_value < 0)
+                )
+            )
+            if can_scale_to_points:
+                point_contribution = (row.percent_contribution / net_percent) * index_change_value
+            rows.append(IndexContributionRow(
+                **{
+                    **row.__dict__,
+                    "percent_contribution": round(row.percent_contribution, 6),
+                    "point_contribution": round(point_contribution, 6) if point_contribution is not None else None,
+                }
+            ))
+
+        rows.sort(key=lambda row: (abs(row.point_contribution if row.point_contribution is not None else row.percent_contribution), row.ticker), reverse=True)
+        return rows, excluded_count
+
+    @staticmethod
+    def _build_index_contribution_totals(
+        rows: List[IndexContributionRow],
+        excluded_count: int,
+    ) -> IndexContributionTotals:
+        positive_percent = sum(row.percent_contribution for row in rows if row.percent_contribution > 0)
+        negative_percent = sum(row.percent_contribution for row in rows if row.percent_contribution < 0)
+        point_values = [row.point_contribution for row in rows if row.point_contribution is not None]
+        positive_points = sum(value for value in point_values if value > 0) if point_values else None
+        negative_points = sum(value for value in point_values if value < 0) if point_values else None
+        return IndexContributionTotals(
+            positive_percent=round(positive_percent, 6),
+            negative_percent=round(negative_percent, 6),
+            net_percent=round(positive_percent + negative_percent, 6),
+            positive_points=round(positive_points, 6) if positive_points is not None else None,
+            negative_points=round(negative_points, 6) if negative_points is not None else None,
+            net_points=round((positive_points + negative_points), 6) if positive_points is not None and negative_points is not None else None,
+            excluded_count=excluded_count,
+            missing_outstanding_shares_count=sum(1 for row in rows if row.missing_outstanding_shares),
+            missing_free_float_count=sum(1 for row in rows if row.missing_free_float),
+        )
+
+    @staticmethod
+    def _apply_weight_caps(values: List[float], caps: List[float]) -> List[float]:
+        total = sum(values)
+        if total <= 0:
+            return [0 for _ in values]
+
+        weights = [0.0 for _ in values]
+        remaining_indices = set(range(len(values)))
+        remaining_weight = 1.0
+
+        while remaining_indices:
+            remaining_value = sum(values[index] for index in remaining_indices)
+            if remaining_value <= 0:
+                break
+
+            capped_this_round = []
+            for index in remaining_indices:
+                provisional_weight = remaining_weight * (values[index] / remaining_value)
+                if provisional_weight > caps[index]:
+                    weights[index] = caps[index]
+                    capped_this_round.append(index)
+
+            if not capped_this_round:
+                for index in remaining_indices:
+                    weights[index] = remaining_weight * (values[index] / remaining_value)
+                break
+
+            for index in capped_this_round:
+                remaining_indices.remove(index)
+            remaining_weight = max(0.0, 1.0 - sum(weights))
+
+        return weights
+
+    @staticmethod
+    def _round_hose_free_float(value: float) -> float:
+        bounded = min(max(value, 0.01), 1.0)
+        if bounded <= 0.15:
+            return math.ceil(bounded * 100) / 100
+        return math.ceil(bounded * 20) / 20
+
+    @staticmethod
+    def _resolve_free_float_ratio(overview: Dict[str, Any]) -> tuple[float, bool]:
+        for key in ("free_float_ratio", "free_float_percentage", "free_float_percent", "free_float"):
+            value = StocksService._safe_float(overview.get(key))
+            ratio = StocksService._normalize_ratio(value)
+            if ratio is not None and ratio > 0:
+                return min(ratio, 1.0), False
+        return 1.0, True
+
+    @staticmethod
+    def _resolve_outstanding_shares(
+        stock: StockInfo,
+        overview: Dict[str, Any],
+    ) -> tuple[float | None, bool, bool]:
+        for key in ("outstanding_shares", "listed_volume", "listed_shares", "total_shares"):
+            value = StocksService._safe_float(overview.get(key))
+            if value is not None and value > 0:
+                return value, False, False
+
+        market_cap = StocksService._safe_float(stock.market_cap)
+        price = StocksService._safe_float(stock.price)
+        if market_cap is not None and market_cap > 0 and price is not None and price > 0:
+            return (market_cap * 1_000_000_000) / price, True, True
+
+        return None, True, False
+
+    @staticmethod
+    def _normalize_ratio(value: float | None) -> float | None:
+        if value is None or not math.isfinite(value) or value <= 0:
+            return None
+        if value <= 1:
+            return value
+        if value <= 100:
+            return value / 100
+        if value <= 10_000:
+            return value / 10_000
+        return None
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if math.isfinite(parsed) else None
+
+    @staticmethod
+    def _should_apply_single_stock_cap(index_symbol: str) -> bool:
+        return index_symbol.upper() in {"VN30", "VN100", "VNMIDCAP", "VNMID", "VNSMALLCAP", "VNSML", "VNALLSHARE", "VNALL"}
 
     async def get_index_stocks(
         self,
