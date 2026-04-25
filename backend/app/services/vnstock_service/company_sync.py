@@ -20,7 +20,7 @@ from .core import (
     _is_rate_limit_error,
 )
 from .rate_limit_pause import shared_rate_limit_pause_controller
-from .symbols import VALID_GROUPS, get_group_code_for_index
+from .symbols import get_group_code_for_index, get_valid_groups_for_source
 
 
 class CompanyDataSyncService:
@@ -385,13 +385,13 @@ class CompanyDataSyncService:
         from vnstock import Listing
 
         normalized_index = str(index_symbol or "").strip().upper()
-        mapped_group_code = get_group_code_for_index(normalized_index)
-        valid_group_lookup = {group.upper(): group for group in VALID_GROUPS}
+        mapped_group_code = get_group_code_for_index(normalized_index, source="KBS")
+        valid_group_lookup = {group.upper(): group for group in get_valid_groups_for_source("KBS")}
         group_code = valid_group_lookup.get(str(mapped_group_code).strip().upper())
         if group_code is None:
             raise ValueError(
                 f"Unsupported index symbol/group '{index_symbol}'. "
-                f"Supported groups include: {', '.join(sorted(VALID_GROUPS))}"
+                f"Supported groups include: {', '.join(sorted(get_valid_groups_for_source('KBS')))}"
             )
 
         listing = Listing(source='KBS')

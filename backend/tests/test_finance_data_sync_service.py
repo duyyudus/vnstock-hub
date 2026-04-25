@@ -1,4 +1,6 @@
 import asyncio
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -377,6 +379,32 @@ async def test_resolve_symbols_filter_merges_manual_and_index(monkeypatch):
     )
 
     assert symbols == ["FPT", "VCB", "SSI", "HPG"]
+
+
+def test_finance_fetch_symbols_for_vnall_uses_vci_group(monkeypatch):
+    service = FinanceDataSyncService(finance=FinanceService())
+    calls = []
+
+    class FakeSeries:
+        empty = False
+
+        def tolist(self):
+            return ["AAA", "ACB"]
+
+    class FakeListing:
+        def __init__(self, source: str):
+            calls.append(("source", source))
+
+        def symbols_by_group(self, group_code: str):
+            calls.append(("group", group_code))
+            return FakeSeries()
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    symbols = service._fetch_symbols_for_index_sync("VNALL")
+
+    assert symbols == ["AAA", "ACB"]
+    assert calls == [("source", "VCI"), ("group", "VNAllShare")]
 
 
 @pytest.mark.asyncio
