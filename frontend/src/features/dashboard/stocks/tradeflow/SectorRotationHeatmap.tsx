@@ -21,10 +21,12 @@ interface SectorRotationRow {
 interface SectorRotationStock {
     ticker: string;
     companyName: string | null;
+    foreignNetFlow: number | null;
+    propNetFlow: number | null;
 }
 
 interface SectorStocksTooltip {
-    text: string;
+    row: SectorRotationRow;
     x: number;
     y: number;
     placeLeft: boolean;
@@ -73,19 +75,6 @@ const formatSignedBilVnd = (value: number | null): string => {
     return `${sign}${formatBilVnd(Math.abs(value))} Bil VND`;
 };
 
-const formatSectorStocksTooltip = (row: SectorRotationRow): string => {
-    if (row.stocks.length === 0) {
-        return `${row.industry}\nNo stocks available`;
-    }
-
-    return [
-        `${row.industry} (${row.stockCount} ${row.stockCount === 1 ? 'stock' : 'stocks'})`,
-        ...row.stocks.map((stock) => (
-            stock.companyName ? `${stock.ticker} - ${stock.companyName}` : stock.ticker
-        )),
-    ].join('\n');
-};
-
 const getStockMetaMap = (stocks: Stock[]): Map<string, Stock> => {
     return new Map(stocks.map((stock) => [stock.ticker.toUpperCase(), stock]));
 };
@@ -110,7 +99,13 @@ const getOrCreateSectorRow = (rowsByIndustry: Map<string, MutableSectorRow>, ind
     return row;
 };
 
-const addSectorStock = (row: MutableSectorRow, ticker: string, companyName?: string | null): void => {
+const addSectorStock = (
+    row: MutableSectorRow,
+    ticker: string,
+    companyName?: string | null,
+    foreignNetFlow: number | null = null,
+    propNetFlow: number | null = null,
+): void => {
     const normalizedTicker = ticker.trim().toUpperCase();
     if (!normalizedTicker) {
         return;
@@ -119,6 +114,8 @@ const addSectorStock = (row: MutableSectorRow, ticker: string, companyName?: str
     row.stocksByTicker.set(normalizedTicker, {
         ticker: normalizedTicker,
         companyName: companyName?.trim() || null,
+        foreignNetFlow,
+        propNetFlow,
     });
 };
 
@@ -162,7 +159,10 @@ const buildHistoricalRows = (
         const ticker = stockSeries.ticker.toUpperCase();
         const stockMeta = stockMetaMap.get(ticker);
         const row = getOrCreateSectorRow(rowsByIndustry, normalizeIndustry(stockMeta?.industry));
-        addSectorStock(row, ticker, stockMeta?.company_name);
+        let stockForeignNetFlowSum = 0;
+        let hasStockForeignNetFlow = false;
+        let stockPropNetFlowSum = 0;
+        let hasStockPropNetFlow = false;
 
         stockSeries.data.forEach((point) => {
             if (point.value !== null) {
@@ -172,12 +172,24 @@ const buildHistoricalRows = (
             if (point.foreign_net_value !== null) {
                 row.foreignNetFlowSum += point.foreign_net_value;
                 row.hasForeignNetFlow = true;
+                stockForeignNetFlowSum += point.foreign_net_value;
+                hasStockForeignNetFlow = true;
             }
             if (point.prop_net_value !== null) {
                 row.propNetFlowSum += point.prop_net_value;
                 row.hasPropNetFlow = true;
+                stockPropNetFlowSum += point.prop_net_value;
+                hasStockPropNetFlow = true;
             }
         });
+
+        addSectorStock(
+            row,
+            ticker,
+            stockMeta?.company_name ?? stockSeries.company_name,
+            hasStockForeignNetFlow ? roundToTwo(stockForeignNetFlowSum) : null,
+            hasStockPropNetFlow ? roundToTwo(stockPropNetFlowSum) : null,
+        );
     });
 
     return toSectorRows(rowsByIndustry);
@@ -188,14 +200,24 @@ const buildTodayRows = (stocks: Stock[]): SectorRotationRow[] => {
 
     stocks.forEach((stock) => {
         const row = getOrCreateSectorRow(rowsByIndustry, normalizeIndustry(stock.industry));
-        addSectorStock(row, stock.ticker, stock.company_name);
+        const foreignNetFlow = stock.foreign_buy_value !== null && stock.foreign_sell_value !== null
+            ? stock.foreign_buy_value - stock.foreign_sell_value
+            : null;
+
+        addSectorStock(
+            row,
+            stock.ticker,
+            stock.company_name,
+            foreignNetFlow !== null ? roundToTwo(foreignNetFlow) : null,
+            null,
+        );
 
         if (stock.accumulated_value !== null) {
             row.tradedValueSum += stock.accumulated_value;
             row.hasTradedValue = true;
         }
-        if (stock.foreign_buy_value !== null && stock.foreign_sell_value !== null) {
-            row.foreignNetFlowSum += stock.foreign_buy_value - stock.foreign_sell_value;
+        if (foreignNetFlow !== null) {
+            row.foreignNetFlowSum += foreignNetFlow;
             row.hasForeignNetFlow = true;
         }
     });
@@ -217,6 +239,19 @@ const getFlowCellClassName = (value: number | null): string => {
     return `${baseClassName} bg-base-200/70 text-base-content/70`;
 };
 
+const getTooltipFlowClassName = (value: number | null): string => {
+    if (value === null) {
+        return 'font-medium text-base-content/50';
+    }
+    if (value > 0) {
+        return 'font-medium text-success';
+    }
+    if (value < 0) {
+        return 'font-medium text-error';
+    }
+    return 'font-medium text-base-content/70';
+};
+
 const getTradedCellStyle = (value: number | null, maxValue: number): React.CSSProperties | undefined => {
     if (value === null || maxValue <= 0) {
         return undefined;
@@ -227,14 +262,14 @@ const getTradedCellStyle = (value: number | null, maxValue: number): React.CSSPr
 
 const getSectorTooltipPosition = (
     event: React.MouseEvent<HTMLElement>,
-    text: string,
+    row: SectorRotationRow,
 ): SectorStocksTooltip => {
     const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
     const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
     const placeLeft = viewportWidth > 0 && event.clientX > viewportWidth - 448;
 
     return {
-        text,
+        row,
         x: placeLeft ? event.clientX - 12 : event.clientX + 12,
         y: viewportHeight > 0 ? Math.min(event.clientY + 12, viewportHeight - 16) : event.clientY + 12,
         placeLeft,
@@ -341,8 +376,8 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
                                     <td>
                                         <div
                                             className="inline-block text-left"
-                                            onMouseEnter={(event) => setSectorTooltip(getSectorTooltipPosition(event, formatSectorStocksTooltip(row)))}
-                                            onMouseMove={(event) => setSectorTooltip(getSectorTooltipPosition(event, formatSectorStocksTooltip(row)))}
+                                            onMouseEnter={(event) => setSectorTooltip(getSectorTooltipPosition(event, row))}
+                                            onMouseMove={(event) => setSectorTooltip(getSectorTooltipPosition(event, row))}
                                             onMouseLeave={() => setSectorTooltip(null)}
                                         >
                                             <div className="font-semibold text-base-content">{row.industry}</div>
@@ -379,14 +414,40 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
             {sectorTooltip && typeof document !== 'undefined'
                 ? createPortal(
                     <div
-                        className="pointer-events-none fixed z-[140] max-h-[min(32rem,calc(100vh-2rem))] max-w-[min(28rem,calc(100vw-2rem))] overflow-hidden whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-xs leading-relaxed text-base-content shadow-xl"
+                        className="pointer-events-none fixed z-[140] max-h-[min(32rem,calc(100vh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] overflow-hidden rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-xs leading-relaxed text-base-content shadow-xl"
                         style={{
                             left: sectorTooltip.x,
                             top: sectorTooltip.y,
                             transform: sectorTooltip.placeLeft ? 'translateX(-100%)' : undefined,
                         }}
                     >
-                        {sectorTooltip.text}
+                        <div className="whitespace-nowrap font-semibold">
+                            {sectorTooltip.row.industry} ({sectorTooltip.row.stockCount} {sectorTooltip.row.stockCount === 1 ? 'stock' : 'stocks'})
+                        </div>
+                        {sectorTooltip.row.stocks.length === 0 ? (
+                            <div className="whitespace-nowrap text-base-content/70">No stocks available</div>
+                        ) : (
+                            <div className="mt-1 space-y-0.5">
+                                {sectorTooltip.row.stocks.map((stock) => {
+                                    const stockLabel = stock.companyName ? `${stock.ticker} - ${stock.companyName}` : stock.ticker;
+
+                                    return (
+                                        <div key={stock.ticker} className="whitespace-nowrap">
+                                            <span className="text-base-content/50">Foreign: </span>
+                                            <span className={getTooltipFlowClassName(stock.foreignNetFlow)}>
+                                                {formatSignedBilVnd(stock.foreignNetFlow)}
+                                            </span>
+                                            <span className="text-base-content/50"> | Prop: </span>
+                                            <span className={getTooltipFlowClassName(stock.propNetFlow)}>
+                                                {formatSignedBilVnd(stock.propNetFlow)}
+                                            </span>
+                                            <span className="text-base-content/50"> | </span>
+                                            <span>{stockLabel}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>,
                     document.body,
                 )
