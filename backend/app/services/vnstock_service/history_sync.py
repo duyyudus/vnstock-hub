@@ -80,6 +80,10 @@ class HistorySyncService:
         )
         self._sync_executor: ThreadPoolExecutor | None = None
         self._operation_worker_semaphore = asyncio.Semaphore(self._sync_max_workers)
+        self._audit_cancel_requested = False
+        self._repair_cancel_requested = False
+        self._audit_worker_tasks: set[asyncio.Task[None]] = set()
+        self._repair_worker_tasks: set[asyncio.Task[None]] = set()
 
     async def start_background_tasks(self) -> None:
         """No-op hook kept for lifecycle symmetry."""
@@ -110,6 +114,31 @@ class HistorySyncService:
             if self._sync_executor is not None:
                 self._sync_executor.shutdown(wait=False, cancel_futures=True)
                 self._sync_executor = None
+
+    async def cancel_running_sync(self) -> Dict[str, Any]:
+        """Cancel the currently running background history sync task, if any."""
+        async with self._sync_lock:
+            if not self._sync_task or self._sync_task.done():
+                self._sync_task = None
+                return {
+                    "started": False,
+                    "message": "History sync is not running",
+                    "state": "idle",
+                }
+
+            self._sync_task.cancel()
+            try:
+                await self._sync_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._sync_task = None
+
+        return {
+            "started": False,
+            "message": "History sync cancelled",
+            "state": "cancelled",
+        }
 
     async def run_sync(
         self,
@@ -301,6 +330,46 @@ class HistorySyncService:
                 updated_through=await self._get_symbol_latest_date_iso(symbol),
             )
 
+    async def cancel_running_audit(self) -> Dict[str, Any]:
+        """Request cancellation of the currently running history audit, if any."""
+        if not sync_status.history_audit.is_running:
+            return {
+                "started": False,
+                "message": "History audit is not running",
+                "state": "idle",
+            }
+
+        self._audit_cancel_requested = True
+        for task in list(self._audit_worker_tasks):
+            if not task.done():
+                task.cancel()
+
+        return {
+            "started": False,
+            "message": "History audit cancelled",
+            "state": "cancelled",
+        }
+
+    async def cancel_running_repair(self) -> Dict[str, Any]:
+        """Request cancellation of the currently running history repair, if any."""
+        if not sync_status.history_repair.is_running:
+            return {
+                "started": False,
+                "message": "History repair is not running",
+                "state": "idle",
+            }
+
+        self._repair_cancel_requested = True
+        for task in list(self._repair_worker_tasks):
+            if not task.done():
+                task.cancel()
+
+        return {
+            "started": False,
+            "message": "History repair cancelled",
+            "state": "cancelled",
+        }
+
     async def run_audit_sync(
         self,
         symbols: Optional[List[str]],
@@ -336,6 +405,7 @@ class HistorySyncService:
             }
 
         sync_status.start_history_audit(total_symbols=total_symbols)
+        self._audit_cancel_requested = False
 
         processed_symbols = 0
         success_symbols = 0
@@ -358,13 +428,19 @@ class HistorySyncService:
             nonlocal symbols_with_gaps, total_missing_dates, total_repaired_dates
 
             while True:
+                if self._audit_cancel_requested:
+                    return
                 try:
                     result_index, symbol = work_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
+                if self._audit_cancel_requested:
+                    work_queue.task_done()
+                    return
 
                 symbol_result: Dict[str, Any]
                 symbol_failed = False
+                was_cancelled = False
                 symbol_missing_count = 0
                 symbol_repaired_count = 0
 
@@ -396,6 +472,9 @@ class HistorySyncService:
                             "missing_date_samples": [d.isoformat() for d in missing_dates[:20]],
                             "error": None,
                         }
+                except asyncio.CancelledError:
+                    was_cancelled = True
+                    raise
                 except Exception as e:
                     symbol_failed = True
                     await self._mark_symbol_error(symbol, f"Audit sync failed: {e}")
@@ -409,36 +488,52 @@ class HistorySyncService:
                         "error": str(e)[:500],
                     }
                 finally:
-                    async with progress_lock:
-                        processed_symbols += 1
+                    if not was_cancelled:
+                        async with progress_lock:
+                            processed_symbols += 1
 
-                        if symbol_failed:
-                            failed_symbols += 1
-                            failed_tickers.append(symbol)
-                        else:
-                            success_symbols += 1
-                            if symbol_missing_count > 0:
-                                symbols_with_gaps += 1
-                                total_missing_dates += symbol_missing_count
-                                total_repaired_dates += symbol_repaired_count
+                            if symbol_failed:
+                                failed_symbols += 1
+                                failed_tickers.append(symbol)
+                            else:
+                                success_symbols += 1
+                                if symbol_missing_count > 0:
+                                    symbols_with_gaps += 1
+                                    total_missing_dates += symbol_missing_count
+                                    total_repaired_dates += symbol_repaired_count
 
-                        results[result_index] = symbol_result
-                        sync_status.update_history_audit_progress(
-                            processed_symbols=processed_symbols,
-                            success_symbols=success_symbols,
-                            failed_symbols=failed_symbols,
-                            current_symbol=symbol,
-                            failed_tickers=failed_tickers,
-                        )
+                            results[result_index] = symbol_result
+                            sync_status.update_history_audit_progress(
+                                processed_symbols=processed_symbols,
+                                success_symbols=success_symbols,
+                                failed_symbols=failed_symbols,
+                                current_symbol=symbol,
+                                failed_tickers=failed_tickers,
+                            )
                     work_queue.task_done()
 
         workers = [
             asyncio.create_task(_audit_worker())
             for _ in range(worker_count)
         ]
+        self._audit_worker_tasks = set(workers)
 
         try:
             await asyncio.gather(*workers)
+            if self._audit_cancel_requested:
+                sync_status.complete_history_audit(success=False, error="History audit cancelled")
+                return {
+                    "started": False,
+                    "message": "History audit cancelled",
+                    "processed_symbols": processed_symbols,
+                    "success_symbols": success_symbols,
+                    "failed_symbols": failed_symbols,
+                    "audited_symbols": total_symbols,
+                    "symbols_with_gaps": symbols_with_gaps,
+                    "total_missing_dates": total_missing_dates,
+                    "total_repaired_dates": total_repaired_dates,
+                    "results": [row for row in results if row is not None],
+                }
 
             normalized_results: List[Dict[str, Any]] = []
             for index, symbol in enumerate(symbols_to_audit):
@@ -477,6 +572,23 @@ class HistorySyncService:
                 "end_date": end_date.isoformat(),
                 "results": normalized_results,
             }
+        except asyncio.CancelledError:
+            for worker in workers:
+                worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            sync_status.complete_history_audit(success=False, error="History audit cancelled")
+            return {
+                "started": False,
+                "message": "History audit cancelled",
+                "processed_symbols": processed_symbols,
+                "success_symbols": success_symbols,
+                "failed_symbols": failed_symbols,
+                "audited_symbols": total_symbols,
+                "symbols_with_gaps": symbols_with_gaps,
+                "total_missing_dates": total_missing_dates,
+                "total_repaired_dates": total_repaired_dates,
+                "results": [row for row in results if row is not None],
+            }
         except Exception as e:
             sync_status.complete_history_audit(success=False, error=str(e)[:500])
             return {
@@ -491,6 +603,9 @@ class HistorySyncService:
                 "total_repaired_dates": total_repaired_dates,
                 "results": [row for row in results if row is not None],
             }
+        finally:
+            self._audit_worker_tasks.difference_update(workers)
+            self._audit_cancel_requested = False
 
     async def run_repair_sync(
         self,
@@ -517,6 +632,7 @@ class HistorySyncService:
             }
 
         sync_status.start_history_repair(total_symbols=total_symbols)
+        self._repair_cancel_requested = False
 
         success_count = 0
         failure_count = 0
@@ -529,6 +645,7 @@ class HistorySyncService:
             work_queue.put_nowait(symbol)
 
         worker_count = min(total_symbols, self._sync_max_workers)
+        workers: list[asyncio.Task[None]] = []
 
         try:
             loop = asyncio.get_running_loop()
@@ -537,12 +654,18 @@ class HistorySyncService:
             async def _repair_worker() -> None:
                 nonlocal processed_count, success_count, failure_count
                 while True:
+                    if self._repair_cancel_requested:
+                        return
                     try:
                         symbol = work_queue.get_nowait()
                     except asyncio.QueueEmpty:
                         return
+                    if self._repair_cancel_requested:
+                        work_queue.task_done()
+                        return
 
                     symbol_failed = False
+                    was_cancelled = False
                     try:
                         async with self._operation_worker_semaphore:
                             async with progress_lock:
@@ -561,32 +684,46 @@ class HistorySyncService:
                                 end_date,
                             )
                             await self._mark_symbol_sync_result(symbol)
+                    except asyncio.CancelledError:
+                        was_cancelled = True
+                        raise
                     except Exception as e:
                         symbol_failed = True
                         await self._mark_symbol_error(symbol, f"Repair sync failed: {e}")
                     finally:
-                        async with progress_lock:
-                            processed_count += 1
-                            if symbol_failed:
-                                failure_count += 1
-                                failed_tickers.append(symbol)
-                            else:
-                                success_count += 1
+                        if not was_cancelled:
+                            async with progress_lock:
+                                processed_count += 1
+                                if symbol_failed:
+                                    failure_count += 1
+                                    failed_tickers.append(symbol)
+                                else:
+                                    success_count += 1
 
-                            sync_status.update_history_repair_progress(
-                                processed_symbols=processed_count,
-                                success_symbols=success_count,
-                                failed_symbols=failure_count,
-                                current_symbol=symbol,
-                                failed_tickers=failed_tickers,
-                            )
+                                sync_status.update_history_repair_progress(
+                                    processed_symbols=processed_count,
+                                    success_symbols=success_count,
+                                    failed_symbols=failure_count,
+                                    current_symbol=symbol,
+                                    failed_tickers=failed_tickers,
+                                )
                         work_queue.task_done()
 
             workers = [
                 asyncio.create_task(_repair_worker())
                 for _ in range(worker_count)
             ]
+            self._repair_worker_tasks = set(workers)
             await asyncio.gather(*workers)
+            if self._repair_cancel_requested:
+                sync_status.complete_history_repair(success=False, error="History repair cancelled")
+                return {
+                    "started": False,
+                    "message": "History repair cancelled",
+                    "processed_symbols": success_count + failure_count,
+                    "success_symbols": success_count,
+                    "failed_symbols": failure_count,
+                }
 
             if failure_count > 0:
                 sync_status.complete_history_repair(
@@ -605,6 +742,18 @@ class HistorySyncService:
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
             }
+        except asyncio.CancelledError:
+            for worker in workers:
+                worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            sync_status.complete_history_repair(success=False, error="History repair cancelled")
+            return {
+                "started": False,
+                "message": "History repair cancelled",
+                "processed_symbols": success_count + failure_count,
+                "success_symbols": success_count,
+                "failed_symbols": failure_count,
+            }
         except Exception as e:
             sync_status.complete_history_repair(success=False, error=str(e)[:500])
             return {
@@ -614,6 +763,9 @@ class HistorySyncService:
                 "success_symbols": success_count,
                 "failed_symbols": failure_count,
             }
+        finally:
+            self._repair_worker_tasks.difference_update(workers)
+            self._repair_cancel_requested = False
 
     async def _run_sync(self, symbols: Optional[List[str]]) -> None:
         """Background unified sync execution."""

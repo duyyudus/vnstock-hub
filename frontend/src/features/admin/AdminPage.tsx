@@ -8,7 +8,7 @@ import {
     type HistorySyncActionResponse,
     type SyncStatusResponse,
 } from '../../api/stockApi';
-import { getErrorMessage, parseSymbolsInput, type SyncCollectionScope } from './adminUtils';
+import { formatDateInputValue, getErrorMessage, parseSymbolsInput, type SyncCollectionScope } from './adminUtils';
 import { CompanySyncTab } from './tabs/CompanySyncTab';
 import { FinanceSyncTab } from './tabs/FinanceSyncTab';
 import { HistorySyncTab } from './tabs/HistorySyncTab';
@@ -199,6 +199,14 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunSync = async () => {
+        if (runtimeSyncActive) {
+            await runAction(
+                () => stockApi.cancelHistorySync(),
+                setSyncRunning,
+            );
+            return;
+        }
+
         const symbols = syncCollectionScope === 'manual'
             ? parseSymbolsInput(syncSymbols)
             : getCollectionSymbols(syncCollectionScope);
@@ -219,9 +227,22 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunAudit = async () => {
-        if (!auditStartDate || !auditEndDate) {
-            setActionError('Please provide both start date and end date for audit.');
+        if (runtimeAuditActive) {
+            await runAction(
+                () => stockApi.cancelHistoryAudit(),
+                setAuditRunning,
+            );
             return;
+        }
+
+        if (!auditStartDate) {
+            setActionError('Please provide a start date for audit.');
+            return;
+        }
+
+        const resolvedAuditEndDate = auditEndDate || formatDateInputValue();
+        if (!auditEndDate) {
+            setAuditEndDate(resolvedAuditEndDate);
         }
 
         const symbols = auditCollectionScope === 'manual'
@@ -235,7 +256,7 @@ export const AdminPage: React.FC = () => {
         await runAction(
             () => stockApi.runHistoryAudit(
                 auditStartDate,
-                auditEndDate,
+                resolvedAuditEndDate,
                 symbols.length > 0 ? symbols : undefined,
                 auditCollectionScope === 'manual' ? auditIndexSymbol || undefined : undefined,
                 auditAutoRepair,
@@ -246,6 +267,14 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunRepair = async () => {
+        if (runtimeRepairActive) {
+            await runAction(
+                () => stockApi.cancelHistoryRepairSync(),
+                setRepairRunning,
+            );
+            return;
+        }
+
         const symbols = repairCollectionScope === 'manual'
             ? parseSymbolsInput(repairSymbols)
             : getCollectionSymbols(repairCollectionScope);
@@ -277,6 +306,14 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunFinanceSync = async () => {
+        if (runtimeFinanceActive) {
+            await runAction(
+                () => stockApi.cancelFinanceSync(),
+                setFinanceRunning,
+            );
+            return;
+        }
+
         const symbols = financeCollectionScope === 'manual'
             ? parseSymbolsInput(financeSymbols)
             : getCollectionSymbols(financeCollectionScope);
@@ -299,6 +336,14 @@ export const AdminPage: React.FC = () => {
     };
 
     const handleRunCompanySync = async () => {
+        if (runtimeCompanyActive) {
+            await runAction(
+                () => stockApi.cancelCompanySync(),
+                setCompanyRunning,
+            );
+            return;
+        }
+
         const symbols = companyCollectionScope === 'manual'
             ? parseSymbolsInput(companySymbols)
             : getCollectionSymbols(companyCollectionScope);
@@ -338,7 +383,11 @@ export const AdminPage: React.FC = () => {
     const financeActive = financeRunning || runtimeFinanceActive;
     const companyActive = companyRunning || runtimeCompanyActive;
     const anyJobActive = syncActive || auditActive || repairActive || financeActive || companyActive;
-    const actionDisabled = loadingStatus || anyJobActive;
+    const syncActionDisabled = loadingStatus || (anyJobActive && !runtimeSyncActive);
+    const auditActionDisabled = loadingStatus || (anyJobActive && !runtimeAuditActive);
+    const repairActionDisabled = loadingStatus || (anyJobActive && !runtimeRepairActive);
+    const financeActionDisabled = loadingStatus || (anyJobActive && !runtimeFinanceActive);
+    const companyActionDisabled = loadingStatus || (anyJobActive && !runtimeCompanyActive);
 
     useEffect(() => {
         if (!isActionMessageTransient || !transientJobType) {
@@ -541,7 +590,12 @@ export const AdminPage: React.FC = () => {
                         onRunRepair={handleRunRepair}
                         repairActive={repairActive}
                         anyJobActive={anyJobActive}
-                        actionDisabled={actionDisabled}
+                        syncActionDisabled={syncActionDisabled}
+                        auditActionDisabled={auditActionDisabled}
+                        repairActionDisabled={repairActionDisabled}
+                        syncCancelable={runtimeSyncActive}
+                        auditCancelable={runtimeAuditActive}
+                        repairCancelable={runtimeRepairActive}
                         auditResult={auditResult}
                         portfolioCollectionCount={portfolioCollectionSymbols.length}
                         tradingCollectionCount={tradingCollectionSymbols.length}
@@ -568,7 +622,8 @@ export const AdminPage: React.FC = () => {
                         onRunFinanceSync={handleRunFinanceSync}
                         financeActive={financeActive}
                         anyJobActive={anyJobActive}
-                        actionDisabled={actionDisabled}
+                        actionDisabled={financeActionDisabled}
+                        financeCancelable={runtimeFinanceActive}
                         portfolioCollectionCount={portfolioCollectionSymbols.length}
                         tradingCollectionCount={tradingCollectionSymbols.length}
                     />
@@ -594,7 +649,8 @@ export const AdminPage: React.FC = () => {
                         onRunCompanySync={handleRunCompanySync}
                         companyActive={companyActive}
                         anyJobActive={anyJobActive}
-                        actionDisabled={actionDisabled}
+                        actionDisabled={companyActionDisabled}
+                        companyCancelable={runtimeCompanyActive}
                         portfolioCollectionCount={portfolioCollectionSymbols.length}
                         tradingCollectionCount={tradingCollectionSymbols.length}
                     />

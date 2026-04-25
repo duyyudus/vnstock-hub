@@ -234,6 +234,9 @@ class VnstockService:
             index_symbol=index_symbol,
         )
 
+    async def cancel_history_sync(self) -> Dict[str, Any]:
+        return await self.history_sync.cancel_running_sync()
+
     async def run_history_audit_sync(
         self,
         symbols: List[str] | None,
@@ -253,6 +256,9 @@ class VnstockService:
             index_symbol=index_symbol,
         )
 
+    async def cancel_history_audit_sync(self) -> Dict[str, Any]:
+        return await self.history_sync.cancel_running_audit()
+
     async def run_history_repair_sync(
         self,
         symbols: List[str] | None,
@@ -269,6 +275,9 @@ class VnstockService:
             end_date=parsed_end,
             index_symbol=index_symbol,
         )
+
+    async def cancel_history_repair_sync(self) -> Dict[str, Any]:
+        return await self.history_sync.cancel_running_repair()
 
     # Finance Sync
     async def run_finance_sync(
@@ -287,6 +296,9 @@ class VnstockService:
             force_refresh=force_refresh,
         )
 
+    async def cancel_finance_sync(self) -> Dict[str, Any]:
+        return await self.finance_data_sync.cancel_running_sync()
+
     # Company Sync
     async def run_company_sync(
         self,
@@ -303,6 +315,9 @@ class VnstockService:
             quick_sync=quick_sync,
             force_refresh=force_refresh,
         )
+
+    async def cancel_company_sync(self) -> Dict[str, Any]:
+        return await self.company_data_sync.cancel_running_sync()
 
     # Funds
     async def get_fund_listing(self, fund_type: str = "") -> List[Dict[str, Any]]:

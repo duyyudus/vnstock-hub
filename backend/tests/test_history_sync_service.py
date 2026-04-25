@@ -284,6 +284,57 @@ async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cancel_running_history_sync_marks_runtime_cancelled(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    started = asyncio.Event()
+    release = asyncio.Event()
+    symbols_meta = [SymbolSyncMeta(symbol="AAA", listing_date=date(2020, 1, 1))]
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return symbols_meta
+
+    async def _fake_ensure_sync_state_rows(_symbols_meta):
+        return None
+
+    async def _slow_sync_symbol(_meta: SymbolSyncMeta):
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_ensure_sync_state_rows", _fake_ensure_sync_state_rows)
+    monkeypatch.setattr(service, "_sync_symbol", _slow_sync_symbol)
+
+    start_result = await service.run_sync(symbols=["AAA"])
+    assert start_result["started"] is True
+    await started.wait()
+
+    cancel_result = await service.cancel_running_sync()
+    release.set()
+
+    assert cancel_result == {
+        "started": False,
+        "message": "History sync cancelled",
+        "state": "cancelled",
+    }
+    runtime = sync_status.history_sync
+    assert runtime.is_running is False
+    assert runtime.error == "History sync cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_idle_history_sync_returns_idle():
+    service = HistorySyncService(history=HistoryService())
+
+    result = await service.cancel_running_sync()
+
+    assert result == {
+        "started": False,
+        "message": "History sync is not running",
+        "state": "idle",
+    }
+
+
+@pytest.mark.asyncio
 async def test_audit_parallel_workers_update_counters(monkeypatch):
     service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 3
@@ -385,6 +436,54 @@ async def test_audit_tracks_failed_tickers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cancel_running_history_audit_marks_runtime_cancelled(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _fake_resolve_symbols_filter(symbols=None, index_symbol=None):
+        return ["AAA"]
+
+    async def _fake_get_local_history_dates(_symbol: str, _start_date: date, _end_date: date):
+        started.set()
+        await release.wait()
+        return {date(2025, 1, 2)}
+
+    async def _fake_fetch_remote_history_dates(_symbol: str, _start_date: date, _end_date: date):
+        return {date(2025, 1, 2)}
+
+    monkeypatch.setattr(service, "_resolve_symbols_filter", _fake_resolve_symbols_filter)
+    monkeypatch.setattr(service, "_get_local_history_dates", _fake_get_local_history_dates)
+    monkeypatch.setattr(service, "_fetch_remote_history_dates", _fake_fetch_remote_history_dates)
+
+    task = asyncio.create_task(
+        service.run_audit_sync(
+            symbols=None,
+            start_date=date(2025, 1, 2),
+            end_date=date(2025, 1, 3),
+            auto_repair=False,
+            index_symbol="VN30",
+        )
+    )
+    await started.wait()
+
+    cancel_result = await service.cancel_running_audit()
+    release.set()
+    result = await task
+
+    assert cancel_result == {
+        "started": False,
+        "message": "History audit cancelled",
+        "state": "cancelled",
+    }
+    assert result["started"] is False
+    assert result["message"] == "History audit cancelled"
+    runtime = sync_status.history_audit
+    assert runtime.is_running is False
+    assert runtime.error == "History audit cancelled"
+
+
+@pytest.mark.asyncio
 async def test_repair_parallel_workers_update_counters(monkeypatch):
     service = HistorySyncService(history=HistoryService())
     service._sync_max_workers = 3
@@ -466,6 +565,49 @@ async def test_repair_tracks_failed_tickers(monkeypatch):
     assert runtime.failed_symbols == 1
     assert runtime.failed_tickers == ["BBB"]
     assert result["failed_symbols"] == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_running_history_repair_marks_runtime_cancelled(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    def _slow_upsert(_symbol: str, _start_date: date, _end_date: date):
+        started.set()
+        deadline = time.monotonic() + 1.0
+        while not release.is_set() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    async def _fake_mark_symbol_sync_result(_symbol: str):
+        return None
+
+    monkeypatch.setattr(service._history, "_upsert_stock_daily_history", _slow_upsert)
+    monkeypatch.setattr(service, "_mark_symbol_sync_result", _fake_mark_symbol_sync_result)
+
+    task = asyncio.create_task(
+        service.run_repair_sync(
+            symbols=["AAA"],
+            start_date=date(2025, 1, 2),
+            end_date=date(2025, 1, 3),
+        )
+    )
+    await started.wait()
+
+    cancel_result = await service.cancel_running_repair()
+    release.set()
+    result = await task
+
+    assert cancel_result == {
+        "started": False,
+        "message": "History repair cancelled",
+        "state": "cancelled",
+    }
+    assert result["started"] is False
+    assert result["message"] == "History repair cancelled"
+    runtime = sync_status.history_repair
+    assert runtime.is_running is False
+    assert runtime.error == "History repair cancelled"
 
 
 @pytest.mark.asyncio

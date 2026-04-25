@@ -24,6 +24,7 @@ interface CompanySyncTabProps {
     companyActive: boolean;
     anyJobActive: boolean;
     actionDisabled: boolean;
+    companyCancelable: boolean;
     portfolioCollectionCount: number;
     tradingCollectionCount: number;
 }
@@ -48,6 +49,7 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
     companyActive,
     anyJobActive,
     actionDisabled,
+    companyCancelable,
     portfolioCollectionCount,
     tradingCollectionCount,
 }) => {
@@ -139,8 +141,10 @@ export const CompanySyncTab: React.FC<CompanySyncTabProps> = ({
                         disabled={actionDisabled}
                     >
                         {companyActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                        {companyActive
-                            ? 'Syncing...'
+                        {companyCancelable
+                            ? 'Cancel Company Sync'
+                            : companyActive
+                                ? 'Syncing...'
                             : anyJobActive
                                 ? 'Waiting for current job...'
                                 : 'Run Company Sync'}

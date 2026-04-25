@@ -88,6 +88,89 @@ async def test_run_history_sync_invalid_index_returns_400(client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/sync/history/cancel",
+        "/api/v1/sync/history/audit/cancel",
+        "/api/v1/sync/history/repair/cancel",
+        "/api/v1/sync/finance/cancel",
+        "/api/v1/sync/company/cancel",
+    ],
+)
+async def test_cancel_sync_requires_admin_auth(client, path):
+    response = await client.post(path)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "service_method", "message"),
+    [
+        ("/api/v1/sync/history/cancel", "cancel_history_sync", "History sync cancelled"),
+        ("/api/v1/sync/history/audit/cancel", "cancel_history_audit_sync", "History audit cancelled"),
+        ("/api/v1/sync/history/repair/cancel", "cancel_history_repair_sync", "History repair cancelled"),
+        ("/api/v1/sync/finance/cancel", "cancel_finance_sync", "Finance sync cancelled"),
+        ("/api/v1/sync/company/cancel", "cancel_company_sync", "Company sync cancelled"),
+    ],
+)
+async def test_cancel_sync_with_admin_calls_matching_service_method(client, path, service_method, message):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        with patch.object(
+            vnstock_service,
+            service_method,
+            AsyncMock(return_value={"started": False, "message": message, "state": "cancelled"}),
+        ) as mock_cancel:
+            response = await client.post(path)
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["started"] is False
+    assert data["state"] == "cancelled"
+    assert data["message"] == message
+    mock_cancel.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "service_method", "message"),
+    [
+        ("/api/v1/sync/history/cancel", "cancel_history_sync", "History sync is not running"),
+        ("/api/v1/sync/history/audit/cancel", "cancel_history_audit_sync", "History audit is not running"),
+        ("/api/v1/sync/history/repair/cancel", "cancel_history_repair_sync", "History repair is not running"),
+        ("/api/v1/sync/finance/cancel", "cancel_finance_sync", "Finance sync is not running"),
+        ("/api/v1/sync/company/cancel", "cancel_company_sync", "Company sync is not running"),
+    ],
+)
+async def test_cancel_sync_idle_returns_idle_state(client, path, service_method, message):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        with patch.object(
+            vnstock_service,
+            service_method,
+            AsyncMock(return_value={"started": False, "message": message, "state": "idle"}),
+        ):
+            response = await client.post(path)
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["started"] is False
+    assert data["state"] == "idle"
+    assert data["message"] == message
+
+
+@pytest.mark.asyncio
 async def test_run_history_audit_validates_date_format(client):
     async def _admin_override():
         return SimpleNamespace(id=1, email="admin@example.com")

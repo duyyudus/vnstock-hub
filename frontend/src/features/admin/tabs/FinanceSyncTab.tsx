@@ -24,6 +24,7 @@ interface FinanceSyncTabProps {
     financeActive: boolean;
     anyJobActive: boolean;
     actionDisabled: boolean;
+    financeCancelable: boolean;
     portfolioCollectionCount: number;
     tradingCollectionCount: number;
 }
@@ -48,6 +49,7 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
     financeActive,
     anyJobActive,
     actionDisabled,
+    financeCancelable,
     portfolioCollectionCount,
     tradingCollectionCount,
 }) => {
@@ -139,8 +141,10 @@ export const FinanceSyncTab: React.FC<FinanceSyncTabProps> = ({
                         disabled={actionDisabled}
                     >
                         {financeActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                        {financeActive
-                            ? 'Syncing...'
+                        {financeCancelable
+                            ? 'Cancel Finance Sync'
+                            : financeActive
+                                ? 'Syncing...'
                             : anyJobActive
                                 ? 'Waiting for current job...'
                                 : 'Run Finance Sync'}

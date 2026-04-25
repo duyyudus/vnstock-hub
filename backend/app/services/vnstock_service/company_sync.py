@@ -71,6 +71,31 @@ class CompanyDataSyncService:
                     pass
             self._sync_task = None
 
+    async def cancel_running_sync(self) -> Dict[str, Any]:
+        """Cancel the currently running company sync task, if any."""
+        async with self._sync_lock:
+            if not self._sync_task or self._sync_task.done():
+                self._sync_task = None
+                return {
+                    "started": False,
+                    "message": "Company sync is not running",
+                    "state": "idle",
+                }
+
+            self._sync_task.cancel()
+            try:
+                await self._sync_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._sync_task = None
+
+        return {
+            "started": False,
+            "message": "Company sync cancelled",
+            "state": "cancelled",
+        }
+
     async def run_sync(
         self,
         force_restart: bool = False,

@@ -50,7 +50,12 @@ interface HistorySyncTabProps {
     onRunRepair: () => void | Promise<void>;
     repairActive: boolean;
     anyJobActive: boolean;
-    actionDisabled: boolean;
+    syncActionDisabled: boolean;
+    auditActionDisabled: boolean;
+    repairActionDisabled: boolean;
+    syncCancelable: boolean;
+    auditCancelable: boolean;
+    repairCancelable: boolean;
     auditResult: HistoryAuditActionResponse | null;
     portfolioCollectionCount: number;
     tradingCollectionCount: number;
@@ -101,7 +106,12 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     onRunRepair,
     repairActive,
     anyJobActive,
-    actionDisabled,
+    syncActionDisabled,
+    auditActionDisabled,
+    repairActionDisabled,
+    syncCancelable,
+    auditCancelable,
+    repairCancelable,
     auditResult,
     portfolioCollectionCount,
     tradingCollectionCount,
@@ -208,11 +218,13 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                         <button
                             className="btn btn-primary"
                             onClick={onRunSync}
-                            disabled={actionDisabled}
+                            disabled={syncActionDisabled}
                         >
                             {syncActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                            {syncActive
-                                ? 'Syncing...'
+                            {syncCancelable
+                                ? 'Cancel History Sync'
+                                : syncActive
+                                    ? 'Syncing...'
                                 : anyJobActive
                                     ? 'Waiting for current job...'
                                     : 'Run History Sync'}
@@ -288,11 +300,13 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                         <button
                             className="btn btn-secondary"
                             onClick={onRunAudit}
-                            disabled={actionDisabled}
+                            disabled={auditActionDisabled}
                         >
                             {auditActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                            {auditActive
-                                ? 'Auditing...'
+                            {auditCancelable
+                                ? 'Cancel History Audit'
+                                : auditActive
+                                    ? 'Auditing...'
                                 : anyJobActive
                                     ? 'Waiting for current job...'
                                     : 'Run Gap Audit'}
@@ -359,11 +373,13 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                         <button
                             className="btn btn-accent"
                             onClick={onRunRepair}
-                            disabled={actionDisabled}
+                            disabled={repairActionDisabled}
                         >
                             {repairActive ? <span className="loading loading-spinner loading-xs"></span> : null}
-                            {repairActive
-                                ? 'Repairing...'
+                            {repairCancelable
+                                ? 'Cancel History Repair'
+                                : repairActive
+                                    ? 'Repairing...'
                                 : anyJobActive
                                     ? 'Waiting for current job...'
                                     : 'Run Repair Sync'}

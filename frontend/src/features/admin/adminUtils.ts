@@ -66,6 +66,13 @@ export const toDateTimeLocalValue = (
     return `${byType.year}-${byType.month}-${byType.day}T${byType.hour}:${byType.minute}`;
 };
 
+export const formatDateInputValue = (value: Date = new Date()) => {
+    const year = value.getFullYear();
+    const month = `${value.getMonth() + 1}`.padStart(2, '0');
+    const day = `${value.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 export const parseSymbolsInput = (value: string): string[] => {
     return value
         .split(/[\s,]+/)

@@ -166,6 +166,52 @@ async def test_company_sync_force_refresh_flows_to_symbol_sync(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_company_cancel_running_sync_marks_runtime_cancelled(monkeypatch):
+    service = CompanyDataSyncService(company=CompanyService())
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return ["AAA"]
+
+    async def _slow_sync_symbol(_symbol: str, force_refresh: bool = False):
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_sync_symbol", _slow_sync_symbol)
+
+    start_result = await service.run_sync(symbols=["AAA"])
+    assert start_result["started"] is True
+    await started.wait()
+
+    cancel_result = await service.cancel_running_sync()
+    release.set()
+
+    assert cancel_result == {
+        "started": False,
+        "message": "Company sync cancelled",
+        "state": "cancelled",
+    }
+    runtime = sync_status.company_sync
+    assert runtime.is_running is False
+    assert runtime.error == "Company sync cancelled"
+
+
+@pytest.mark.asyncio
+async def test_company_cancel_idle_sync_returns_idle():
+    service = CompanyDataSyncService(company=CompanyService())
+
+    result = await service.cancel_running_sync()
+
+    assert result == {
+        "started": False,
+        "message": "Company sync is not running",
+        "state": "idle",
+    }
+
+
+@pytest.mark.asyncio
 async def test_company_fetch_rate_limit_then_success(monkeypatch):
     service = CompanyDataSyncService(company=CompanyService())
     service._sync_rate_limit_fixed_wait_seconds = 0.1

@@ -321,6 +321,14 @@ async def run_history_sync(
     return HistorySyncActionResponse(**result)
 
 
+@router.post("/history/cancel", response_model=HistorySyncActionResponse)
+async def cancel_history_sync(
+    _current_admin=Depends(get_current_admin_user),
+):
+    result = await vnstock_service.cancel_history_sync()
+    return HistorySyncActionResponse(**result)
+
+
 @router.post("/history/audit/run", response_model=HistoryAuditActionResponse)
 async def run_history_audit_sync(
     payload: HistoryAuditRunRequest,
@@ -355,6 +363,14 @@ async def run_history_audit_sync(
             detail=str(e),
         )
     return HistoryAuditActionResponse(**result)
+
+
+@router.post("/history/audit/cancel", response_model=HistorySyncActionResponse)
+async def cancel_history_audit_sync(
+    _current_admin=Depends(get_current_admin_user),
+):
+    result = await vnstock_service.cancel_history_audit_sync()
+    return HistorySyncActionResponse(**result)
 
 
 @router.post("/history/repair/run", response_model=HistorySyncActionResponse)
@@ -392,6 +408,14 @@ async def run_history_repair_sync(
     return HistorySyncActionResponse(**result)
 
 
+@router.post("/history/repair/cancel", response_model=HistorySyncActionResponse)
+async def cancel_history_repair_sync(
+    _current_admin=Depends(get_current_admin_user),
+):
+    result = await vnstock_service.cancel_history_repair_sync()
+    return HistorySyncActionResponse(**result)
+
+
 @router.post("/finance/run", response_model=HistorySyncActionResponse)
 async def run_finance_sync(
     payload: FinanceSyncRunRequest,
@@ -413,6 +437,14 @@ async def run_finance_sync(
     return HistorySyncActionResponse(**result)
 
 
+@router.post("/finance/cancel", response_model=HistorySyncActionResponse)
+async def cancel_finance_sync(
+    _current_admin=Depends(get_current_admin_user),
+):
+    result = await vnstock_service.cancel_finance_sync()
+    return HistorySyncActionResponse(**result)
+
+
 @router.post("/company/run", response_model=HistorySyncActionResponse)
 async def run_company_sync(
     payload: CompanySyncRunRequest,
@@ -431,6 +463,14 @@ async def run_company_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    return HistorySyncActionResponse(**result)
+
+
+@router.post("/company/cancel", response_model=HistorySyncActionResponse)
+async def cancel_company_sync(
+    _current_admin=Depends(get_current_admin_user),
+):
+    result = await vnstock_service.cancel_company_sync()
     return HistorySyncActionResponse(**result)
 
 

@@ -1788,6 +1788,11 @@ export const stockApi = {
         return response.data;
     },
 
+    async cancelHistorySync(): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/cancel');
+        return response.data;
+    },
+
     async runHistoryAudit(
         startDate: string,
         endDate: string,
@@ -1805,6 +1810,11 @@ export const stockApi = {
         return response.data;
     },
 
+    async cancelHistoryAudit(): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/audit/cancel');
+        return response.data;
+    },
+
     async runHistoryRepairSync(
         symbols: string[] | undefined,
         startDate: string,
@@ -1817,6 +1827,11 @@ export const stockApi = {
             start_date: startDate,
             end_date: endDate,
         });
+        return response.data;
+    },
+
+    async cancelHistoryRepairSync(): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/history/repair/cancel');
         return response.data;
     },
 
@@ -1837,6 +1852,11 @@ export const stockApi = {
         return response.data;
     },
 
+    async cancelFinanceSync(): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/finance/cancel');
+        return response.data;
+    },
+
     async runCompanySync(
         forceRestart: boolean = false,
         symbols?: string[],
@@ -1851,6 +1871,11 @@ export const stockApi = {
             quick_sync: quickSync,
             force_refresh: forceRefresh,
         });
+        return response.data;
+    },
+
+    async cancelCompanySync(): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/company/cancel');
         return response.data;
     },
 
