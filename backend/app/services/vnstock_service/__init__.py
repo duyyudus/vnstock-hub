@@ -326,6 +326,9 @@ class VnstockService:
     async def get_fund_performance_data(self) -> Dict[str, Any]:
         return await self.funds.get_fund_performance_data()
 
+    async def run_fund_sync(self, category: str = "ALL") -> Dict[str, Any]:
+        return await self.funds.run_fund_sync(category=category)
+
     async def get_fund_overview(self) -> Dict[str, Any]:
         return await self.funds.get_fund_overview()
 

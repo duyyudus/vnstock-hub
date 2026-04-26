@@ -18,6 +18,8 @@ class SyncStatusData:
     error: Optional[str] = None
     started_at: Optional[str] = None
     progress: float = 0.0  # 0.0 to 1.0
+    total_symbols: int = 0
+    processed_symbols: int = 0
 
 
 @dataclass
@@ -53,6 +55,8 @@ class GlobalSyncStatus:
         self._fund_performance_error: Optional[str] = None
         self._fund_performance_started_at: Optional[str] = None
         self._fund_performance_progress: float = 0.0
+        self._fund_performance_total_symbols = 0
+        self._fund_performance_processed_symbols = 0
 
         # History unified sync status
         self._history_sync_is_running = False
@@ -137,6 +141,8 @@ class GlobalSyncStatus:
                 error=self._fund_performance_error,
                 started_at=self._fund_performance_started_at,
                 progress=self._fund_performance_progress,
+                total_symbols=self._fund_performance_total_symbols,
+                processed_symbols=self._fund_performance_processed_symbols,
             )
 
     @property
@@ -280,8 +286,15 @@ class GlobalSyncStatus:
             self._fund_performance_started_at = datetime.now().isoformat()
             self._fund_performance_error = None
             self._fund_performance_progress = 0.0
+            self._fund_performance_total_symbols = 0
+            self._fund_performance_processed_symbols = 0
 
-    def update_fund_performance_progress(self, progress: float) -> None:
+    def update_fund_performance_progress(
+        self,
+        progress: float,
+        processed_symbols: Optional[int] = None,
+        total_symbols: Optional[int] = None,
+    ) -> None:
         """
         Update fund performance sync progress. Thread-safe.
 
@@ -290,6 +303,10 @@ class GlobalSyncStatus:
         """
         with self._lock:
             self._fund_performance_progress = min(1.0, max(0.0, progress))
+            if total_symbols is not None:
+                self._fund_performance_total_symbols = max(0, total_symbols)
+            if processed_symbols is not None:
+                self._fund_performance_processed_symbols = max(0, processed_symbols)
 
     def complete_fund_performance_sync(
         self,
@@ -307,6 +324,8 @@ class GlobalSyncStatus:
             self._fund_performance_is_syncing = False
             self._fund_performance_last_sync = datetime.now().isoformat()
             self._fund_performance_progress = 1.0 if success else self._fund_performance_progress
+            if success and self._fund_performance_total_symbols:
+                self._fund_performance_processed_symbols = self._fund_performance_total_symbols
             if not success:
                 self._fund_performance_error = error
 
@@ -529,6 +548,8 @@ class GlobalSyncStatus:
                     "error": self._fund_performance_error,
                     "started_at": self._fund_performance_started_at,
                     "progress": self._fund_performance_progress,
+                    "total_symbols": self._fund_performance_total_symbols,
+                    "processed_symbols": self._fund_performance_processed_symbols,
                 },
                 "history_sync": {
                     "sync": {

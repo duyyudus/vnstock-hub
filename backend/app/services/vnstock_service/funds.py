@@ -19,13 +19,11 @@ from app.core.logging_config import (
 )
 
 from .core import (
-    frontend_executor,
     background_executor,
     logger,
     bg_logger,
     api_circuit_breaker,
     CircuitOpenError,
-    RateLimitError,
     retry_with_backoff,
     _record_rate_limit,
     _is_rate_limit_error,
@@ -37,6 +35,10 @@ from .core import (
 
 class FundsService:
     """Fund-related operations, caching, and background sync."""
+
+    FUND_SYNC_CATEGORIES = {"STOCK", "BOND", "BALANCED"}
+    FUND_BENCHMARK_CACHE_SYMBOL = "__fund_benchmarks__"
+    FUND_BENCHMARK_CACHE_TYPE = "benchmark_performance"
 
     def __init__(self) -> None:
         # Fund holding caches (no DB backing): {key: (data, timestamp)}
@@ -63,6 +65,15 @@ class FundsService:
         if not last_updated:
             return False
         return (datetime.utcnow() - last_updated).total_seconds() < self._FUND_LISTING_DB_TTL
+
+    def _resolve_fund_sync_category(self, category: str | None) -> str | None:
+        normalized = (category or "ALL").strip().upper()
+        if normalized == "ALL":
+            return None
+        if normalized not in self.FUND_SYNC_CATEGORIES:
+            supported = ", ".join(["ALL", *sorted(self.FUND_SYNC_CATEGORIES)])
+            raise ValueError(f"Unsupported fund sync category '{category}'. Choose one of: {supported}.")
+        return normalized
 
     def _get_fund_listing_records_from_db_sync(
         self,
@@ -205,6 +216,10 @@ class FundsService:
         cache_key = "fund_benchmarks"
         if self._is_cache_valid(self._fund_benchmark_cache, cache_key, self._FUND_BENCHMARK_TTL):
             return self._fund_benchmark_cache[cache_key][0]
+        cached_benchmarks = self._get_fund_benchmarks_from_db_sync()
+        if cached_benchmarks:
+            self._fund_benchmark_cache[cache_key] = (cached_benchmarks, time.time())
+            return cached_benchmarks
         return None
 
     def _set_cached_fund_benchmarks(self, benchmarks: Dict[str, Any]) -> None:
@@ -212,19 +227,64 @@ class FundsService:
         if not benchmarks:
             return
         self._fund_benchmark_cache["fund_benchmarks"] = (benchmarks, time.time())
+        self._upsert_fund_benchmarks_db_sync(benchmarks)
+
+    def _get_fund_benchmarks_from_db_sync(self) -> Dict[str, Any] | None:
+        """Load cached fund benchmark performance from DB."""
+        from sqlalchemy.orm import Session
+
+        engine = get_sync_engine()
+        with Session(engine) as session:
+            stmt = select(FundDetailCache).where(
+                and_(
+                    FundDetailCache.symbol == self.FUND_BENCHMARK_CACHE_SYMBOL,
+                    FundDetailCache.detail_type == self.FUND_BENCHMARK_CACHE_TYPE,
+                )
+            )
+            record = session.execute(stmt).scalar_one_or_none()
+            if not record or not isinstance(record.data, dict):
+                return None
+            return record.data
+
+    def _upsert_fund_benchmarks_db_sync(self, benchmarks: Dict[str, Any]) -> None:
+        """Persist fund benchmark performance cache."""
+        from sqlalchemy.orm import Session
+
+        engine = get_sync_engine()
+        with Session(engine) as session:
+            stmt = select(FundDetailCache).where(
+                and_(
+                    FundDetailCache.symbol == self.FUND_BENCHMARK_CACHE_SYMBOL,
+                    FundDetailCache.detail_type == self.FUND_BENCHMARK_CACHE_TYPE,
+                )
+            )
+            record = session.execute(stmt).scalar_one_or_none()
+            if record:
+                record.data = benchmarks
+                record.updated_at = datetime.utcnow()
+            else:
+                session.add(FundDetailCache(
+                    symbol=self.FUND_BENCHMARK_CACHE_SYMBOL,
+                    detail_type=self.FUND_BENCHMARK_CACHE_TYPE,
+                    data=benchmarks,
+                    updated_at=datetime.utcnow(),
+                ))
+            session.commit()
 
     async def get_fund_listing(self, fund_type: str = "") -> List[Dict[str, Any]]:
         """
-        Fetch all available funds.
+        Fetch cached available funds.
         """
         cache_key = fund_type or "all"
         if self._is_cache_valid(self._fund_listing_cache, cache_key, self._FUND_LISTING_TTL):
             return self._fund_listing_cache[cache_key][0]
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(frontend_executor, self._fetch_fund_listing_sync, fund_type)
+        data, _ = await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._get_fund_listing_records_from_db_sync,
+            fund_type.upper() if fund_type else None,
+        )
 
-        # Update cache
         if data:
             self._fund_listing_cache[cache_key] = (data, time.time())
         return data
@@ -474,11 +534,11 @@ class FundsService:
     async def get_fund_nav_report(self, symbol: str) -> List[Dict[str, Any]]:
         """
         Fetch NAV (Net Asset Value) history for a specific fund.
-        Uses database as primary source, syncs from API only for missing/newer data.
+        Uses cached database data only.
         """
-        return await self._get_fund_nav_with_sync(symbol)
+        return await self._get_fund_nav_with_sync(symbol, auto_sync=False)
 
-    async def _get_fund_nav_with_sync(self, symbol: str) -> List[Dict[str, Any]]:
+    async def _get_fund_nav_with_sync(self, symbol: str, auto_sync: bool = True) -> List[Dict[str, Any]]:
         """
         Get NAV data from database, syncing missing data from API.
         """
@@ -503,7 +563,7 @@ class FundsService:
                     need_api_sync = True
 
             # Step 3: Sync from API if needed
-            if need_api_sync:
+            if need_api_sync and auto_sync:
                 loop = asyncio.get_event_loop()
                 api_records = await loop.run_in_executor(
                     background_executor,
@@ -699,21 +759,30 @@ class FundsService:
         ]
 
     async def get_fund_top_holding(self, symbol: str) -> List[Dict[str, Any]]:
-        """Fetch top stock holdings for a specific fund."""
+        """Fetch cached top stock holdings for a specific fund."""
         if self._is_cache_valid(self._fund_top_holding_cache, symbol, self._FUND_DETAILS_TTL):
             return self._fund_top_holding_cache[symbol][0]
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(frontend_executor, self._fetch_fund_top_holding_sync, symbol)
+        data, _ = await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._get_fund_detail_cache_sync,
+            symbol,
+            "top_holding",
+        )
 
         if data:
             self._fund_top_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_top_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
+    def _fetch_fund_top_holding_sync(
+        self,
+        symbol: str,
+        fail_fast: bool = True,
+        force_refresh: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Fetch fund top holdings synchronously."""
         cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "top_holding")
-        if is_fresh:
+        if is_fresh and not force_refresh:
             return cached_data
 
         stale_data = cached_data if cached_data else None
@@ -746,21 +815,30 @@ class FundsService:
             return stale_data or []
 
     async def get_fund_industry_holding(self, symbol: str) -> List[Dict[str, Any]]:
-        """Fetch industry allocation for a specific fund."""
+        """Fetch cached industry allocation for a specific fund."""
         if self._is_cache_valid(self._fund_industry_holding_cache, symbol, self._FUND_DETAILS_TTL):
             return self._fund_industry_holding_cache[symbol][0]
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(frontend_executor, self._fetch_fund_industry_holding_sync, symbol)
+        data, _ = await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._get_fund_detail_cache_sync,
+            symbol,
+            "industry_holding",
+        )
 
         if data:
             self._fund_industry_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_industry_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
+    def _fetch_fund_industry_holding_sync(
+        self,
+        symbol: str,
+        fail_fast: bool = True,
+        force_refresh: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Fetch fund industry holdings synchronously."""
         cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "industry_holding")
-        if is_fresh:
+        if is_fresh and not force_refresh:
             return cached_data
 
         stale_data = cached_data if cached_data else None
@@ -792,21 +870,30 @@ class FundsService:
             return stale_data or []
 
     async def get_fund_asset_holding(self, symbol: str) -> List[Dict[str, Any]]:
-        """Fetch asset type allocation for a specific fund."""
+        """Fetch cached asset type allocation for a specific fund."""
         if self._is_cache_valid(self._fund_asset_holding_cache, symbol, self._FUND_DETAILS_TTL):
             return self._fund_asset_holding_cache[symbol][0]
 
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(frontend_executor, self._fetch_fund_asset_holding_sync, symbol)
+        data, _ = await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._get_fund_detail_cache_sync,
+            symbol,
+            "asset_holding",
+        )
 
         if data:
             self._fund_asset_holding_cache[symbol] = (data, time.time())
         return data
 
-    def _fetch_fund_asset_holding_sync(self, symbol: str, fail_fast: bool = True) -> List[Dict[str, Any]]:
+    def _fetch_fund_asset_holding_sync(
+        self,
+        symbol: str,
+        fail_fast: bool = True,
+        force_refresh: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Fetch fund asset holdings synchronously."""
         cached_data, is_fresh = self._get_fund_detail_cache_sync(symbol, "asset_holding")
-        if is_fresh:
+        if is_fresh and not force_refresh:
             return cached_data
 
         stale_data = cached_data if cached_data else None
@@ -852,33 +939,12 @@ class FundsService:
             data = data.copy()
             data['is_stale'] = False
             data['is_syncing'] = sync_status.fund_performance.is_syncing
-            # Fill benchmarks from cache or fetch if missing
+            # Read path is cache-only; explicit Fund Sync refreshes benchmark cache.
             if not data.get('benchmarks'):
                 cached_benchmarks = self._get_cached_fund_benchmarks()
                 if cached_benchmarks:
                     data['benchmarks'] = cached_benchmarks
-                elif not sync_status.is_rate_limited and api_circuit_breaker.can_proceed():
-                    try:
-                        benchmarks = await loop.run_in_executor(
-                            frontend_executor,
-                            self._fetch_fund_benchmarks_sync,
-                            data.get('common_start_date')
-                        )
-                        if benchmarks:
-                            self._set_cached_fund_benchmarks(benchmarks)
-                            data['benchmarks'] = benchmarks
-                    except (CircuitOpenError, RateLimitError) as e:
-                        logger.warning(f"Skipping fund benchmarks fetch due to rate limit: {e}")
-                    except Exception as e:
-                        logger.warning(f"Error fetching fund benchmarks: {e}")
-            # Trigger background sync if needed (non-blocking)
-            self._trigger_background_sync_if_needed()
             return data
-
-        # No DB data available - kick off background sync and return empty response
-        should_sync = not sync_status.is_rate_limited
-        if should_sync:
-            self._trigger_background_sync_if_needed(force=True)
 
         return {
             "funds": [],
@@ -886,34 +952,40 @@ class FundsService:
             "common_start_date": None,
             "last_updated": None,
             "is_stale": True,
-            "is_syncing": should_sync
+            "is_syncing": sync_status.fund_performance.is_syncing
         }
 
-    def _trigger_background_sync_if_needed(self, force: bool = False):
-        """Trigger background sync if not already running and data might be stale."""
-        # Check if already syncing
+    async def run_fund_sync(self, category: str = "ALL") -> Dict[str, Any]:
+        """Start an explicit admin-triggered fund sync."""
+        resolved_category = self._resolve_fund_sync_category(category)
+        category_label = resolved_category or "ALL"
+
         if sync_status.fund_performance.is_syncing:
-            return
+            return {
+                "started": False,
+                "message": "Fund sync is already running",
+                "state": "running",
+            }
 
-        # Check if there's an existing task that's still running
         if self._background_sync_task and not self._background_sync_task.done():
-            return
+            return {
+                "started": False,
+                "message": "Fund sync is already running",
+                "state": "running",
+            }
 
-        # Check if last sync was successful recently (within 6 hours)
-        if not force and sync_status.fund_performance.last_sync:
-            try:
-                last_sync_dt = datetime.fromisoformat(sync_status.fund_performance.last_sync)
-                if (datetime.now() - last_sync_dt).total_seconds() < 6 * 3600:
-                    return
-            except (ValueError, TypeError):
-                pass
+        self._background_sync_task = asyncio.create_task(
+            self._background_sync_coroutine(category=resolved_category)
+        )
+        return {
+            "started": True,
+            "message": f"Fund sync started for {category_label}",
+            "state": "running",
+        }
 
-        # Start background sync
-        self._background_sync_task = asyncio.create_task(self._background_sync_coroutine())
-
-    async def _background_sync_coroutine(self):
+    async def _background_sync_coroutine(self, category: str | None = None):
         """
-        Background coroutine to sync fund NAV data incrementally.
+        Background coroutine to sync fund data incrementally.
         """
         BATCH_SIZE = 5
         BATCH_DELAY_SECONDS = 2.0  # Delay between batches to avoid rate limiting
@@ -925,7 +997,8 @@ class FundsService:
             loop = asyncio.get_event_loop()
             listing_df = await loop.run_in_executor(
                 background_executor,
-                self._get_fund_listing_for_sync
+                self._fetch_live_fund_listing_for_sync,
+                category,
             )
 
             if listing_df is None or listing_df.empty:
@@ -945,7 +1018,14 @@ class FundsService:
                 sync_status.complete_fund_performance_sync(success=True)
                 return
 
-            bg_logger.info(f"Starting incremental fund sync: {total_funds} funds in batches of {BATCH_SIZE}")
+            sync_status.update_fund_performance_progress(
+                0.0,
+                processed_symbols=0,
+                total_symbols=total_funds,
+            )
+
+            category_label = category or "ALL"
+            bg_logger.info(f"Starting fund sync ({category_label}): {total_funds} funds in batches of {BATCH_SIZE}")
 
             # Step 2: Process funds in batches
             processed = 0
@@ -975,8 +1055,8 @@ class FundsService:
                 try:
                     batch_processed, batch_errors = await loop.run_in_executor(
                         background_executor,
-                        self._sync_fund_nav_batch_sync,
-                        batch_symbols
+                        self._sync_fund_data_batch_sync,
+                        batch_symbols,
                     )
                     processed += batch_processed
                     errors += batch_errors
@@ -990,7 +1070,11 @@ class FundsService:
 
                 # Update progress
                 progress = processed / total_funds
-                sync_status.update_fund_performance_progress(progress)
+                sync_status.update_fund_performance_progress(
+                    progress,
+                    processed_symbols=processed,
+                    total_symbols=total_funds,
+                )
 
                 # Delay between batches (non-blocking)
                 if batch_end < total_funds:
@@ -1003,54 +1087,70 @@ class FundsService:
                     error=f"Too many errors: {errors}/{total_funds} funds failed"
                 )
             else:
-                log_background_complete("Fund NAV Sync", f"Synced {processed}/{total_funds} funds")
+                try:
+                    data = await loop.run_in_executor(
+                        background_executor,
+                        lambda: self._compute_fund_performance_sync(skip_api_sync=True),
+                    )
+                    common_start_date = data.get("common_start_date") if data else None
+                    benchmarks = await loop.run_in_executor(
+                        background_executor,
+                        self._fetch_fund_benchmarks_sync,
+                        common_start_date,
+                    )
+                    if benchmarks:
+                        self._set_cached_fund_benchmarks(benchmarks)
+                except Exception as e:
+                    bg_logger.warning(f"Error refreshing fund benchmark cache: {e}")
+
+                log_background_complete("Fund Sync", f"Synced {processed}/{total_funds} funds")
                 sync_status.complete_fund_performance_sync(success=True)
 
         except Exception as e:
-            log_background_error("Fund NAV Sync", str(e))
+            log_background_error("Fund Sync", str(e))
             sync_status.complete_fund_performance_sync(success=False, error=str(e))
 
-    def _get_fund_listing_for_sync(self):
-        """Get fund listing for background sync, using cache if available."""
-        # Check DB cache first (weekly)
-        db_df, last_updated = self._get_fund_listing_df_from_db_sync()
-        if db_df is not None and self._fund_listing_is_fresh(last_updated):
-            self._fund_listing_df_cache = db_df
-            self._fund_listing_df_timestamp = time.time()
-            return db_df
-
-        # Check in-memory cache
-        if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
-            return self._fund_listing_df_cache
-
+    def _fetch_live_fund_listing_for_sync(self, category: str | None):
+        """Fetch a live fund listing for explicit sync, with cached DB fallback."""
         try:
             def fetch_listing():
                 fund = get_thread_local_fund_api()
-                return fund.listing()
+                return fund.listing(fund_type=category or "")
 
             listing_df = retry_with_backoff(fetch_listing, max_retries=2)
-            if listing_df is not None and not listing_df.empty:
-                listing_df = _flatten_columns(listing_df)
-                self._fund_listing_df_cache = listing_df
-                self._fund_listing_df_timestamp = time.time()
-                records = listing_df.to_dict('records')
-                for record in records:
-                    self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
-                    self._normalize_fund_field(record, 'name', ['name', 'short_name'])
-                    self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
-                    for key, value in record.items():
-                        if pd.isna(value):
-                            record[key] = None
-                self._upsert_fund_listing_db_sync(records)
-            return listing_df
-        except Exception as e:
-            bg_logger.warning(f"Failed to fetch fund listing: {e}")
-            # Return stale cache as fallback
-            if self._fund_listing_df_cache is not None:
-                return self._fund_listing_df_cache
-            return db_df
+            if listing_df is None or listing_df.empty:
+                return listing_df
 
-    def _sync_single_fund_nav(self, symbol: str, db_session=None, fund_api=None) -> bool:
+            listing_df = _flatten_columns(listing_df)
+            self._fund_listing_df_cache = listing_df
+            self._fund_listing_df_timestamp = time.time()
+
+            records = listing_df.to_dict('records')
+            for record in records:
+                self._normalize_fund_field(record, 'symbol', ['short_name', 'fund_code'])
+                self._normalize_fund_field(record, 'name', ['name', 'short_name'])
+                self._normalize_fund_field(record, 'fund_owner', ['fund_owner_name', 'management_company'])
+                for key, value in record.items():
+                    if pd.isna(value):
+                        record[key] = None
+
+            self._upsert_fund_listing_db_sync(records)
+            self._fund_listing_cache.pop("all", None)
+            if category:
+                self._fund_listing_cache.pop(category, None)
+            return pd.DataFrame(records)
+        except Exception as e:
+            bg_logger.warning(f"Failed to fetch live fund listing for sync: {e}")
+            records, _ = self._get_fund_listing_records_from_db_sync(category)
+            return pd.DataFrame(records) if records else None
+
+    def _sync_single_fund_nav(
+        self,
+        symbol: str,
+        db_session=None,
+        fund_api=None,
+        force_refresh: bool = False,
+    ) -> bool:
         """
         Sync NAV data for a single fund from API to database.
 
@@ -1088,7 +1188,7 @@ class FundsService:
             latest_record = db_session.execute(stmt).scalar_one_or_none()
 
             # Skip if data is fresh (within 3 days)
-            if latest_record:
+            if latest_record and not force_refresh:
                 days_old = (date.today() - latest_record.date).days
                 if days_old <= 3:
                     bg_logger.debug(f"Fund {symbol} NAV data is fresh ({days_old} days old), skipping")
@@ -1151,12 +1251,10 @@ class FundsService:
             if own_session:
                 db_session.close()
 
-    def _sync_fund_nav_batch_sync(self, symbols: List[str]) -> tuple[int, int]:
+    def _sync_fund_data_batch_sync(self, symbols: List[str]) -> tuple[int, int]:
         """
-        Sync NAV data for a batch of funds in a single thread.
-        Reuses one Fund API instance and DB session to reduce rate-limit pressure.
+        Sync NAV and detail caches for a batch of funds.
         """
-        # Keep under free-tier rate limit (60 req/min) with a small per-symbol delay
         per_symbol_delay = 1.1
         from sqlalchemy.orm import Session
         from app.core.circuit_breaker import api_circuit_breaker, CircuitOpenError
@@ -1169,7 +1267,7 @@ class FundsService:
         except CircuitOpenError:
             raise
         except Exception as e:
-            raise
+            raise e
 
         engine = get_sync_engine()
         processed = 0
@@ -1179,18 +1277,31 @@ class FundsService:
             for symbol in symbols:
                 if not api_circuit_breaker.can_proceed():
                     raise CircuitOpenError("Circuit breaker open - aborting fund batch")
+
+                symbol_failed = False
                 try:
-                    ok = self._sync_single_fund_nav(symbol, db_session=db_session, fund_api=fund_api)
-                    processed += 1
-                    if not ok:
-                        errors += 1
-                    if per_symbol_delay:
-                        time.sleep(per_symbol_delay)
+                    if not self._sync_single_fund_nav(
+                        symbol,
+                        db_session=db_session,
+                        fund_api=fund_api,
+                        force_refresh=True,
+                    ):
+                        symbol_failed = True
+
+                    self._fetch_fund_top_holding_sync(symbol, force_refresh=True)
+                    self._fetch_fund_industry_holding_sync(symbol, force_refresh=True)
+                    self._fetch_fund_asset_holding_sync(symbol, force_refresh=True)
                 except CircuitOpenError:
                     raise
                 except Exception as e:
-                    errors += 1
-                    bg_logger.error(f"Error syncing fund {symbol}: {e}")
+                    symbol_failed = True
+                    bg_logger.error(f"Error syncing fund dataset for {symbol}: {e}")
+                finally:
+                    processed += 1
+                    if symbol_failed:
+                        errors += 1
+                    if per_symbol_delay:
+                        time.sleep(per_symbol_delay)
 
         return processed, errors
 
@@ -1210,17 +1321,11 @@ class FundsService:
             # Step 1: Get all funds (with retry and cache)
             listing_df = None
 
-            # Check cache first
-            if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
-                listing_df = self._fund_listing_df_cache
-                bg_logger.debug("Using cached fund listing for performance calculation")
-
             fund_api = None
             if skip_api_sync:
-                # Avoid API calls; fall back to DB-derived symbols if cache missing
-                if listing_df is None:
-                    db_df, _ = self._get_fund_listing_df_from_db_sync()
-                    listing_df = db_df
+                # Avoid API calls; use the DB listing so category-specific sync cache does not narrow results.
+                db_df, _ = self._get_fund_listing_df_from_db_sync()
+                listing_df = db_df
                 if listing_df is None:
                     engine = get_sync_engine()
                     with Session(engine) as db_session:
@@ -1237,6 +1342,11 @@ class FundsService:
                 if listing_df is None or listing_df.empty:
                     return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}
             else:
+                # Check cache first for live/API mode.
+                if self._fund_listing_df_cache is not None and (time.time() - self._fund_listing_df_timestamp < self._FUND_LISTING_TTL):
+                    listing_df = self._fund_listing_df_cache
+                    bg_logger.debug("Using cached fund listing for performance calculation")
+
                 # Bail out early if already rate limited
                 if sync_status.is_rate_limited or api_circuit_breaker.is_open:
                     return {"funds": [], "benchmarks": {}, "common_start_date": None, "last_updated": None}

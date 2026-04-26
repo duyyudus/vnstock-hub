@@ -4,6 +4,7 @@ import { useAuthUser } from '../auth/useAuthUser';
 import {
     type IndexInfo,
     stockApi,
+    type FundSyncCategory,
     type HistoryAuditActionResponse,
     type HistorySyncActionResponse,
     type SyncStatusResponse,
@@ -11,6 +12,7 @@ import {
 import { formatDateInputValue, getErrorMessage, parseSymbolsInput, type SyncCollectionScope } from './adminUtils';
 import { CompanySyncTab } from './tabs/CompanySyncTab';
 import { FinanceSyncTab } from './tabs/FinanceSyncTab';
+import { FundSyncTab } from './tabs/FundSyncTab';
 import { HistorySyncTab } from './tabs/HistorySyncTab';
 import { NewsMonitoringTab } from './tabs/NewsMonitoringTab';
 import { SchedulerTab } from './tabs/SchedulerTab';
@@ -18,8 +20,8 @@ import { SettingsTab } from './tabs/SettingsTab';
 
 const REFRESH_INTERVAL_MS = 5000;
 
-type AdminTab = 'settings' | 'price' | 'finance' | 'company' | 'scheduler' | 'news';
-type TransientJobType = 'price' | 'finance' | 'company';
+type AdminTab = 'settings' | 'price' | 'finance' | 'company' | 'fund' | 'scheduler' | 'news';
+type TransientJobType = 'price' | 'finance' | 'company' | 'fund';
 
 export const AdminPage: React.FC = () => {
     const user = useAuthUser();
@@ -62,6 +64,7 @@ export const AdminPage: React.FC = () => {
     const [companyForceRestart, setCompanyForceRestart] = useState(false);
     const [companyQuickSync, setCompanyQuickSync] = useState(false);
     const [companyForceRefresh, setCompanyForceRefresh] = useState(false);
+    const [fundCategory, setFundCategory] = useState<FundSyncCategory>('ALL');
     const [portfolioCollectionSymbols, setPortfolioCollectionSymbols] = useState<string[]>([]);
     const [tradingCollectionSymbols, setTradingCollectionSymbols] = useState<string[]>([]);
 
@@ -70,6 +73,7 @@ export const AdminPage: React.FC = () => {
     const [repairRunning, setRepairRunning] = useState(false);
     const [financeRunning, setFinanceRunning] = useState(false);
     const [companyRunning, setCompanyRunning] = useState(false);
+    const [fundRunning, setFundRunning] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [isActionMessageTransient, setIsActionMessageTransient] = useState(false);
     const [transientJobType, setTransientJobType] = useState<TransientJobType | null>(null);
@@ -365,29 +369,42 @@ export const AdminPage: React.FC = () => {
         );
     };
 
+    const handleRunFundSync = async () => {
+        await runAction(
+            () => stockApi.runFundSync(fundCategory),
+            setFundRunning,
+            undefined,
+            'fund',
+        );
+    };
+
     const runtimeSync = syncStatus?.history_sync.sync;
     const runtimeAudit = syncStatus?.history_sync.audit;
     const runtimeRepair = syncStatus?.history_sync.repair;
     const runtimeFinance = syncStatus?.finance_sync;
     const runtimeCompany = syncStatus?.company_sync;
+    const runtimeFund = syncStatus?.fund_performance;
 
     const runtimeSyncActive = Boolean(runtimeSync?.is_running);
     const runtimeAuditActive = Boolean(runtimeAudit?.is_running);
     const runtimeRepairActive = Boolean(runtimeRepair?.is_running);
     const runtimeFinanceActive = Boolean(runtimeFinance?.is_running);
     const runtimeCompanyActive = Boolean(runtimeCompany?.is_running);
+    const runtimeFundActive = Boolean(runtimeFund?.is_syncing);
 
     const syncActive = syncRunning || runtimeSyncActive;
     const auditActive = auditRunning || runtimeAuditActive;
     const repairActive = repairRunning || runtimeRepairActive;
     const financeActive = financeRunning || runtimeFinanceActive;
     const companyActive = companyRunning || runtimeCompanyActive;
-    const anyJobActive = syncActive || auditActive || repairActive || financeActive || companyActive;
+    const fundActive = fundRunning || runtimeFundActive;
+    const anyJobActive = syncActive || auditActive || repairActive || financeActive || companyActive || fundActive;
     const syncActionDisabled = loadingStatus || (anyJobActive && !runtimeSyncActive);
     const auditActionDisabled = loadingStatus || (anyJobActive && !runtimeAuditActive);
     const repairActionDisabled = loadingStatus || (anyJobActive && !runtimeRepairActive);
     const financeActionDisabled = loadingStatus || (anyJobActive && !runtimeFinanceActive);
     const companyActionDisabled = loadingStatus || (anyJobActive && !runtimeCompanyActive);
+    const fundActionDisabled = loadingStatus || anyJobActive;
 
     useEffect(() => {
         if (!isActionMessageTransient || !transientJobType) {
@@ -397,7 +414,9 @@ export const AdminPage: React.FC = () => {
             ? runtimeSyncActive
             : transientJobType === 'finance'
                 ? runtimeFinanceActive
-                : runtimeCompanyActive;
+                : transientJobType === 'company'
+                    ? runtimeCompanyActive
+                    : runtimeFundActive;
 
         if (transientRuntimeActive) {
             setHasSeenTransientRuntimeActive(true);
@@ -414,6 +433,7 @@ export const AdminPage: React.FC = () => {
         hasSeenTransientRuntimeActive,
         isActionMessageTransient,
         runtimeCompanyActive,
+        runtimeFundActive,
         runtimeFinanceActive,
         runtimeSyncActive,
         transientJobType,
@@ -443,6 +463,11 @@ export const AdminPage: React.FC = () => {
         const value = runtimeCompany?.progress ?? 0;
         return Math.max(0, Math.min(100, Math.round(value * 100)));
     }, [runtimeCompany?.progress]);
+
+    const fundProgressPercent = useMemo(() => {
+        const value = runtimeFund?.progress ?? 0;
+        return Math.max(0, Math.min(100, Math.round(value * 100)));
+    }, [runtimeFund?.progress]);
 
     if (!canAccess) {
         return (
@@ -525,6 +550,13 @@ export const AdminPage: React.FC = () => {
                         onClick={() => setActiveTab('company')}
                     >
                         Company Sync
+                    </button>
+                    <button
+                        role="tab"
+                        className={`tab ${activeTab === 'fund' ? 'tab-active' : ''}`}
+                        onClick={() => setActiveTab('fund')}
+                    >
+                        Fund Sync
                     </button>
                     <button
                         role="tab"
@@ -653,6 +685,19 @@ export const AdminPage: React.FC = () => {
                         companyCancelable={runtimeCompanyActive}
                         portfolioCollectionCount={portfolioCollectionSymbols.length}
                         tradingCollectionCount={tradingCollectionSymbols.length}
+                    />
+                ) : null}
+
+                {activeTab === 'fund' ? (
+                    <FundSyncTab
+                        runtimeFund={runtimeFund}
+                        fundProgressPercent={fundProgressPercent}
+                        fundCategory={fundCategory}
+                        onFundCategoryChange={setFundCategory}
+                        onRunFundSync={handleRunFundSync}
+                        fundActive={fundActive}
+                        anyJobActive={anyJobActive}
+                        actionDisabled={fundActionDisabled}
                     />
                 ) : null}
 

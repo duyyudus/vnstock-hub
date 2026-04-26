@@ -1172,6 +1172,9 @@ export interface SyncStatusItem {
     last_sync: string | null;
     error: string | null;
     started_at: string | null;
+    progress: number;
+    total_symbols: number;
+    processed_symbols: number;
 }
 
 export interface HistoryJobStatus {
@@ -1213,6 +1216,8 @@ export interface HistorySyncActionResponse {
     start_date?: string | null;
     end_date?: string | null;
 }
+
+export type FundSyncCategory = 'ALL' | 'STOCK' | 'BOND' | 'BALANCED';
 
 export interface HistoryAuditSymbolResult {
     symbol: string;
@@ -1914,6 +1919,13 @@ export const stockApi = {
 
     async cancelCompanySync(): Promise<HistorySyncActionResponse> {
         const response = await apiClient.post<HistorySyncActionResponse>('/sync/company/cancel');
+        return response.data;
+    },
+
+    async runFundSync(category: FundSyncCategory = 'ALL'): Promise<HistorySyncActionResponse> {
+        const response = await apiClient.post<HistorySyncActionResponse>('/sync/funds/run', {
+            category,
+        });
         return response.data;
     },
 

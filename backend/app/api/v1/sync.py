@@ -2,7 +2,7 @@
 Sync status and control API endpoints.
 """
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -28,6 +28,9 @@ class SyncStatusItem(BaseModel):
     last_sync: Optional[str] = None
     error: Optional[str] = None
     started_at: Optional[str] = None
+    progress: float = 0.0
+    total_symbols: int = 0
+    processed_symbols: int = 0
 
 
 class HistoryJobStatusResponse(BaseModel):
@@ -80,6 +83,10 @@ class CompanySyncRunRequest(BaseModel):
     index_symbol: Optional[str] = None
     quick_sync: bool = False
     force_refresh: bool = False
+
+
+class FundSyncRunRequest(BaseModel):
+    category: Literal["ALL", "STOCK", "BOND", "BALANCED"] = "ALL"
 
 
 class HistoryAuditRunRequest(BaseModel):
@@ -229,6 +236,9 @@ async def get_sync_status():
             last_sync=sync_status.fund_performance.last_sync,
             error=sync_status.fund_performance.error,
             started_at=sync_status.fund_performance.started_at,
+            progress=sync_status.fund_performance.progress,
+            total_symbols=sync_status.fund_performance.total_symbols,
+            processed_symbols=sync_status.fund_performance.processed_symbols,
         ),
         history_sync=HistorySyncStatusResponse(
             sync=HistoryJobStatusResponse(
@@ -471,6 +481,21 @@ async def cancel_company_sync(
     _current_admin=Depends(get_current_admin_user),
 ):
     result = await vnstock_service.cancel_company_sync()
+    return HistorySyncActionResponse(**result)
+
+
+@router.post("/funds/run", response_model=HistorySyncActionResponse)
+async def run_fund_sync(
+    payload: FundSyncRunRequest,
+    _current_admin=Depends(get_current_admin_user),
+):
+    try:
+        result = await vnstock_service.run_fund_sync(category=payload.category)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
     return HistorySyncActionResponse(**result)
 
 

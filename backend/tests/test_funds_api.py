@@ -1,6 +1,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
+from datetime import date, timedelta
+import pandas as pd
 from httpx import AsyncClient
+from app.db.models import FundNav
 from app.services.vnstock_service import vnstock_service
 from app.services.vnstock_service.funds import FundsService
 
@@ -202,6 +205,138 @@ def test_build_fund_overview_sums_stock_holdings_by_sector():
             "holding_updated_at": "2026-02-02",
         },
     ]
+
+
+@pytest.mark.parametrize(
+    ("category", "expected"),
+    [
+        ("ALL", None),
+        ("STOCK", "STOCK"),
+        ("BOND", "BOND"),
+        ("BALANCED", "BALANCED"),
+        ("stock", "STOCK"),
+    ],
+)
+def test_resolve_fund_sync_category(category, expected):
+    service = FundsService()
+    assert service._resolve_fund_sync_category(category) == expected
+
+
+def test_resolve_fund_sync_category_rejects_invalid_value():
+    service = FundsService()
+    with pytest.raises(ValueError, match="Unsupported fund sync category"):
+        service._resolve_fund_sync_category("ETF")
+
+
+@pytest.mark.asyncio
+async def test_get_fund_top_holding_uses_cached_db_data_without_fetching(monkeypatch):
+    service = FundsService()
+    cached_data = [{"ticker": "TCB", "allocation": 10.5}]
+
+    monkeypatch.setattr(
+        service,
+        "_get_fund_detail_cache_sync",
+        lambda symbol, detail_type: (cached_data, False),
+    )
+
+    def fail_fetch(symbol):
+        raise AssertionError("fund detail read should not fetch from API")
+
+    monkeypatch.setattr(service, "_fetch_fund_top_holding_sync", fail_fetch)
+
+    assert await service.get_fund_top_holding("FUND1") == cached_data
+
+
+@pytest.mark.asyncio
+async def test_get_fund_nav_report_uses_cached_db_data_without_fetching(monkeypatch, db_session):
+    service = FundsService()
+    stale_date = date.today() - timedelta(days=30)
+    db_session.add(FundNav(symbol="FUND1", date=stale_date, nav=10000))
+    await db_session.commit()
+
+    def fail_fetch(symbol):
+        raise AssertionError("fund NAV read should not fetch from API")
+
+    monkeypatch.setattr(service, "_fetch_fund_nav_from_api_sync", fail_fetch)
+
+    data = await service.get_fund_nav_report("FUND1")
+
+    assert len(data) == 1
+    assert data[0]["nav"] == 10000.0
+
+
+def test_fund_performance_cache_only_uses_db_listing_not_category_memory_cache(monkeypatch):
+    service = FundsService()
+    service._fund_listing_df_cache = pd.DataFrame([
+        {"symbol": "BAL1", "name": "Balanced 1", "fund_type": "Quỹ cân bằng"},
+    ])
+    service._fund_listing_df_timestamp = 9999999999.0
+
+    monkeypatch.setattr(
+        service,
+        "_get_fund_listing_df_from_db_sync",
+        lambda: (
+            pd.DataFrame([
+                {"symbol": "STOCK1", "name": "Stock 1", "fund_type": "Quỹ cổ phiếu"},
+                {"symbol": "BAL1", "name": "Balanced 1", "fund_type": "Quỹ cân bằng"},
+            ]),
+            None,
+        ),
+    )
+
+    def fake_nav_records(db_session, symbol, fund_api, skip_api_sync=False, fail_fast=True):
+        return [
+            {"date": (date(2026, 1, 1) + timedelta(days=day)).isoformat(), "nav": 100 + day}
+            for day in range(12)
+        ]
+
+    monkeypatch.setattr(service, "_get_fund_nav_with_sync_db", fake_nav_records)
+
+    result = service._compute_fund_performance_sync(skip_api_sync=True)
+
+    assert {fund["symbol"] for fund in result["funds"]} == {"STOCK1", "BAL1"}
+
+
+@pytest.mark.asyncio
+async def test_get_fund_performance_uses_db_cached_benchmarks(monkeypatch):
+    service = FundsService()
+    benchmark_payload = {
+        "VNINDEX": {
+            "symbol": "VNINDEX",
+            "name": "VN-Index",
+            "nav_history": [{"date": "2026-01-04", "normalized_nav": 100, "raw_nav": 1200}],
+            "returns": {},
+            "risk_metrics": {},
+            "yearly_returns": {},
+        }
+    }
+    service._upsert_fund_benchmarks_db_sync(benchmark_payload)
+    service._fund_benchmark_cache.clear()
+
+    monkeypatch.setattr(
+        service,
+        "_compute_fund_performance_sync",
+        lambda skip_api_sync=False: {
+            "funds": [
+                {
+                    "symbol": "FUND1",
+                    "name": "Fund 1",
+                    "data_start_date": "2026-01-01",
+                    "nav_history": [],
+                    "returns": {},
+                    "risk_metrics": {},
+                    "yearly_returns": {},
+                }
+            ],
+            "benchmarks": {},
+            "common_start_date": "2026-01-01",
+            "last_updated": "2026-01-10T00:00:00",
+        },
+    )
+
+    data = await service.get_fund_performance_data()
+
+    assert data["benchmarks"] == benchmark_payload
 
 @pytest.mark.asyncio
 async def test_get_fund_top_holding(client: AsyncClient):

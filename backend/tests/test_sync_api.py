@@ -17,6 +17,9 @@ async def test_get_sync_status_includes_unified_history_sync(client):
 
     payload = response.json()
     assert "fund_performance" in payload
+    assert "progress" in payload["fund_performance"]
+    assert "processed_symbols" in payload["fund_performance"]
+    assert "total_symbols" in payload["fund_performance"]
     assert "history_sync" in payload
     assert "sync" in payload["history_sync"]
     assert "audit" in payload["history_sync"]
@@ -393,6 +396,55 @@ async def test_run_company_sync_invalid_index_returns_400(client):
 
     assert response.status_code == 400
     assert "Unsupported index symbol" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_run_fund_sync_requires_admin_auth(client):
+    response = await client.post("/api/v1/sync/funds/run", json={"category": "ALL"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_run_fund_sync_with_admin_calls_service(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        with patch.object(
+            vnstock_service,
+            "run_fund_sync",
+            AsyncMock(return_value={"started": True, "message": "Fund sync started", "state": "running"}),
+        ) as mock_run:
+            response = await client.post(
+                "/api/v1/sync/funds/run",
+                json={"category": "STOCK"},
+            )
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["started"] is True
+    assert data["state"] == "running"
+    mock_run.assert_awaited_once_with(category="STOCK")
+
+
+@pytest.mark.asyncio
+async def test_run_fund_sync_rejects_invalid_category(client):
+    async def _admin_override():
+        return SimpleNamespace(id=1, email="admin@example.com")
+
+    app.dependency_overrides[get_current_admin_user] = _admin_override
+    try:
+        response = await client.post(
+            "/api/v1/sync/funds/run",
+            json={"category": "ETF"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

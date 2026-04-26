@@ -31,17 +31,6 @@ interface EnrichedTopHoldingRecord extends FundApiRecord {
     company_name?: string;
 }
 
-interface ApiErrorResponse {
-    status?: number;
-    data?: {
-        retry_after?: number;
-    };
-}
-
-interface ApiErrorLike {
-    response?: ApiErrorResponse;
-}
-
 const getStringValue = (value: unknown): string | null => {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
@@ -69,12 +58,9 @@ export const FundsTab: React.FC = () => {
     const [performanceData, setPerformanceData] = useState<FundPerformanceData | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(true);
     const [performanceError, setPerformanceError] = useState<string | null>(null);
-    const [performanceWarning, setPerformanceWarning] = useState<string | null>(null);
     const [chartType, setChartType] = useState<ChartType>('growth');
     const [benchmark, setBenchmark] = useState<Benchmark>('VNINDEX');
     const [startYear, setStartYear] = useState<number>(() => new Date().getFullYear());
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null);
 
     // --- Individual Fund State ---
     const [funds, setFunds] = useState<FundInfo[]>([]);
@@ -113,12 +99,9 @@ export const FundsTab: React.FC = () => {
         const fetchPerformanceData = async () => {
             setLoadingPerformance(true);
             setPerformanceError(null);
-            setPerformanceWarning(null);
             try {
                 const response = await stockApi.getFundPerformance();
                 setPerformanceData(response);
-                setIsSyncing(response.is_syncing || response.is_stale || false);
-                setRateLimitUntil(null);
 
                 if (response.funds.length > 0) {
                     const currentYear = new Date().getFullYear();
@@ -137,20 +120,8 @@ export const FundsTab: React.FC = () => {
                     }
                 }
             } catch (err) {
-                const apiError = err as ApiErrorLike;
-                const status = apiError?.response?.status;
-                const retryAfter = apiError?.response?.data?.retry_after;
-
-                if (status === 429 || status === 503) {
-                    const delayMs = (typeof retryAfter === 'number' ? retryAfter : 30) * 1000;
-                    setPerformanceWarning('Rate limit reached. Retrying automatically...');
-                    setIsSyncing(false);
-                    setRateLimitUntil(Date.now() + delayMs);
-                    setTimeout(fetchPerformanceData, delayMs);
-                } else {
-                    console.error('Error fetching fund performance:', err);
-                    setPerformanceError('Failed to load fund performance data.');
-                }
+                console.error('Error fetching fund performance:', err);
+                setPerformanceError('Failed to load fund performance data.');
             } finally {
                 setLoadingPerformance(false);
             }
@@ -158,30 +129,6 @@ export const FundsTab: React.FC = () => {
 
         fetchPerformanceData();
     }, []);
-
-
-
-    // Poll for fresh data when syncing
-    useEffect(() => {
-        if (!isSyncing) return;
-        if (rateLimitUntil && Date.now() < rateLimitUntil) return;
-
-        const pollForFreshData = async () => {
-            try {
-                const response = await stockApi.getFundPerformance();
-                if (!response.is_syncing && !response.is_stale) {
-                    setPerformanceData(response);
-                    setIsSyncing(false);
-                }
-            } catch (err) {
-                console.error('Error polling for fresh performance data:', err);
-            }
-        };
-
-        const interval = setInterval(pollForFreshData, 5000);
-        return () => clearInterval(interval);
-    }, [isSyncing, rateLimitUntil]);
-
     // Performance Memos
     const availableYears = useMemo(() => {
         if (!performanceData?.funds) return [];
@@ -488,11 +435,6 @@ export const FundsTab: React.FC = () => {
                     </div>
                 ) : (
                     <>
-                        {performanceWarning && (
-                            <div className="alert alert-warning shadow-lg">
-                                <span>{performanceWarning}</span>
-                            </div>
-                        )}
                         {/* Performance Controls */}
                         <div className="card bg-base-100 shadow-md border border-base-300">
                             <div className="card-body p-4">
@@ -549,7 +491,7 @@ export const FundsTab: React.FC = () => {
 
                                     <div className="ml-auto flex items-center gap-4 text-sm text-base-content/50">
                                         <span>{performanceFunds.length} funds</span>
-                                        {isSyncing && (
+                                        {performanceData?.is_syncing && (
                                             <span className="text-warning flex items-center gap-1">
                                                 <span className="loading loading-spinner loading-xs"></span>
                                                 Syncing...
