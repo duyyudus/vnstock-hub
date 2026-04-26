@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { stockApi, type FundPerformanceData, type Stock } from '../../../api/stockApi';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { stockApi, type FundOverviewResponse, type FundPerformanceData, type Stock } from '../../../api/stockApi';
 import { FundSelector, type FundInfo } from './FundSelector';
 import { FundInfoCard } from './FundInfoCard';
+import { FundOverview } from './FundOverview';
 import { NavReportChart } from './NavReportChart';
 import { TopHoldingChart } from './TopHoldingChart';
 import { IndustryHoldingChart } from '../components/IndustryHoldingChart';
@@ -56,6 +57,11 @@ const normalizeIndustryKey = (value: string | null): string | null => {
  * Funds Tab - displays aggregate performance charts and individual fund data.
  */
 export const FundsTab: React.FC = () => {
+    // --- Overview State ---
+    const [overviewData, setOverviewData] = useState<FundOverviewResponse | null>(null);
+    const [loadingOverview, setLoadingOverview] = useState(true);
+    const [overviewError, setOverviewError] = useState<string | null>(null);
+
     // --- Aggregate Performance State ---
     const [performanceData, setPerformanceData] = useState<FundPerformanceData | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(true);
@@ -79,6 +85,25 @@ export const FundsTab: React.FC = () => {
     const [loadingFunds, setLoadingFunds] = useState(true);
     const [loadingData, setLoadingData] = useState(false);
     const fundDetailsSectionRef = useRef<HTMLDivElement | null>(null);
+
+    const fetchOverviewData = useCallback(async () => {
+        setLoadingOverview(true);
+        setOverviewError(null);
+        try {
+            const response = await stockApi.getFundOverview();
+            setOverviewData(response);
+        } catch (err) {
+            console.error('Error fetching fund overview:', err);
+            setOverviewError('Failed to load fund holdings overview.');
+        } finally {
+            setLoadingOverview(false);
+        }
+    }, []);
+
+    // --- Fetch Aggregate Holdings Overview ---
+    useEffect(() => {
+        fetchOverviewData();
+    }, [fetchOverviewData]);
 
     // --- Fetch Aggregate Performance Data ---
     useEffect(() => {
@@ -333,6 +358,7 @@ export const FundsTab: React.FC = () => {
                 setTopHoldings(holdingsResponse.data);
                 setIndustryHoldings(industryResponse.data);
                 setAssetHoldings(assetResponse.data);
+                await fetchOverviewData();
             } catch (error) {
                 console.error(`Error fetching data for fund ${selectedFund}:`, error);
             } finally {
@@ -341,7 +367,7 @@ export const FundsTab: React.FC = () => {
         };
 
         fetchFundData();
-    }, [selectedFund, funds]);
+    }, [selectedFund, funds, fetchOverviewData]);
 
     useEffect(() => {
         const tickers = Array.from(new Set(
@@ -405,6 +431,12 @@ export const FundsTab: React.FC = () => {
 
     return (
         <div className="space-y-6 p-4">
+            <FundOverview
+                data={overviewData}
+                loading={loadingOverview}
+                error={overviewError}
+            />
+
             {/* --- Aggregate Performance Section --- */}
             <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-base-300 pb-2">

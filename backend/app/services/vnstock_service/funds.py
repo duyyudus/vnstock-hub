@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import select, and_
 
 from app.db.database import async_session
-from app.db.models import FundNav, FundDetailCache, FundListing
+from app.db.models import FundNav, FundDetailCache, FundListing, StockCompany
 from app.services.sync_status import sync_status
 from app.core.logging_config import (
     log_background_start,
@@ -302,6 +302,174 @@ class FundsService:
             if key in record:
                 record[target_key] = record[key]
                 break
+
+    async def get_fund_overview(self) -> Dict[str, Any]:
+        """Aggregate latest cached stock holdings across all funds from DB only."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_fund_overview_sync)
+
+    def _get_fund_overview_sync(self) -> Dict[str, Any]:
+        """Load cached fund top holdings from DB and build an aggregate overview."""
+        from sqlalchemy.orm import Session
+
+        engine = get_sync_engine()
+        with Session(engine) as session:
+            detail_rows = list(
+                session.execute(
+                    select(FundDetailCache).where(FundDetailCache.detail_type == "top_holding")
+                ).scalars().all()
+            )
+
+            if not detail_rows:
+                return self._build_fund_overview([], fund_names={}, company_names={})
+
+            fund_symbols = {row.symbol for row in detail_rows if row.symbol}
+            fund_names = {
+                row.symbol: row.name
+                for row in session.execute(
+                    select(FundListing).where(FundListing.symbol.in_(fund_symbols))
+                ).scalars().all()
+                if row.symbol and row.name
+            } if fund_symbols else {}
+
+            company_names = {
+                row.symbol.upper(): row.company_name
+                for row in session.execute(select(StockCompany)).scalars().all()
+                if row.symbol and row.company_name
+            }
+
+            rows = [
+                {
+                    "symbol": row.symbol,
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    "data": row.data if isinstance(row.data, list) else [],
+                }
+                for row in detail_rows
+            ]
+
+        return self._build_fund_overview(rows, fund_names=fund_names, company_names=company_names)
+
+    def _build_fund_overview(
+        self,
+        rows: List[Dict[str, Any]],
+        fund_names: Dict[str, str | None],
+        company_names: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Build sector-grouped aggregate fund holdings from cached top-holding rows."""
+        stocks_by_ticker: Dict[str, Dict[str, Any]] = {}
+        included_funds: set[str] = set()
+        last_updated: str | None = None
+
+        for row in rows:
+            fund_symbol = self._clean_string(row.get("symbol"))
+            row_updated_at = self._clean_string(row.get("updated_at"))
+            if row_updated_at and (last_updated is None or row_updated_at > last_updated):
+                last_updated = row_updated_at
+
+            data = row.get("data")
+            if not fund_symbol or not isinstance(data, list):
+                continue
+
+            for holding in data:
+                if not isinstance(holding, dict) or not self._is_stock_holding(holding):
+                    continue
+
+                ticker = self._first_clean_string(holding, ["ticker", "stock_code", "symbol"])
+                allocation = self._first_number(holding, ["allocation", "net_asset_percent", "weight", "percentage"])
+                if not ticker or allocation is None:
+                    continue
+
+                ticker = ticker.upper()
+                sector = (
+                    self._first_clean_string(holding, ["industry", "sector", "industry_name"])
+                    or "Other"
+                )
+                holding_updated_at = self._first_clean_string(holding, ["update_at", "updated_at"])
+
+                stock = stocks_by_ticker.setdefault(
+                    ticker,
+                    {
+                        "ticker": ticker,
+                        "company_name": company_names.get(ticker),
+                        "sector": sector,
+                        "total_allocation": 0.0,
+                        "funds": [],
+                    },
+                )
+                stock["total_allocation"] += allocation
+                stock["funds"].append({
+                    "symbol": fund_symbol,
+                    "name": fund_names.get(fund_symbol),
+                    "allocation": allocation,
+                    "holding_updated_at": holding_updated_at,
+                })
+                included_funds.add(fund_symbol)
+
+        sectors_by_name: Dict[str, Dict[str, Any]] = {}
+        for stock in stocks_by_ticker.values():
+            stock["funds"].sort(key=lambda item: (-item["allocation"], item["symbol"]))
+            stock["fund_count"] = len({fund["symbol"] for fund in stock["funds"]})
+            stock["total_allocation"] = round(stock["total_allocation"], 6)
+
+            sector = stock["sector"]
+            section = sectors_by_name.setdefault(
+                sector,
+                {
+                    "sector": sector,
+                    "total_allocation": 0.0,
+                    "stock_count": 0,
+                    "stocks": [],
+                },
+            )
+            section["total_allocation"] += stock["total_allocation"]
+            section["stocks"].append(stock)
+
+        sectors = []
+        for section in sectors_by_name.values():
+            section["stocks"].sort(key=lambda item: (-item["total_allocation"], item["ticker"]))
+            section["stock_count"] = len(section["stocks"])
+            section["total_allocation"] = round(section["total_allocation"], 6)
+            sectors.append(section)
+
+        sectors.sort(key=lambda item: (-item["total_allocation"], item["sector"]))
+
+        return {
+            "sectors": sectors,
+            "fund_count": len(included_funds),
+            "stock_count": len(stocks_by_ticker),
+            "last_updated": last_updated,
+        }
+
+    def _is_stock_holding(self, holding: Dict[str, Any]) -> bool:
+        type_asset = self._clean_string(holding.get("type_asset"))
+        return type_asset is None or type_asset.upper() == "STOCK"
+
+    def _first_clean_string(self, record: Dict[str, Any], keys: List[str]) -> str | None:
+        for key in keys:
+            value = self._clean_string(record.get(key))
+            if value:
+                return value
+        return None
+
+    def _clean_string(self, value: Any) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return None
+
+    def _first_number(self, record: Dict[str, Any], keys: List[str]) -> float | None:
+        for key in keys:
+            value = record.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)) and pd.notna(value):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value.strip())
+                except ValueError:
+                    continue
+        return None
 
     async def get_fund_nav_report(self, symbol: str) -> List[Dict[str, Any]]:
         """

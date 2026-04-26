@@ -27,6 +27,40 @@ class FundPerformanceResponse(BaseModel):
     is_syncing: bool = False
 
 
+class FundOverviewHoldingFund(BaseModel):
+    """Fund-level contribution to an aggregate stock holding."""
+    symbol: str
+    name: Optional[str] = None
+    allocation: float
+    holding_updated_at: Optional[str] = None
+
+
+class FundOverviewStock(BaseModel):
+    """Aggregate stock holding across funds."""
+    ticker: str
+    company_name: Optional[str] = None
+    sector: str
+    total_allocation: float
+    fund_count: int
+    funds: List[FundOverviewHoldingFund]
+
+
+class FundOverviewSector(BaseModel):
+    """Sector group for aggregate fund stock holdings."""
+    sector: str
+    total_allocation: float
+    stock_count: int
+    stocks: List[FundOverviewStock]
+
+
+class FundOverviewResponse(BaseModel):
+    """Response model for aggregate latest fund holdings overview."""
+    sectors: List[FundOverviewSector]
+    fund_count: int
+    stock_count: int
+    last_updated: Optional[str] = None
+
+
 @router.get("/listing", response_model=FundDataResponse)
 async def get_fund_listing(fund_type: str = ""):
     """
@@ -58,6 +92,18 @@ async def get_fund_performance():
     """
     data = await vnstock_service.get_fund_performance_data()
     return FundPerformanceResponse(**data)
+
+
+@router.get("/overview", response_model=FundOverviewResponse)
+async def get_fund_overview():
+    """
+    Get aggregated top stock holdings across all funds from cached DB data only.
+
+    Returns:
+        Sector-grouped stock holdings sorted by summed allocation across funds.
+    """
+    data = await vnstock_service.get_fund_overview()
+    return FundOverviewResponse(**data)
 
 
 @router.get("/{symbol}/nav-report", response_model=FundDataResponse)

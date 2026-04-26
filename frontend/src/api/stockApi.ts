@@ -588,6 +588,36 @@ export interface FundDataResponse {
     count: number;
 }
 
+export interface FundOverviewHoldingFund {
+    symbol: string;
+    name?: string | null;
+    allocation: number;
+    holding_updated_at?: string | null;
+}
+
+export interface FundOverviewStock {
+    ticker: string;
+    company_name?: string | null;
+    sector: string;
+    total_allocation: number;
+    fund_count: number;
+    funds: FundOverviewHoldingFund[];
+}
+
+export interface FundOverviewSector {
+    sector: string;
+    total_allocation: number;
+    stock_count: number;
+    stocks: FundOverviewStock[];
+}
+
+export interface FundOverviewResponse {
+    sectors: FundOverviewSector[];
+    fund_count: number;
+    stock_count: number;
+    last_updated: string | null;
+}
+
 // Fund Performance Types
 export interface FundRiskMetrics {
     annualized_return: number | null;
@@ -1719,6 +1749,14 @@ export const stockApi = {
     async getFunds(fundType: string = ''): Promise<FundDataResponse> {
         const url = fundType ? `/funds/listing?fund_type=${fundType}` : '/funds/listing';
         const response = await apiClient.get<FundDataResponse>(url);
+        return response.data;
+    },
+
+    /**
+     * Fetch aggregate stock holdings across all funds from cached DB data
+     */
+    async getFundOverview(): Promise<FundOverviewResponse> {
+        const response = await apiClient.get<FundOverviewResponse>('/funds/overview');
         return response.data;
     },
 

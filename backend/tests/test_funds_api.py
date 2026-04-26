@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from httpx import AsyncClient
 from app.services.vnstock_service import vnstock_service
+from app.services.vnstock_service.funds import FundsService
 
 @pytest.mark.asyncio
 async def test_get_fund_listing(client: AsyncClient):
@@ -69,6 +70,140 @@ async def test_get_fund_performance(client: AsyncClient):
         assert "benchmarks" in data
 
 @pytest.mark.asyncio
+async def test_get_fund_overview(client: AsyncClient):
+    mock_data = {
+        "sectors": [
+            {
+                "sector": "Banks",
+                "total_allocation": 18.0,
+                "stock_count": 1,
+                "stocks": [
+                    {
+                        "ticker": "TCB",
+                        "company_name": "Techcombank",
+                        "sector": "Banks",
+                        "total_allocation": 18.0,
+                        "fund_count": 2,
+                        "funds": [
+                            {
+                                "symbol": "FUND1",
+                                "name": "Fund 1",
+                                "allocation": 10.0,
+                                "holding_updated_at": "2026-02-01",
+                            },
+                            {
+                                "symbol": "FUND2",
+                                "name": "Fund 2",
+                                "allocation": 8.0,
+                                "holding_updated_at": "2026-02-02",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        "fund_count": 2,
+        "stock_count": 1,
+        "last_updated": "2026-02-02T00:00:00",
+    }
+
+    with patch.object(vnstock_service, 'get_fund_overview', return_value=mock_data) as mock_method:
+        response = await client.get("/api/v1/funds/overview")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["fund_count"] == 2
+        assert data["stock_count"] == 1
+        assert data["sectors"][0]["sector"] == "Banks"
+        assert data["sectors"][0]["stocks"][0]["ticker"] == "TCB"
+        mock_method.assert_called_once()
+
+
+def test_build_fund_overview_sums_stock_holdings_by_sector():
+    service = FundsService()
+    rows = [
+        {
+            "symbol": "FUND1",
+            "updated_at": "2026-02-01T09:00:00",
+            "data": [
+                {
+                    "ticker": "TCB",
+                    "industry": "Banks",
+                    "allocation": 10.0,
+                    "type_asset": "STOCK",
+                    "update_at": "2026-02-01",
+                },
+                {
+                    "stock_code": "HPG",
+                    "sector": "Materials",
+                    "net_asset_percent": 4.0,
+                    "type_asset": "STOCK",
+                    "update_at": "2026-02-01",
+                },
+                {
+                    "ticker": "BOND1",
+                    "industry": "Banks",
+                    "allocation": 30.0,
+                    "type_asset": "BOND",
+                    "update_at": "2026-02-01",
+                },
+            ],
+        },
+        {
+            "symbol": "FUND2",
+            "updated_at": "2026-02-02T09:00:00",
+            "data": [
+                {
+                    "symbol": "TCB",
+                    "industry_name": "Banks",
+                    "weight": 8.0,
+                    "type_asset": "STOCK",
+                    "update_at": "2026-02-02",
+                },
+                {
+                    "ticker": "FPT",
+                    "industry": "Technology",
+                    "percentage": 12.0,
+                    "type_asset": "STOCK",
+                    "update_at": "2026-02-02",
+                },
+            ],
+        },
+    ]
+
+    overview = service._build_fund_overview(
+        rows,
+        fund_names={"FUND1": "Fund 1", "FUND2": "Fund 2"},
+        company_names={"TCB": "Techcombank", "FPT": "FPT Corp"},
+    )
+
+    assert overview["fund_count"] == 2
+    assert overview["stock_count"] == 3
+    assert overview["last_updated"] == "2026-02-02T09:00:00"
+    assert [sector["sector"] for sector in overview["sectors"]] == ["Banks", "Technology", "Materials"]
+
+    banks = overview["sectors"][0]
+    assert banks["total_allocation"] == 18.0
+    assert banks["stock_count"] == 1
+    assert banks["stocks"][0]["ticker"] == "TCB"
+    assert banks["stocks"][0]["company_name"] == "Techcombank"
+    assert banks["stocks"][0]["total_allocation"] == 18.0
+    assert banks["stocks"][0]["fund_count"] == 2
+    assert banks["stocks"][0]["funds"] == [
+        {
+            "symbol": "FUND1",
+            "name": "Fund 1",
+            "allocation": 10.0,
+            "holding_updated_at": "2026-02-01",
+        },
+        {
+            "symbol": "FUND2",
+            "name": "Fund 2",
+            "allocation": 8.0,
+            "holding_updated_at": "2026-02-02",
+        },
+    ]
+
+@pytest.mark.asyncio
 async def test_get_fund_top_holding(client: AsyncClient):
     mock_data = [{"ticker": "TCB", "allocation": 10.5}]
     with patch.object(vnstock_service, 'get_fund_top_holding', return_value=mock_data):
@@ -95,4 +230,3 @@ async def test_get_fund_asset_holding(client: AsyncClient):
         assert response.status_code == 200
         data = response.json()
         assert data["data"][0]["asset_type"] == "Stocks"
-
