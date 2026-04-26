@@ -13,6 +13,7 @@ import { PeriodicReturnHeatmap } from './PeriodicReturnHeatmap';
 
 type ChartType = 'growth' | 'scatter' | 'heatmap';
 type Benchmark = 'VNINDEX' | 'VN30';
+type ViewMode = 'overview' | 'details';
 type FundApiRecord = Record<string, unknown>;
 
 interface IndustryHoldingStock {
@@ -57,6 +58,8 @@ const normalizeIndustryKey = (value: string | null): string | null => {
  * Funds Tab - displays aggregate performance charts and individual fund data.
  */
 export const FundsTab: React.FC = () => {
+    const [viewMode, setViewMode] = useState<ViewMode>('overview');
+
     // --- Overview State ---
     const [overviewData, setOverviewData] = useState<FundOverviewResponse | null>(null);
     const [loadingOverview, setLoadingOverview] = useState(true);
@@ -423,19 +426,50 @@ export const FundsTab: React.FC = () => {
         }
 
         setSelectedFund(symbol);
-        fundDetailsSectionRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
+        setViewMode('details');
+        requestAnimationFrame(() => {
+            fundDetailsSectionRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+            });
         });
     };
 
     return (
         <div className="space-y-6 p-4">
-            <FundOverview
-                data={overviewData}
-                loading={loadingOverview}
-                error={overviewError}
-            />
+            <div className="overflow-x-auto">
+                <div className="join min-w-max">
+                    <button
+                        type="button"
+                        className={`join-item btn btn-sm ${viewMode === 'overview' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setViewMode('overview')}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Overview
+                    </button>
+                    <button
+                        type="button"
+                        className={`join-item btn btn-sm ${viewMode === 'details' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setViewMode('details')}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm6 0V7a2 2 0 00-2-2h-2a2 2 0 00-2 2v10a2 2 0 002 2h2a2 2 0 002-2zm6 0v-4a2 2 0 00-2-2h-2a2 2 0 00-2 2v4a2 2 0 002 2h2a2 2 0 002-2z" />
+                        </svg>
+                        Details
+                    </button>
+                </div>
+            </div>
+
+            {viewMode === 'overview' ? (
+                <FundOverview
+                    data={overviewData}
+                    loading={loadingOverview}
+                    error={overviewError}
+                />
+            ) : (
+                <>
 
             {/* --- Aggregate Performance Section --- */}
             <div className="space-y-4">
@@ -627,6 +661,8 @@ export const FundsTab: React.FC = () => {
                     </>
                 )}
             </div>
+                </>
+            )}
         </div>
     );
 };
