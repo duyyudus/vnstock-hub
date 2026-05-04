@@ -427,7 +427,7 @@ async def test_resolve_symbols_filter_merges_manual_and_index(monkeypatch):
     assert symbols == ["FPT", "VCB", "SSI", "HPG"]
 
 
-def test_finance_fetch_symbols_for_vnall_uses_vci_group(monkeypatch):
+def test_finance_fetch_symbols_for_vnall_uses_kbs_group(monkeypatch):
     service = FinanceDataSyncService(finance=FinanceService())
     calls = []
 
@@ -450,7 +450,7 @@ def test_finance_fetch_symbols_for_vnall_uses_vci_group(monkeypatch):
     symbols = service._fetch_symbols_for_index_sync("VNALL")
 
     assert symbols == ["AAA", "ACB"]
-    assert calls == [("source", "VCI"), ("group", "VNAllShare")]
+    assert calls == [("source", "KBS"), ("group", "VNALL")]
 
 
 @pytest.mark.asyncio

@@ -71,6 +71,26 @@ async def test_sync_chunk_rate_limit_then_success(monkeypatch):
     assert len(sleeps) == 2
 
 
+def test_fetch_symbols_for_index_sync_uses_kbs_without_trying_vci(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_group(self, group: str):
+            assert self.source == "KBS"
+            assert group == "VN100"
+            return pd.Series(["ACB", "FPT"])
+
+    monkeypatch.setitem(__import__("sys").modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    assert service._fetch_symbols_for_index_sync("VN100") == ["ACB", "FPT"]
+    assert sources == ["KBS"]
+
+
 @pytest.mark.asyncio
 async def test_sync_chunk_rate_limit_exceeds_max_wait_cap(monkeypatch):
     service = HistorySyncService(history=HistoryService())

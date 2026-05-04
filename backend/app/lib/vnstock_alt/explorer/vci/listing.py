@@ -74,6 +74,7 @@ class Listing:
         if lang not in ['vi', 'en']:
             raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
 
+        # Deprecated/blocked as of 2026-05-04 for CompaniesListingInfo.
         payload = "{\"query\":\"{\\n  CompaniesListingInfo {\\n    ticker\\n    organName\\n    enOrganName\\n    icbName3\\n    enIcbName3\\n    icbName2\\n    enIcbName2\\n    icbName4\\n    enIcbName4\\n    comTypeCode\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}\\n\",\"variables\":{}}"
         payload = json.loads(payload)
 
@@ -123,6 +124,7 @@ class Listing:
         if lang not in ['vi', 'en']:
             raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
 
+        # Deprecated/blocked as of 2026-05-04: VCI can return 403 HTML here.
         url = self.base_url + '/price/symbols/getAll'
         
         # Use the send_request utility from api_client
@@ -169,6 +171,7 @@ class Listing:
         Tham số:
             - show_log (tùy chọn): Hiển thị thông tin log giúp debug dễ dàng. Mặc định là False.
         """
+        # Deprecated/blocked as of 2026-05-04 for ListIcbCode/CompaniesListingInfo.
         payload = "{\"query\":\"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}\",\"variables\":{}}"
         payload = json.loads(payload)
 
@@ -211,6 +214,7 @@ class Listing:
         if group not in _GROUP_CODE:
             raise ValueError(f"Invalid group. Group must be in {_GROUP_CODE}")
         
+        # Deprecated/blocked as of 2026-05-04: VCI can return 403 HTML here.
         url = self.base_url + f'/price/symbols/getByGroup?group={group}'
 
         # Use the send_request utility from api_client

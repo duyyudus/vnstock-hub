@@ -360,7 +360,7 @@ class StockMetadataService:
             raise CircuitOpenError("Circuit breaker open - cannot fetch all symbols")
 
         try:
-            listing = Listing(source='VCI')
+            listing = Listing(source='KBS')
             result = listing.all_symbols()
             api_circuit_breaker.record_success()
             return result

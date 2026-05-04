@@ -1,10 +1,16 @@
 from datetime import date
+import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
 import pytest
-from unittest.mock import patch
+
 from app.db.models import StockIndex
 from app.services.vnstock_service import vnstock_service, StockInfo
 from app.services.vnstock_service.models import IndexContribution, IndexContributionTotals
 from app.services.vnstock_service.stocks import StocksService
+from app.services.vnstock_service.core import CircuitOpenError
 
 @pytest.mark.asyncio
 async def test_get_indices(client):
@@ -172,6 +178,255 @@ def test_build_index_contribution_rows_flags_missing_company_data_fallbacks():
     assert rows[0].used_market_cap_shares_fallback is True
 
 
+def test_fetch_index_data_uses_kbs_symbols_without_trying_vci(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    captured: dict[str, object] = {}
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_group(self, group: str):
+            assert self.source == "KBS"
+            assert group == "VN100"
+            return pd.Series(["ACB", "FPT"])
+
+    def fake_fetch_symbols(symbols: list[str], limit: int):
+        captured["symbols"] = symbols
+        captured["limit"] = limit
+        return [StockInfo(ticker=symbol, price=1, market_cap=1) for symbol in symbols]
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+    monkeypatch.setattr(service, "_fetch_symbols_data", fake_fetch_symbols)
+
+    stocks = service._fetch_index_data("VN100", 100)
+
+    assert [stock.ticker for stock in stocks] == ["ACB", "FPT"]
+    assert captured == {"symbols": ["ACB", "FPT"], "limit": 100}
+    assert sources == ["KBS"]
+
+
+def test_fetch_index_data_preserves_circuit_open_without_kbs_fallback(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_group(self, group: str):
+            raise CircuitOpenError("Circuit breaker open")
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    with pytest.raises(CircuitOpenError):
+        service._fetch_index_data("VN100", 100)
+
+    assert sources == ["KBS"]
+
+
+def test_get_or_fetch_industry_mapping_throttles_repeated_failures(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_cache = {}
+    service._industry_cache_timestamp = 0.0
+    service._industry_mapping_failure_timestamp = 0.0
+
+    calls = {"count": 0}
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+
+        def symbols_by_industries(self):
+            calls["count"] += 1
+            assert self.source == "KBS"
+            raise ConnectionError("KBS returned 403 HTML")
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    assert service._get_or_fetch_industry_mapping() == {}
+    assert service._get_or_fetch_industry_mapping() == {}
+    assert calls["count"] == 1
+
+
+def test_get_or_fetch_industry_mapping_uses_kbs_without_trying_vci(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_cache = {}
+    service._industry_cache_timestamp = 0.0
+    service._industry_mapping_failure_timestamp = 0.0
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_industries(self):
+            assert self.source == "KBS"
+            return pd.DataFrame(
+                [
+                    {"symbol": "ACB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "FPT", "industry_code": 6, "industry_name": "Công nghệ và thông tin"},
+                ]
+            )
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    assert service._get_or_fetch_industry_mapping() == {
+        "ACB": "Ngân hàng",
+        "FPT": "Công nghệ và thông tin",
+    }
+    assert sources == ["KBS"]
+
+
+def test_get_or_fetch_industry_mapping_returns_stale_cache_during_failure_throttle():
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_cache = {"ACB": "Banks"}
+    service._industry_cache_timestamp = 0.0
+    service._industry_mapping_failure_timestamp = 1_000_000.0
+
+    with patch("app.services.vnstock_service.stocks.time.time", return_value=1_000_030.0):
+        assert service._get_or_fetch_industry_mapping() == {"ACB": "Banks"}
+
+
+@pytest.mark.asyncio
+async def test_get_industry_list_returns_cached_list_after_fetch_failure(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_list_cache = []
+    service._industry_list_cache_timestamp = 0.0
+    service._industry_list_failure_timestamp = 0.0
+
+    industries_df = pd.DataFrame(
+        [
+            {"level": 1, "icb_name": "Banks", "en_icb_name": "Banks", "icb_code": "8301"},
+            {"level": 2, "icb_name": "Banks", "en_icb_name": "Banks", "icb_code": "8300"},
+        ]
+    )
+    calls = {"count": 0}
+
+    def fake_fetch_industries():
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return industries_df
+        raise ConnectionError("VCI returned 403 HTML")
+
+    monkeypatch.setattr(service, "_fetch_industries_sync", fake_fetch_industries)
+
+    first = await service.get_industry_list()
+    second = await service.get_industry_list()
+
+    assert first == second
+    assert first[0]["icb_name"] == "Banks"
+    assert first[0]["icb_family_code"] == "8301"
+    assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_industry_list_returns_empty_after_fetch_failure_without_cache(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_list_cache = []
+    service._industry_list_cache_timestamp = 0.0
+    service._industry_list_failure_timestamp = 0.0
+
+    monkeypatch.setattr(
+        service,
+        "_fetch_industries_sync",
+        lambda: (_ for _ in ()).throw(ConnectionError("VCI returned 403 HTML")),
+    )
+
+    assert await service.get_industry_list() == []
+
+
+@pytest.mark.asyncio
+async def test_get_industry_list_uses_kbs_without_trying_vci(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_list_cache = []
+    service._industry_list_cache_timestamp = 0.0
+    service._industry_list_failure_timestamp = 0.0
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_industries(self):
+            assert self.source == "KBS"
+            return pd.DataFrame(
+                [
+                    {"symbol": "ACB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "VCB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "FPT", "industry_code": 6, "industry_name": "Công nghệ và thông tin"},
+                ]
+            )
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+
+    industries = await service.get_industry_list()
+
+    assert [industry["icb_name"] for industry in industries] == ["Công nghệ và thông tin", "Ngân hàng"]
+    assert industries[0]["icb_code"] == "KBS-6"
+    assert sources == ["KBS"]
+
+
+def test_fetch_industry_data_uses_kbs_without_trying_vci(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    captured: dict[str, object] = {}
+    sources: list[str] = []
+
+    class FakeListing:
+        def __init__(self, source: str):
+            self.source = source
+            sources.append(source)
+
+        def symbols_by_industries(self):
+            assert self.source == "KBS"
+            return pd.DataFrame(
+                [
+                    {"symbol": "ACB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "VCB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "FPT", "industry_code": 6, "industry_name": "Công nghệ và thông tin"},
+                ]
+            )
+
+    def fake_fetch_symbols(symbols: list[str], limit: int):
+        captured["symbols"] = symbols
+        captured["limit"] = limit
+        return [StockInfo(ticker=symbol, price=1, market_cap=1) for symbol in symbols]
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
+    monkeypatch.setattr(service, "_fetch_symbols_data", fake_fetch_symbols)
+
+    stocks = service._fetch_industry_data("Ngân hàng", 10)
+
+    assert [stock.ticker for stock in stocks] == ["ACB", "VCB"]
+    assert captured == {"symbols": ["ACB", "VCB"], "limit": 10}
+    assert sources == ["KBS"]
+
+
+@pytest.mark.asyncio
+async def test_get_industry_list_throttles_repeated_failures(monkeypatch):
+    service = StocksService(metadata=MagicMock(), history=MagicMock())
+    service._industry_list_cache = []
+    service._industry_list_cache_timestamp = 0.0
+    service._industry_list_failure_timestamp = 0.0
+
+    calls = {"count": 0}
+
+    def fail_fetch():
+        calls["count"] += 1
+        raise ConnectionError("VCI returned 403 HTML")
+
+    monkeypatch.setattr(service, "_fetch_industries_sync", fail_fetch)
+
+    assert await service.get_industry_list() == []
+    assert await service.get_industry_list() == []
+    assert calls["count"] == 1
+
+
 @pytest.mark.asyncio
 async def test_get_index_contribution(client):
     contribution = IndexContribution(
@@ -234,6 +489,16 @@ async def test_get_industries(client):
         assert data["industries"][0]["name"] == "Banks"
         assert data["industries"][0]["family_code"] == "8301"
         assert data["industries"][1]["family_name"] == "Financials"
+
+
+@pytest.mark.asyncio
+async def test_get_industries_serializes_empty_list(client):
+    with patch.object(vnstock_service, 'get_industry_list', return_value=[]):
+        response = await client.get("/api/v1/stocks/industries")
+
+    assert response.status_code == 200
+    assert response.json() == {"industries": [], "count": 0}
+
 
 @pytest.mark.asyncio
 async def test_get_stocks_by_industry(client):

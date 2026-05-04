@@ -24,7 +24,7 @@ from .core import (
 )
 from .history import HistoryService
 from .rate_limit_pause import shared_rate_limit_pause_controller
-from .symbols import VALID_GROUPS, get_group_code_for_index
+from .symbols import get_group_code_for_index, get_valid_groups_for_source
 
 
 @dataclass(frozen=True)
@@ -1092,16 +1092,17 @@ class HistorySyncService:
         from vnstock import Listing
 
         normalized_index = str(index_symbol or "").strip().upper()
-        mapped_group_code = get_group_code_for_index(normalized_index)
-        valid_group_lookup = {group.upper(): group for group in VALID_GROUPS}
+        mapped_group_code = get_group_code_for_index(normalized_index, source="KBS")
+        valid_groups = get_valid_groups_for_source("KBS")
+        valid_group_lookup = {group.upper(): group for group in valid_groups}
         group_code = valid_group_lookup.get(str(mapped_group_code).strip().upper())
         if group_code is None:
             raise ValueError(
                 f"Unsupported index symbol/group '{index_symbol}'. "
-                f"Supported groups include: {', '.join(sorted(VALID_GROUPS))}"
+                f"Supported groups include: {', '.join(sorted(valid_groups))}"
             )
 
-        listing = Listing(source='VCI')
+        listing = Listing(source='KBS')
         symbols_df = listing.symbols_by_group(group_code)
         if symbols_df is None or symbols_df.empty:
             return []
@@ -1241,7 +1242,7 @@ class HistorySyncService:
 
         result: Dict[str, date | None] = {}
         try:
-            df = Listing(source='VCI').all_symbols()
+            df = Listing(source='KBS').all_symbols()
             if df is None or df.empty:
                 return result
 

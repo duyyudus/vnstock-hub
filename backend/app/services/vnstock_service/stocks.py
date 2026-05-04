@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable, List, Dict, Optional
 import asyncio
 import math
 import pandas as pd
+import time
 
 from .core import (
     frontend_executor,
@@ -33,6 +34,12 @@ class StocksService:
     def __init__(self, metadata: StockMetadataService, history: HistoryService):
         self._metadata = metadata
         self._history = history
+        self._industry_list_cache: List[Dict[str, str]] = []
+        self._industry_list_cache_timestamp: float = 0.0
+        self._industry_list_failure_timestamp: float = 0.0
+        self._industry_list_failure_ttl: float = 5 * 60
+        self._industry_mapping_failure_timestamp: float = 0.0
+        self._industry_mapping_failure_ttl: float = 5 * 60
 
     async def get_index_contribution(
         self,
@@ -334,10 +341,27 @@ class StocksService:
         """
         Fetch all ICB level 2 industries.
         """
+        current_time = time.time()
+        if (
+            self._industry_list_failure_timestamp
+            and (current_time - self._industry_list_failure_timestamp) < self._industry_list_failure_ttl
+        ):
+            return list(self._industry_list_cache)
+
         loop = asyncio.get_event_loop()
-        df = await loop.run_in_executor(frontend_executor, self._fetch_industries_sync)
+        try:
+            df = await loop.run_in_executor(frontend_executor, self._fetch_industries_sync)
+        except Exception as e:
+            self._industry_list_failure_timestamp = current_time
+            logger.warning(f"Error fetching industry list; using cached fallback if available: {e}")
+            return list(self._industry_list_cache)
+
         if df is not None and not df.empty:
-            return self._build_industry_list_with_families(df)
+            industries = self._build_industry_list_with_families(df)
+            self._industry_list_cache = industries
+            self._industry_list_cache_timestamp = current_time
+            self._industry_list_failure_timestamp = 0.0
+            return list(industries)
         return []
 
     def _build_industry_list_with_families(self, df: pd.DataFrame) -> List[Dict[str, str]]:
@@ -403,6 +427,63 @@ class StocksService:
             })
         return industries
 
+    @staticmethod
+    def _build_kbs_industries_frame(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty or not {"industry_code", "industry_name"}.issubset(df.columns):
+            return pd.DataFrame(columns=["icb_name", "en_icb_name", "icb_code", "level"])
+
+        normalized = df[["industry_code", "industry_name"]].copy()
+        normalized["industry_code"] = normalized["industry_code"].fillna("").astype(str).str.strip()
+        normalized["industry_name"] = normalized["industry_name"].fillna("").astype(str).str.strip()
+        normalized = normalized[(normalized["industry_code"] != "") & (normalized["industry_name"] != "")]
+        if normalized.empty:
+            return pd.DataFrame(columns=["icb_name", "en_icb_name", "icb_code", "level"])
+
+        normalized = (
+            normalized.drop_duplicates(subset=["industry_code", "industry_name"])
+            .sort_values(by=["industry_name", "industry_code"])
+            .reset_index(drop=True)
+        )
+        return pd.DataFrame({
+            "icb_name": normalized["industry_name"],
+            "en_icb_name": normalized["industry_name"],
+            "icb_code": "KBS-" + normalized["industry_code"],
+            "level": 2,
+        })
+
+    @staticmethod
+    def _build_symbol_industry_mapping(df: pd.DataFrame) -> Dict[str, str]:
+        if df is None or df.empty or "symbol" not in df.columns:
+            return {}
+
+        industry_column = None
+        for column in ("icb_name2", "industry_name"):
+            if column in df.columns:
+                industry_column = column
+                break
+        if industry_column is None:
+            return {}
+
+        industry_map: Dict[str, str] = {}
+        for _, row in df.iterrows():
+            symbol = row.get("symbol", "")
+            industry = row.get(industry_column, "")
+            if symbol and industry:
+                industry_map[str(symbol).upper()] = str(industry)
+        return industry_map
+
+    @staticmethod
+    def _symbols_for_industry(df: pd.DataFrame, industry_name: str) -> List[str]:
+        if df is None or df.empty or "symbol" not in df.columns:
+            return []
+
+        cols_to_check = ["icb_name2", "icb_name3", "icb_name4", "industry_name"]
+        mask = pd.Series([False] * len(df))
+        for col in cols_to_check:
+            if col in df.columns:
+                mask |= (df[col] == industry_name)
+        return df[mask]["symbol"].dropna().astype(str).tolist()
+
     async def get_industry_stocks(
         self,
         industry_name: str,
@@ -457,13 +538,13 @@ class StocksService:
             raise CircuitOpenError("Circuit breaker open - cannot fetch industries")
 
         try:
-            result = Listing(source='VCI').industries_icb()
+            result = Listing(source='KBS').symbols_by_industries()
             api_circuit_breaker.record_success()
-            return result
+            return self._build_kbs_industries_frame(result)
         except (SystemExit, Exception) as e:
             if _is_rate_limit_error(e):
                 _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching industries: {e}")
+                raise CircuitOpenError(f"Rate limited fetching KBS industries: {e}")
             raise
 
     def _get_or_fetch_industry_mapping(self) -> Dict[str, str]:
@@ -472,8 +553,6 @@ class StocksService:
         Returns a dict mapping symbol -> ICB level 2 industry name.
         Uses 6-hour TTL similar to fund cache.
         """
-        import time
-
         current_time = time.time()
         cache_age = current_time - self._industry_cache_timestamp
 
@@ -481,6 +560,12 @@ class StocksService:
         if self._industry_cache and cache_age < self._industry_cache_ttl:
             logger.debug(f"Using cached industry mapping ({len(self._industry_cache)} symbols, age: {cache_age:.0f}s)")
             return self._industry_cache
+
+        if (
+            self._industry_mapping_failure_timestamp
+            and (current_time - self._industry_mapping_failure_timestamp) < self._industry_mapping_failure_ttl
+        ):
+            return self._industry_cache if self._industry_cache else {}
 
         # Fetch fresh industry mapping
         from vnstock import Listing
@@ -491,37 +576,29 @@ class StocksService:
             return self._industry_cache if self._industry_cache else {}
 
         try:
-            logger.info("Fetching fresh industry mapping from vnstock API")
-            listing = Listing(source='VCI')
+            logger.info("Fetching fresh industry mapping from KBS API")
+            listing = Listing(source='KBS')
             df = listing.symbols_by_industries()
             api_circuit_breaker.record_success()
 
             if df is not None and not df.empty:
-                # Extract symbol -> icb_name2 (Level 2 industry) mapping
-                industry_map = {}
-                if 'symbol' in df.columns and 'icb_name2' in df.columns:
-                    for _, row in df.iterrows():
-                        symbol = row.get('symbol', '')
-                        industry = row.get('icb_name2', '')
-                        if symbol and industry:
-                            industry_map[str(symbol).upper()] = str(industry)
-
-                # Update cache
+                industry_map = self._build_symbol_industry_mapping(df)
                 self._industry_cache = industry_map
                 self._industry_cache_timestamp = current_time
-                logger.info(f"Industry mapping cached: {len(industry_map)} symbols")
+                self._industry_mapping_failure_timestamp = 0.0
+                logger.info(f"KBS industry mapping cached: {len(industry_map)} symbols")
                 return industry_map
-            else:
-                logger.warning("Empty industry data returned from API")
-                return self._industry_cache if self._industry_cache else {}
 
+            self._industry_mapping_failure_timestamp = current_time
+            logger.warning("Empty KBS industry mapping returned from API")
+            return self._industry_cache if self._industry_cache else {}
         except (SystemExit, Exception) as e:
+            self._industry_mapping_failure_timestamp = current_time
             if _is_rate_limit_error(e):
                 _record_rate_limit(reset_seconds=60.0)
-                logger.warning("Rate limited while fetching industry mapping - using stale cache")
+                logger.warning("Rate limited while fetching KBS industry mapping - using stale cache")
             else:
-                logger.warning(f"Error fetching industry mapping: {e}")
-            # Return stale cache if available
+                logger.warning(f"Error fetching KBS industry mapping: {e}")
             return self._industry_cache if self._industry_cache else {}
 
     def _fetch_index_data(self, index_name: str, limit: int) -> List[StockInfo]:
@@ -529,8 +606,6 @@ class StocksService:
         Synchronous method to fetch index data (VN100, VN30, etc.) using vnstock.
         Called in thread pool executor to avoid blocking.
         """
-        from vnstock import Listing
-
         # Check circuit breaker before making API call
         if not api_circuit_breaker.can_proceed():
             raise CircuitOpenError(f"Circuit breaker open - cannot fetch index {index_name}")
@@ -540,19 +615,7 @@ class StocksService:
             group_code = get_group_code_for_index(index_name)
 
             # Get stock symbols for the specified group
-            listing = Listing(source='VCI')
-            try:
-                symbols_df = listing.symbols_by_group(group_code)
-                api_circuit_breaker.record_success()
-            except ValueError as e:
-                logger.warning(f"Group '{group_code}' (mapped from '{index_name}') not supported by symbols_by_group: {e}")
-                return []
-            except (SystemExit, Exception) as e:
-                if _is_rate_limit_error(e):
-                    _record_rate_limit(reset_seconds=30.0)
-                    raise CircuitOpenError(f"Rate limited fetching symbols for {group_code}: {e}")
-                logger.warning(f"Error fetching symbols for group '{group_code}': {e}")
-                return []
+            symbols_df = self._fetch_index_symbols_with_fallback(index_name, group_code)
 
             if symbols_df is None or symbols_df.empty:
                 logger.warning(f"Could not fetch symbols for {group_code} group")
@@ -569,6 +632,29 @@ class StocksService:
             logger.warning(f"Error fetching {index_name} data: {e}")
             return []
 
+    def _fetch_index_symbols_with_fallback(self, index_name: str, group_code: str):
+        """Fetch index members from KBS listing membership."""
+        from vnstock import Listing
+
+        kbs_group_code = get_group_code_for_index(index_name, source="KBS")
+        try:
+            symbols_df = Listing(source='KBS').symbols_by_group(kbs_group_code)
+            api_circuit_breaker.record_success()
+            return symbols_df
+        except ValueError as e:
+            logger.warning(
+                f"Group '{kbs_group_code}' (mapped from '{index_name}') not supported by KBS symbols_by_group: {e}"
+            )
+            return None
+        except CircuitOpenError:
+            raise
+        except (SystemExit, Exception) as e:
+            if _is_rate_limit_error(e):
+                _record_rate_limit(reset_seconds=30.0)
+                raise CircuitOpenError(f"Rate limited fetching KBS symbols for {kbs_group_code}: {e}")
+            logger.warning(f"Error fetching KBS symbols for group '{kbs_group_code}': {e}")
+            return None
+
     def _fetch_industry_data(self, industry_name: str, limit: int) -> List[StockInfo]:
         """
         Synchronous method to fetch industry data using vnstock.
@@ -580,32 +666,18 @@ class StocksService:
             raise CircuitOpenError(f"Circuit breaker open - cannot fetch industry {industry_name}")
 
         try:
-            listing = Listing(source='VCI')
-            # Get all symbols with industry info
+            listing = Listing(source='KBS')
             df = listing.symbols_by_industries()
             api_circuit_breaker.record_success()
-
-            if df is not None and not df.empty:
-                # Filter by icb_name2 (Level 2) or icb_name3/4 if needed
-                # We'll match against any of them for flexibility
-                cols_to_check = ['icb_name2', 'icb_name3', 'icb_name4']
-                mask = pd.Series([False] * len(df))
-                for col in cols_to_check:
-                    if col in df.columns:
-                        mask |= (df[col] == industry_name)
-
-                filtered_df = df[mask]
-                symbols = filtered_df['symbol'].tolist()
-
-                return self._fetch_symbols_data(symbols, limit)
-            return []
+            symbols = self._symbols_for_industry(df, industry_name)
+            return self._fetch_symbols_data(symbols, limit)
         except CircuitOpenError:
-            raise  # Re-raise circuit breaker errors
+            raise
         except (SystemExit, Exception) as e:
             if _is_rate_limit_error(e):
                 _record_rate_limit(reset_seconds=30.0)
-                raise CircuitOpenError(f"Rate limited fetching industry {industry_name}: {e}")
-            logger.warning(f"Error fetching industry {industry_name} data: {e}")
+                raise CircuitOpenError(f"Rate limited fetching KBS industry {industry_name}: {e}")
+            logger.warning(f"Error fetching KBS industry {industry_name} data: {e}")
             return []
 
     def _fetch_symbols_data(self, symbols: List[str], limit: int) -> List[StockInfo]:

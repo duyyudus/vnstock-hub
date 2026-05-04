@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -166,29 +167,37 @@ def test_vnstock_data_alt_listing_falls_back_when_vci_graphql_is_empty(monkeypat
     assert by_industry_en[by_industry_en["symbol"] == "PVD"]["icb_name"].tolist() == ["Oil & Gas", "Oil & Gas"]
 
 
-def test_stocks_service_uses_vendored_listing_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stocks_service_uses_kbs_industry_listing(monkeypatch: pytest.MonkeyPatch) -> None:
     service = importlib.import_module("app.services.vnstock_service.stocks").StocksService(
         metadata=MagicMock(),
         history=MagicMock(),
     )
-    monkeypatch.setitem(sys.modules, "vnstock", importlib.import_module("app.lib.vnstock_alt"))
-    listing_module = importlib.import_module("app.lib.vnstock_alt.explorer.vci.listing")
-    monkeypatch.setattr(listing_module, "send_request", _fake_vci_send_request)
-    monkeypatch.setattr(
-        "app.lib._vnstock_shared.common.vci_industry_fallback.get_vci_screener_criteria",
-        lambda **_: SAMPLE_CRITERIA,
-    )
+
+    class FakeListing:
+        def __init__(self, source: str):
+            assert source == "KBS"
+
+        def symbols_by_industries(self):
+            return pd.DataFrame(
+                [
+                    {"symbol": "VCB", "industry_code": 11, "industry_name": "Ngân hàng"},
+                    {"symbol": "PVD", "industry_code": 10, "industry_name": "Khai khoáng"},
+                    {"symbol": "HPG", "industry_code": 21, "industry_name": "Vật liệu xây dựng"},
+                ]
+            )
+
+    monkeypatch.setitem(sys.modules, "vnstock", SimpleNamespace(Listing=FakeListing))
 
     with patch("app.services.vnstock_service.stocks.api_circuit_breaker") as breaker:
         breaker.can_proceed.return_value = True
 
         industries = service._fetch_industries_sync()
-        assert {"0001", "0500", "8301", "8300"}.issubset(set(industries["icb_code"]))
+        assert {"KBS-10", "KBS-11", "KBS-21"}.issubset(set(industries["icb_code"]))
 
         mapping = service._get_or_fetch_industry_mapping()
         assert mapping == {
-            "HPG": "Tài nguyên Cơ bản",
-            "PVD": "Dầu khí",
+            "HPG": "Vật liệu xây dựng",
+            "PVD": "Khai khoáng",
             "VCB": "Ngân hàng",
         }
 

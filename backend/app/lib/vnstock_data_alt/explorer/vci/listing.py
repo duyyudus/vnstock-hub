@@ -47,6 +47,7 @@ class Listing:
         if lang not in ["vi", "en"]:
             raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
 
+        # Deprecated/blocked as of 2026-05-04 for CompaniesListingInfo.
         payload = json.loads(
             '{"query":"{\\n  CompaniesListingInfo {\\n    ticker\\n    organName\\n    enOrganName\\n    '
             'icbName3\\n    enIcbName3\\n    icbName2\\n    enIcbName2\\n    icbName4\\n    enIcbName4\\n    '
@@ -83,6 +84,7 @@ class Listing:
         if lang not in ["vi", "en"]:
             raise ValueError("Tham số lang phải là 'vi' hoặc 'en'.")
 
+        # Deprecated/blocked as of 2026-05-04: VCI can return 403 HTML here.
         json_data = send_request(
             url=self.base_url + "/price/symbols/getAll",
             headers=self.headers,
@@ -115,6 +117,7 @@ class Listing:
 
     @agg_execution("VCI.ext")
     def industries_icb(self, show_log: bool = False, to_df: bool = True):
+        # Deprecated/blocked as of 2026-05-04 for ListIcbCode/CompaniesListingInfo.
         payload = json.loads(
             '{"query":"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName'
             '\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    '
@@ -149,6 +152,7 @@ class Listing:
         if group not in _GROUP_CODE:
             raise ValueError(f"Invalid group. Group must be in {_GROUP_CODE}")
 
+        # Deprecated/blocked as of 2026-05-04: VCI can return 403 HTML here.
         json_data = send_request(
             url=self.base_url + f"/price/symbols/getByGroup?group={group}",
             headers=self.headers,

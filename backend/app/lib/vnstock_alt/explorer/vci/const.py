@@ -4,6 +4,20 @@ _CHART_URL = 'chart/OHLCChart/gap-chart'
 _INTRADAY_URL = 'market-watch'
 _GRAPHQL_URL = 'https://trading.vietcap.com.vn/data-mt/graphql'
 
+# Deprecated/blocked VCI listing-reference surface, observed 2026-05-04:
+# - _GRAPHQL_URL operations: CompaniesListingInfo, ListIcbCode
+# - _TRADING_URL paths: /price/symbols/getAll, /price/symbols/getByGroup
+#
+# Do not use these VCI listing/reference endpoints for production backend
+# flows. They can return 403 HTML instead of JSON. VCI quote, trading,
+# company, and finance calls using the same base hosts may still work.
+_DEPRECATED_LISTING_REFERENCE_ENDPOINTS = {
+    "graphql": _GRAPHQL_URL,
+    "graphql_operations": ("CompaniesListingInfo", "ListIcbCode"),
+    "symbols_get_all": f"{_TRADING_URL}price/symbols/getAll",
+    "symbols_get_by_group": f"{_TRADING_URL}price/symbols/getByGroup",
+}
+
 _INTERVAL_MAP = {'1m' : 'ONE_MINUTE',
             '5m' : 'ONE_MINUTE',
             '15m' : 'ONE_MINUTE',
