@@ -6,7 +6,18 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.db.models import NewsArticle, NewsArticleSemantic, NewsArticleSource, NewsCrawlSource, NewsIngestionRun, NewsQuickGlanceDigest, NewsSite, NewsSiteFeed
+from app.db.models import (
+    NewsArticle,
+    NewsArticleSemantic,
+    NewsArticleSource,
+    NewsCrawlSource,
+    NewsIngestionRun,
+    NewsQuickGlanceDigest,
+    NewsSite,
+    NewsSiteFeed,
+    NewsSourceSubscription,
+    User,
+)
 from app.services.news import news_service
 from app.services.news import service as news_service_module
 from app.services.news.service import (
@@ -2394,6 +2405,119 @@ async def test_trigger_admin_run_skips_disabled_sources(db_session, monkeypatch)
     assert result["triggered"] == 2
     assert ingested_feeds == [enabled_feed.id]
     assert ingested_crawls == [enabled_crawl.id]
+
+
+@pytest.mark.asyncio
+async def test_get_admin_status_uses_global_counts_and_source_aggregates(db_session):
+    site = NewsSite(
+        domain="admin-status.example.com",
+        homepage_url="https://admin-status.example.com",
+        display_name="Admin Status",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://admin-status.example.com/rss.xml",
+        title="Admin Status RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    crawl_source = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://admin-status.example.com/news",
+        article_link_selector="article a",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    db_session.add_all([feed, crawl_source])
+    await db_session.flush()
+
+    users = [
+        User(email="admin-status-one@example.com", password_hash="hash"),
+        User(email="admin-status-two@example.com", password_hash="hash"),
+        User(email="admin-status-three@example.com", password_hash="hash"),
+    ]
+    db_session.add_all(users)
+    await db_session.flush()
+
+    first_article = NewsArticle(
+        canonical_url="https://admin-status.example.com/a",
+        title="Admin Status A",
+        content_hash="admin-status-a",
+    )
+    second_article = NewsArticle(
+        canonical_url="https://admin-status.example.com/b",
+        title="Admin Status B",
+        content_hash="admin-status-b",
+    )
+    db_session.add_all([first_article, second_article])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            NewsArticleSource(article_id=first_article.id, site_feed_id=feed.id, article_url=first_article.canonical_url),
+            NewsArticleSource(article_id=second_article.id, site_feed_id=feed.id, article_url=second_article.canonical_url),
+            NewsArticleSource(article_id=second_article.id, crawl_source_id=crawl_source.id, article_url=second_article.canonical_url),
+            NewsSourceSubscription(user_id=users[0].id, site_feed_id=feed.id),
+            NewsSourceSubscription(user_id=users[1].id, site_feed_id=feed.id),
+            NewsSourceSubscription(user_id=users[2].id, crawl_source_id=crawl_source.id),
+        ]
+    )
+
+    run_rows = [
+        NewsIngestionRun(source_type="rss", site_feed_id=feed.id, status="succeeded", started_at=datetime(2026, 3, 26, 12, index, 0))
+        for index in range(25)
+    ]
+    run_rows.append(
+        NewsIngestionRun(
+            source_type="crawl",
+            crawl_source_id=crawl_source.id,
+            status="failed",
+            started_at=datetime(2026, 3, 26, 13, 0, 0),
+            error="crawl failed",
+        )
+    )
+    run_rows.append(
+        NewsIngestionRun(
+            source_type="rss",
+            site_feed_id=feed.id,
+            status="running",
+            started_at=datetime(2026, 3, 26, 13, 1, 0),
+            finished_at=None,
+        )
+    )
+    db_session.add_all(run_rows)
+    await db_session.commit()
+
+    original_utc_now = news_service_module.utc_now
+    news_service_module.utc_now = lambda: datetime(2026, 3, 26, 13, 2, 0)
+    try:
+        status = await news_service.get_admin_status()
+    finally:
+        news_service_module.utc_now = original_utc_now
+
+    assert status["article_count"] == 2
+    assert status["successful_run_count"] == 25
+    assert status["failed_run_count"] == 1
+    assert status["active_run_count"] == 1
+
+    rss_source = next(item for item in status["rss_sources"] if item["id"] == feed.id)
+    crawl_status = next(item for item in status["crawl_sources"] if item["id"] == crawl_source.id)
+    assert rss_source["subscription_count"] == 2
+    assert rss_source["article_count"] == 2
+    assert crawl_status["subscription_count"] == 1
+    assert crawl_status["article_count"] == 1
+
+    recent_source_labels = {item["source_label"] for item in status["recent_runs"]}
+    assert "Admin Status RSS" in recent_source_labels
+    assert "https://admin-status.example.com/news" in recent_source_labels
 
 
 @pytest.mark.asyncio

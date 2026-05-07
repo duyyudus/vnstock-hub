@@ -11,7 +11,7 @@ import unicodedata
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 import yaml
 
 from app.core.config import settings
@@ -665,37 +665,123 @@ class NewsIngestionService:
             site_rows = (await session.execute(select(NewsSite).order_by(NewsSite.id.asc()))).scalars().all()
             feed_rows = (await session.execute(select(NewsSiteFeed).order_by(NewsSiteFeed.id.asc()))).scalars().all()
             crawl_rows = (await session.execute(select(NewsCrawlSource).order_by(NewsCrawlSource.id.asc()))).scalars().all()
-            article_rows = (await session.execute(select(NewsArticle))).scalars().all()
+            article_count = int((await session.execute(select(func.count()).select_from(NewsArticle))).scalar_one())
             run_rows = (
                 await session.execute(
                     select(NewsIngestionRun).order_by(NewsIngestionRun.started_at.desc(), NewsIngestionRun.id.desc()).limit(20)
                 )
             ).scalars().all()
-            successful_runs = sum(1 for row in run_rows if row.status == "succeeded")
-            failed_runs = sum(1 for row in run_rows if row.status == "failed")
-            active_run_rows = (
-                await session.execute(
-                    select(NewsIngestionRun).where(
-                        NewsIngestionRun.status == "running",
-                        NewsIngestionRun.finished_at.is_(None),
+            run_status_counts = {
+                str(status): int(count)
+                for status, count in (
+                    await session.execute(
+                        select(NewsIngestionRun.status, func.count())
+                        .group_by(NewsIngestionRun.status)
                     )
-                )
-            ).scalars().all()
+                ).all()
+            }
+            active_run_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(NewsIngestionRun)
+                        .where(
+                            NewsIngestionRun.status == "running",
+                            NewsIngestionRun.finished_at.is_(None),
+                        )
+                    )
+                ).scalar_one()
+            )
+            feed_subscription_counts = {
+                int(source_id): int(count)
+                for source_id, count in (
+                    await session.execute(
+                        select(NewsSourceSubscription.site_feed_id, func.count())
+                        .where(NewsSourceSubscription.site_feed_id.is_not(None))
+                        .group_by(NewsSourceSubscription.site_feed_id)
+                    )
+                ).all()
+                if source_id is not None
+            }
+            crawl_subscription_counts = {
+                int(source_id): int(count)
+                for source_id, count in (
+                    await session.execute(
+                        select(NewsSourceSubscription.crawl_source_id, func.count())
+                        .where(NewsSourceSubscription.crawl_source_id.is_not(None))
+                        .group_by(NewsSourceSubscription.crawl_source_id)
+                    )
+                ).all()
+                if source_id is not None
+            }
+            feed_article_counts = {
+                int(source_id): int(count)
+                for source_id, count in (
+                    await session.execute(
+                        select(NewsArticleSource.site_feed_id, func.count())
+                        .where(NewsArticleSource.site_feed_id.is_not(None))
+                        .group_by(NewsArticleSource.site_feed_id)
+                    )
+                ).all()
+                if source_id is not None
+            }
+            crawl_article_counts = {
+                int(source_id): int(count)
+                for source_id, count in (
+                    await session.execute(
+                        select(NewsArticleSource.crawl_source_id, func.count())
+                        .where(NewsArticleSource.crawl_source_id.is_not(None))
+                        .group_by(NewsArticleSource.crawl_source_id)
+                    )
+                ).all()
+                if source_id is not None
+            }
 
-            feed_items = [await self._serialize_feed_source_admin(session, row, user_id=user_id) for row in feed_rows]
-            crawl_items = [await self._serialize_crawl_source_admin(session, row, user_id=user_id) for row in crawl_rows]
-            runs = [await self._serialize_run_admin(session, row) for row in run_rows]
+            site_map = {int(row.id): row for row in site_rows}
+            feed_label_map = {int(row.id): row.title or row.feed_url for row in feed_rows}
+            crawl_label_map = {int(row.id): row.listing_url for row in crawl_rows}
+            feed_items = [
+                await self._serialize_feed_source_admin(
+                    session,
+                    row,
+                    user_id=user_id,
+                    site=site_map.get(int(row.site_id)),
+                    subscription_count=feed_subscription_counts.get(int(row.id), 0),
+                    article_count=feed_article_counts.get(int(row.id), 0),
+                )
+                for row in feed_rows
+            ]
+            crawl_items = [
+                await self._serialize_crawl_source_admin(
+                    session,
+                    row,
+                    user_id=user_id,
+                    site=site_map.get(int(row.site_id)),
+                    subscription_count=crawl_subscription_counts.get(int(row.id), 0),
+                    article_count=crawl_article_counts.get(int(row.id), 0),
+                )
+                for row in crawl_rows
+            ]
+            runs = [
+                await self._serialize_run_admin(
+                    session,
+                    row,
+                    feed_label_map=feed_label_map,
+                    crawl_label_map=crawl_label_map,
+                )
+                for row in run_rows
+            ]
 
             return {
                 "worker_running": bool(self._loop_task and not self._loop_task.done()),
                 "site_count": len(site_rows),
                 "rss_source_count": len(feed_items),
                 "crawl_source_count": len(crawl_items),
-                "article_count": len(article_rows),
+                "article_count": article_count,
                 "run_count": len(runs),
-                "active_run_count": len(active_run_rows),
-                "successful_run_count": successful_runs,
-                "failed_run_count": failed_runs,
+                "active_run_count": active_run_count,
+                "successful_run_count": run_status_counts.get("succeeded", 0),
+                "failed_run_count": run_status_counts.get("failed", 0),
                 "rss_sources": feed_items,
                 "crawl_sources": crawl_items,
                 "recent_runs": runs,
@@ -3045,21 +3131,39 @@ class NewsIngestionService:
             )
         return dict(grouped_sources)
 
-    async def _serialize_feed_source_admin(self, session, feed: NewsSiteFeed, *, user_id: int | None = None) -> dict[str, Any]:
-        site = await session.get(NewsSite, feed.site_id)
-        subscriptions = (
-            await session.execute(
-                select(NewsSourceSubscription).where(NewsSourceSubscription.site_feed_id == feed.id)
+    async def _serialize_feed_source_admin(
+        self,
+        session,
+        feed: NewsSiteFeed,
+        *,
+        user_id: int | None = None,
+        site: NewsSite | None = None,
+        subscription_count: int | None = None,
+        article_count: int | None = None,
+    ) -> dict[str, Any]:
+        del user_id
+        if site is None:
+            site = await session.get(NewsSite, feed.site_id)
+        if subscription_count is None:
+            subscription_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(NewsSourceSubscription)
+                        .where(NewsSourceSubscription.site_feed_id == feed.id)
+                    )
+                ).scalar_one()
             )
-        ).scalars().all()
-        subscription_count = len(subscriptions)
-        article_count = len(
-            (
-                await session.execute(
-                    select(NewsArticleSource).where(NewsArticleSource.site_feed_id == feed.id)
-                )
-            ).scalars().all()
-        )
+        if article_count is None:
+            article_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(NewsArticleSource)
+                        .where(NewsArticleSource.site_feed_id == feed.id)
+                    )
+                ).scalar_one()
+            )
         return {
             "kind": "rss",
             "id": feed.id,
@@ -3079,25 +3183,43 @@ class NewsIngestionService:
             "last_failure_at": utc_naive_to_local_iso(feed.last_failure_at),
             "enabled": bool(feed.enabled),
             "is_public": feed.is_public,
-            "subscription_count": subscription_count,
-            "article_count": article_count,
+            "subscription_count": int(subscription_count),
+            "article_count": int(article_count),
         }
 
-    async def _serialize_crawl_source_admin(self, session, source: NewsCrawlSource, *, user_id: int | None = None) -> dict[str, Any]:
-        site = await session.get(NewsSite, source.site_id)
-        subscriptions = (
-            await session.execute(
-                select(NewsSourceSubscription).where(NewsSourceSubscription.crawl_source_id == source.id)
+    async def _serialize_crawl_source_admin(
+        self,
+        session,
+        source: NewsCrawlSource,
+        *,
+        user_id: int | None = None,
+        site: NewsSite | None = None,
+        subscription_count: int | None = None,
+        article_count: int | None = None,
+    ) -> dict[str, Any]:
+        del user_id
+        if site is None:
+            site = await session.get(NewsSite, source.site_id)
+        if subscription_count is None:
+            subscription_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(NewsSourceSubscription)
+                        .where(NewsSourceSubscription.crawl_source_id == source.id)
+                    )
+                ).scalar_one()
             )
-        ).scalars().all()
-        subscription_count = len(subscriptions)
-        article_count = len(
-            (
-                await session.execute(
-                    select(NewsArticleSource).where(NewsArticleSource.crawl_source_id == source.id)
-                )
-            ).scalars().all()
-        )
+        if article_count is None:
+            article_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(NewsArticleSource)
+                        .where(NewsArticleSource.crawl_source_id == source.id)
+                    )
+                ).scalar_one()
+            )
         return {
             "kind": "crawl",
             "id": source.id,
@@ -3119,20 +3241,31 @@ class NewsIngestionService:
             "last_failure_at": utc_naive_to_local_iso(source.last_failure_at),
             "enabled": bool(source.enabled),
             "is_public": source.is_public,
-            "subscription_count": subscription_count,
-            "article_count": article_count,
+            "subscription_count": int(subscription_count),
+            "article_count": int(article_count),
         }
 
-    async def _serialize_run_admin(self, session, run: NewsIngestionRun) -> dict[str, Any]:
+    async def _serialize_run_admin(
+        self,
+        session,
+        run: NewsIngestionRun,
+        *,
+        feed_label_map: dict[int, str] | None = None,
+        crawl_label_map: dict[int, str] | None = None,
+    ) -> dict[str, Any]:
         source_label = None
         if run.site_feed_id is not None:
-            feed = await session.get(NewsSiteFeed, run.site_feed_id)
-            if feed is not None:
-                source_label = feed.title or feed.feed_url
+            source_label = (feed_label_map or {}).get(int(run.site_feed_id))
+            if source_label is None:
+                feed = await session.get(NewsSiteFeed, run.site_feed_id)
+                if feed is not None:
+                    source_label = feed.title or feed.feed_url
         elif run.crawl_source_id is not None:
-            source = await session.get(NewsCrawlSource, run.crawl_source_id)
-            if source is not None:
-                source_label = source.listing_url
+            source_label = (crawl_label_map or {}).get(int(run.crawl_source_id))
+            if source_label is None:
+                source = await session.get(NewsCrawlSource, run.crawl_source_id)
+                if source is not None:
+                    source_label = source.listing_url
         return {
             "id": run.id,
             "source_type": run.source_type,
