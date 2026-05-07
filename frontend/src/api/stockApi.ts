@@ -1466,6 +1466,20 @@ export const stockApi = {
         return response.data;
     },
 
+    async updateNewsMonitoringSource(
+        sourceType: NewsSourceKind,
+        sourceId: number,
+        payload: Pick<NewsSourceUpdateRequest, 'enabled'>,
+    ): Promise<NewsSourceSummary> {
+        const response = await apiClient.patch<NewsSourceSummary>(`/news/admin/sources/${sourceType}/${sourceId}`, payload);
+        return response.data;
+    },
+
+    async setNewsMonitoringSourcesEnabled(enabled: boolean): Promise<NewsMonitoringActionResponse> {
+        const response = await apiClient.post<NewsMonitoringActionResponse>('/news/admin/sources/enabled', { enabled });
+        return response.data;
+    },
+
     async deleteNewsMonitoringSource(sourceType: NewsSourceKind, sourceId: number): Promise<void> {
         await apiClient.delete(`/news/admin/sources/${sourceType}/${sourceId}`);
     },

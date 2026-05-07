@@ -11,6 +11,7 @@ from app.db.models import (
     NewsArticle,
     NewsArticleSemantic,
     NewsArticleSource,
+    NewsCrawlSource,
     NewsSite,
     NewsSiteFeed,
     NewsSourceSubscription,
@@ -1661,7 +1662,89 @@ async def test_news_admin_can_delete_source_from_monitoring_catalog(client, db_s
 
 
 @pytest.mark.asyncio
-async def test_news_admin_sources_reflect_current_subscription_enabled_state(client, monkeypatch):
+async def test_news_admin_can_toggle_all_sources_in_monitoring_catalog(client, db_session):
+    headers, _ = await _register_and_auth(client, "admin@example.com")
+
+    site = NewsSite(
+        domain="admin-bulk-toggle.example.com",
+        homepage_url="https://admin-bulk-toggle.example.com",
+        display_name="Admin Bulk Toggle",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://admin-bulk-toggle.example.com/rss.xml",
+        title="Admin Bulk Toggle RSS",
+        kind="rss",
+        discovery_method="manual",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    crawl_source = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://admin-bulk-toggle.example.com/news",
+        article_link_selector="article a",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    db_session.add_all([feed, crawl_source])
+    await db_session.commit()
+
+    response = await client.post("/api/v1/news/admin/sources/enabled", json={"enabled": False}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["refreshed_count"] == 2
+    assert response.json()["message"] == "Disabled 2 news sources."
+
+    sources_response = await client.get("/api/v1/news/admin/sources", headers=headers)
+    assert sources_response.status_code == 200
+    assert sources_response.json()["rss_sources"][0]["enabled"] is False
+    assert sources_response.json()["crawl_sources"][0]["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_news_admin_can_toggle_single_source_in_monitoring_catalog(client, db_session):
+    headers, _ = await _register_and_auth(client, "admin@example.com")
+
+    site = NewsSite(
+        domain="admin-single-toggle.example.com",
+        homepage_url="https://admin-single-toggle.example.com",
+        display_name="Admin Single Toggle",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://admin-single-toggle.example.com/rss.xml",
+        title="Admin Single Toggle RSS",
+        kind="rss",
+        discovery_method="manual",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    db_session.add(feed)
+    await db_session.commit()
+
+    response = await client.patch(f"/api/v1/news/admin/sources/rss/{feed.id}", json={"enabled": False}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+
+    await db_session.refresh(feed)
+    assert feed.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_news_admin_sources_report_global_enabled_state(client, monkeypatch):
     headers, _ = await _register_and_auth(client, "admin@example.com")
 
     async def _fake_validate_feed(feed_url: str, site_url: str | None = None):
@@ -1698,7 +1781,7 @@ async def test_news_admin_sources_reflect_current_subscription_enabled_state(cli
     admin_sources_response = await client.get("/api/v1/news/admin/sources", headers=headers)
     assert admin_sources_response.status_code == 200
     admin_source = next(item for item in admin_sources_response.json()["rss_sources"] if int(item["id"]) == source_id)
-    assert admin_source["enabled"] is False
+    assert admin_source["enabled"] is True
 
 
 @pytest.mark.asyncio

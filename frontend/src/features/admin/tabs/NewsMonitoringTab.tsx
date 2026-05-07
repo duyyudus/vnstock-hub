@@ -145,7 +145,7 @@ export const NewsMonitoringTab: React.FC = () => {
     const [sources, setSources] = useState<NewsSourcesResponse | null>(null);
     const [runs, setRuns] = useState<NewsMonitoringRun[]>([]);
     const [loading, setLoading] = useState(true);
-    const [busyAction, setBusyAction] = useState<'refresh' | 'ingest' | 'catalog' | 'repairTitles' | 'saveConfig' | 'applyDefault' | null>(null);
+    const [busyAction, setBusyAction] = useState<'refresh' | 'ingest' | 'catalog' | 'repairTitles' | 'toggleAllSources' | 'saveConfig' | 'applyDefault' | null>(null);
     const [busySourceKey, setBusySourceKey] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -265,6 +265,9 @@ export const NewsMonitoringTab: React.FC = () => {
         };
     }, [overview, recentRuns, sourceRows]);
 
+    const hasSources = sourceRows.length > 0;
+    const shouldEnableAllSources = hasSources && sourceRows.every((source) => !source.enabled);
+
     const handleRefresh = useCallback(async () => {
         setBusyAction('refresh');
         setMessage(null);
@@ -323,6 +326,22 @@ export const NewsMonitoringTab: React.FC = () => {
             setBusyAction(null);
         }
     }, [loadData]);
+
+    const handleToggleAllSources = useCallback(async () => {
+        const enabled = shouldEnableAllSources;
+        setBusyAction('toggleAllSources');
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await stockApi.setNewsMonitoringSourcesEnabled(enabled);
+            setMessage(response.message);
+            await loadData(false);
+        } catch (toggleError) {
+            setError(getErrorMessage(toggleError));
+        } finally {
+            setBusyAction(null);
+        }
+    }, [loadData, shouldEnableAllSources]);
 
     const handleSaveConfig = useCallback(async () => {
         const parsed = Number(defaultPollIntervalDraft);
@@ -383,7 +402,7 @@ export const NewsMonitoringTab: React.FC = () => {
         setMessage(null);
         setError(null);
         try {
-            await stockApi.updateNewsSource(source.kind, source.id, { enabled: !source.enabled });
+            await stockApi.updateNewsMonitoringSource(source.kind, source.id, { enabled: !source.enabled });
             setMessage(`${source.title} was ${source.enabled ? 'disabled' : 'enabled'}.`);
             await loadData(false);
         } catch (toggleError) {
@@ -473,6 +492,10 @@ export const NewsMonitoringTab: React.FC = () => {
                     <button className="btn btn-outline btn-sm" onClick={handleRepairRssTitles} disabled={busyAction !== null || loading}>
                         {busyAction === 'repairTitles' ? <span className="loading loading-spinner loading-xs"></span> : null}
                         Repair RSS titles
+                    </button>
+                    <button className="btn btn-outline btn-sm" onClick={() => void handleToggleAllSources()} disabled={busyAction !== null || loading || !hasSources}>
+                        {busyAction === 'toggleAllSources' ? <span className="loading loading-spinner loading-xs"></span> : null}
+                        {shouldEnableAllSources ? 'Enable all sources' : 'Disable all sources'}
                     </button>
                 </div>
             </div>

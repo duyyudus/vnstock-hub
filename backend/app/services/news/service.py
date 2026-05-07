@@ -488,6 +488,49 @@ class NewsIngestionService:
 
         return changed_count
 
+    async def set_all_admin_sources_enabled(self, enabled: bool) -> int:
+        changed_count = 0
+
+        async with async_session() as session:
+            feeds = (await session.execute(select(NewsSiteFeed))).scalars().all()
+            for feed in feeds:
+                if bool(feed.enabled) == enabled:
+                    continue
+                feed.enabled = enabled
+                changed_count += 1
+
+            crawl_sources = (await session.execute(select(NewsCrawlSource))).scalars().all()
+            for source in crawl_sources:
+                if bool(source.enabled) == enabled:
+                    continue
+                source.enabled = enabled
+                changed_count += 1
+
+            if changed_count:
+                await session.commit()
+
+        return changed_count
+
+    async def set_admin_source_enabled(self, *, source_type: str, source_id: int, enabled: bool) -> dict[str, Any]:
+        async with async_session() as session:
+            if source_type == "rss":
+                feed = await session.get(NewsSiteFeed, source_id)
+                if feed is None:
+                    raise ValueError("News source not found")
+                feed.enabled = enabled
+                await session.commit()
+                return await self._serialize_feed_source_admin(session, feed)
+
+            if source_type == "crawl":
+                source = await session.get(NewsCrawlSource, source_id)
+                if source is None:
+                    raise ValueError("News source not found")
+                source.enabled = enabled
+                await session.commit()
+                return await self._serialize_crawl_source_admin(session, source)
+
+            raise ValueError("Unsupported source type")
+
     async def discover_rss_feeds(self, homepage_url: str) -> list[dict[str, Any]]:
         return await discover_rss_feeds(self._client, homepage_url)
 
@@ -694,15 +737,33 @@ class NewsIngestionService:
             raise ValueError("source_id is required when source_type is provided")
 
         if source_type == "rss" and source_id is not None:
+            async with async_session() as session:
+                feed = await session.get(NewsSiteFeed, source_id)
+                if feed is None:
+                    raise ValueError("News source not found")
+                if not bool(feed.enabled):
+                    return {"triggered": 0, "message": "RSS source is disabled."}
             await self._ingest_feed(source_id)
             return {"triggered": 1, "message": "RSS source ingested."}
         if source_type == "crawl" and source_id is not None:
+            async with async_session() as session:
+                source = await session.get(NewsCrawlSource, source_id)
+                if source is None:
+                    raise ValueError("News source not found")
+                if not bool(source.enabled):
+                    return {"triggered": 0, "message": "Crawl source is disabled."}
             await self._ingest_crawl_source(source_id)
             return {"triggered": 1, "message": "Crawl source ingested."}
 
         async with async_session() as session:
-            feed_stmt = select(NewsSiteFeed).where(NewsSiteFeed.validation_status == "valid")
-            crawl_stmt = select(NewsCrawlSource).where(NewsCrawlSource.validation_status == "valid")
+            feed_stmt = select(NewsSiteFeed).where(
+                NewsSiteFeed.validation_status == "valid",
+                NewsSiteFeed.enabled.is_(True),
+            )
+            crawl_stmt = select(NewsCrawlSource).where(
+                NewsCrawlSource.validation_status == "valid",
+                NewsCrawlSource.enabled.is_(True),
+            )
             if public_only:
                 feed_stmt = feed_stmt.where(NewsSiteFeed.is_public.is_(True))
                 crawl_stmt = crawl_stmt.where(NewsCrawlSource.is_public.is_(True))
@@ -2388,6 +2449,7 @@ class NewsIngestionService:
                     )
                     .where(
                         NewsSiteFeed.validation_status == "valid",
+                        NewsSiteFeed.enabled.is_(True),
                         or_(NewsSiteFeed.is_public.is_(True), NewsSourceSubscription.id.is_not(None)),
                         or_(NewsSiteFeed.next_poll_at.is_(None), NewsSiteFeed.next_poll_at <= utc_now()),
                     )
@@ -2407,6 +2469,7 @@ class NewsIngestionService:
                     )
                     .where(
                         NewsCrawlSource.validation_status == "valid",
+                        NewsCrawlSource.enabled.is_(True),
                         or_(NewsCrawlSource.is_public.is_(True), NewsSourceSubscription.id.is_not(None)),
                         or_(NewsCrawlSource.next_poll_at.is_(None), NewsCrawlSource.next_poll_at <= utc_now()),
                     )
@@ -2990,10 +3053,6 @@ class NewsIngestionService:
             )
         ).scalars().all()
         subscription_count = len(subscriptions)
-        enabled = bool(feed.is_public)
-        if user_id is not None:
-            matched_subscription = next((item for item in subscriptions if int(item.user_id) == int(user_id)), None)
-            enabled = bool(matched_subscription.enabled) if matched_subscription is not None else bool(feed.is_public)
         article_count = len(
             (
                 await session.execute(
@@ -3018,7 +3077,7 @@ class NewsIngestionService:
             "next_poll_at": utc_naive_to_local_iso(feed.next_poll_at),
             "last_success_at": utc_naive_to_local_iso(feed.last_success_at),
             "last_failure_at": utc_naive_to_local_iso(feed.last_failure_at),
-            "enabled": enabled,
+            "enabled": bool(feed.enabled),
             "is_public": feed.is_public,
             "subscription_count": subscription_count,
             "article_count": article_count,
@@ -3032,10 +3091,6 @@ class NewsIngestionService:
             )
         ).scalars().all()
         subscription_count = len(subscriptions)
-        enabled = bool(source.is_public)
-        if user_id is not None:
-            matched_subscription = next((item for item in subscriptions if int(item.user_id) == int(user_id)), None)
-            enabled = bool(matched_subscription.enabled) if matched_subscription is not None else bool(source.is_public)
         article_count = len(
             (
                 await session.execute(
@@ -3062,7 +3117,7 @@ class NewsIngestionService:
             "next_poll_at": utc_naive_to_local_iso(source.next_poll_at),
             "last_success_at": utc_naive_to_local_iso(source.last_success_at),
             "last_failure_at": utc_naive_to_local_iso(source.last_failure_at),
-            "enabled": enabled,
+            "enabled": bool(source.enabled),
             "is_public": source.is_public,
             "subscription_count": subscription_count,
             "article_count": article_count,

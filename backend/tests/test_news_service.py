@@ -2268,6 +2268,135 @@ async def test_apply_default_poll_interval_to_existing_sources_updates_mismatche
 
 
 @pytest.mark.asyncio
+async def test_set_all_admin_sources_enabled_updates_feed_and_crawl_sources(db_session):
+    site = NewsSite(
+        domain="bulk-toggle.example.com",
+        homepage_url="https://bulk-toggle.example.com",
+        display_name="Bulk Toggle",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://bulk-toggle.example.com/rss.xml",
+        title="Bulk Toggle RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    crawl_source = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://bulk-toggle.example.com/news",
+        article_link_selector="article a",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    already_disabled = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://bulk-toggle.example.com/disabled.xml",
+        title="Already Disabled RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        enabled=False,
+    )
+    db_session.add_all([feed, crawl_source, already_disabled])
+    await db_session.commit()
+
+    changed_count = await news_service.set_all_admin_sources_enabled(False)
+
+    await db_session.refresh(feed)
+    await db_session.refresh(crawl_source)
+    await db_session.refresh(already_disabled)
+    assert changed_count == 2
+    assert feed.enabled is False
+    assert crawl_source.enabled is False
+    assert already_disabled.enabled is False
+
+    unchanged_count = await news_service.set_all_admin_sources_enabled(False)
+
+    assert unchanged_count == 0
+
+
+@pytest.mark.asyncio
+async def test_trigger_admin_run_skips_disabled_sources(db_session, monkeypatch):
+    site = NewsSite(
+        domain="disabled-ingest.example.com",
+        homepage_url="https://disabled-ingest.example.com",
+        display_name="Disabled Ingest",
+        is_public=True,
+    )
+    db_session.add(site)
+    await db_session.flush()
+
+    enabled_feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://disabled-ingest.example.com/enabled.xml",
+        title="Enabled RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    disabled_feed = NewsSiteFeed(
+        site_id=site.id,
+        feed_url="https://disabled-ingest.example.com/disabled.xml",
+        title="Disabled RSS",
+        kind="rss",
+        discovery_method="seed",
+        validation_status="valid",
+        is_public=True,
+        enabled=False,
+    )
+    enabled_crawl = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://disabled-ingest.example.com/news",
+        article_link_selector="article a",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+        enabled=True,
+    )
+    disabled_crawl = NewsCrawlSource(
+        site_id=site.id,
+        listing_url="https://disabled-ingest.example.com/disabled-news",
+        article_link_selector="article a",
+        content_selector="article",
+        validation_status="valid",
+        is_public=True,
+        enabled=False,
+    )
+    db_session.add_all([enabled_feed, disabled_feed, enabled_crawl, disabled_crawl])
+    await db_session.commit()
+
+    ingested_feeds: list[int] = []
+    ingested_crawls: list[int] = []
+
+    async def _fake_ingest_feed(feed_id: int) -> None:
+        ingested_feeds.append(feed_id)
+
+    async def _fake_ingest_crawl_source(source_id: int) -> None:
+        ingested_crawls.append(source_id)
+
+    monkeypatch.setattr(news_service, "_ingest_feed", _fake_ingest_feed)
+    monkeypatch.setattr(news_service, "_ingest_crawl_source", _fake_ingest_crawl_source)
+
+    result = await news_service.trigger_admin_run(public_only=True)
+
+    assert result["triggered"] == 2
+    assert ingested_feeds == [enabled_feed.id]
+    assert ingested_crawls == [enabled_crawl.id]
+
+
+@pytest.mark.asyncio
 async def test_ensure_public_sources_removes_seeded_public_feeds_missing_from_config(db_session, tmp_path, monkeypatch):
     news_sources_path = Path(tmp_path) / "news_sources.yaml"
     news_sources_path.write_text(

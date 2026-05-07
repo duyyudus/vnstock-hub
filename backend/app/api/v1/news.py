@@ -278,6 +278,10 @@ class NewsSourceUpdateRequest(BaseModel):
     poll_interval_minutes: int | None = None
 
 
+class NewsSourcesEnabledUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class NewsUserPreferencesResponse(BaseModel):
     blocked_topics_text: str = ""
     blocked_labels: list[str] = Field(default_factory=list)
@@ -305,6 +309,7 @@ class NewsAdminSourceStatusResponse(BaseModel):
     next_poll_at: str | None = None
     last_success_at: str | None = None
     last_failure_at: str | None = None
+    enabled: bool = True
     is_public: bool
     subscription_count: int = 0
     article_count: int = 0
@@ -544,6 +549,7 @@ def _serialize_admin_source(item: dict[str, Any]) -> NewsAdminSourceStatusRespon
         next_poll_at=item.get("next_poll_at"),
         last_success_at=item.get("last_success_at"),
         last_failure_at=item.get("last_failure_at"),
+        enabled=bool(item.get("enabled", True)),
         is_public=bool(item.get("is_public")),
         subscription_count=int(item.get("subscription_count") or 0),
         article_count=int(item.get("article_count") or 0),
@@ -980,7 +986,7 @@ async def get_news_monitoring_overview(current_user=Depends(get_current_admin_us
     last_run = recent_runs[0] if recent_runs else None
     return NewsMonitoringOverviewResponse(
         total_sources=len(all_sources),
-        enabled_sources=len(all_sources),
+        enabled_sources=sum(1 for item in all_sources if item.get("enabled", True)),
         valid_sources=valid_sources,
         invalid_sources=invalid_sources,
         public_sources=public_sources,
@@ -1021,7 +1027,8 @@ async def update_news_admin_config(
 
 @router.get("/admin/sources", response_model=NewsSourcesResponse)
 async def get_news_monitoring_sources(current_user=Depends(get_current_admin_user)):
-    payload = await news_service.get_admin_status(user_id=current_user.id)
+    del current_user
+    payload = await news_service.get_admin_status()
     site_map: dict[int, NewsSiteResponse] = {}
     for item in [*payload["rss_sources"], *payload["crawl_sources"]]:
         site_id = item.get("site_id")
@@ -1062,6 +1069,40 @@ async def get_news_monitoring_sources(current_user=Depends(get_current_admin_use
         ],
         subscriptions=[],
     )
+
+
+@router.post("/admin/sources/enabled", response_model=NewsMonitoringActionResponse)
+async def set_news_monitoring_sources_enabled(
+    payload: NewsSourcesEnabledUpdateRequest,
+    current_user=Depends(get_current_admin_user),
+):
+    del current_user
+    changed_count = await news_service.set_all_admin_sources_enabled(payload.enabled)
+    action = "Enabled" if payload.enabled else "Disabled"
+    return NewsMonitoringActionResponse(
+        started=True,
+        message=f"{action} {changed_count} news source{'s' if changed_count != 1 else ''}.",
+        refreshed_count=changed_count,
+        timestamp=utc_naive_to_local_iso(utc_now()),
+    )
+
+
+@router.patch("/admin/sources/{source_type}/{source_id}", response_model=NewsSourceSummaryResponse)
+async def update_news_monitoring_source(
+    source_type: NewsSourceKind,
+    source_id: int,
+    payload: NewsSourcesEnabledUpdateRequest,
+    current_user=Depends(get_current_admin_user),
+):
+    del current_user
+    item = await news_service.set_admin_source_enabled(
+        source_type=source_type,
+        source_id=source_id,
+        enabled=payload.enabled,
+    )
+    if source_type == "rss":
+        return _serialize_rss_source(item)
+    return _serialize_crawl_source(item)
 
 
 @router.get("/admin/runs", response_model=NewsMonitoringRunsResponse)
