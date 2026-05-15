@@ -304,6 +304,30 @@ async def test_sync_tracks_failed_tickers_and_resets(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_sync_passes_force_refresh_to_symbol_sync(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    seen_force_refresh = []
+    symbols_meta = [SymbolSyncMeta(symbol="AAA", listing_date=date(2020, 1, 1))]
+
+    async def _fake_build_symbol_universe(_symbols=None):
+        return symbols_meta
+
+    async def _fake_ensure_sync_state_rows(_symbols_meta):
+        return None
+
+    async def _fake_sync_symbol(_meta: SymbolSyncMeta, force_refresh: bool = False):
+        seen_force_refresh.append(force_refresh)
+
+    monkeypatch.setattr(service, "_build_symbol_universe", _fake_build_symbol_universe)
+    monkeypatch.setattr(service, "_ensure_sync_state_rows", _fake_ensure_sync_state_rows)
+    monkeypatch.setattr(service, "_sync_symbol", _fake_sync_symbol)
+
+    await service._run_sync(symbols=None, force_refresh=True)
+
+    assert seen_force_refresh == [True]
+
+
+@pytest.mark.asyncio
 async def test_cancel_running_history_sync_marks_runtime_cancelled(monkeypatch):
     service = HistorySyncService(history=HistoryService())
     started = asyncio.Event()
@@ -848,6 +872,48 @@ async def test_sync_symbol_uses_db_max_date_with_two_day_overlap(monkeypatch):
 
     assert chunk_starts
     assert chunk_starts[0] == date(2025, 1, 9)
+
+
+@pytest.mark.asyncio
+async def test_sync_symbol_force_refresh_starts_from_listing_date(monkeypatch):
+    service = HistorySyncService(history=HistoryService())
+    service._sync_chunk_days = 10000
+
+    chunk_starts = []
+    bounds_calls = {"count": 0}
+
+    async def _fake_get_or_create_symbol_state(_symbol, listing_date=None):
+        return SimpleNamespace(listing_date=date(2020, 1, 1))
+
+    async def _fake_set_running(_symbol, _listing_date):
+        return None
+
+    async def _fake_get_bounds(_symbol):
+        bounds_calls["count"] += 1
+        if bounds_calls["count"] == 1:
+            return date(2020, 1, 1), date(2025, 1, 10)
+        return date(2020, 1, 1), date(2025, 1, 10)
+
+    async def _fake_run_chunk(_symbol, start_date: date, _end_date: date):
+        chunk_starts.append(start_date)
+        return 0
+
+    async def _fake_mark_completed(**_kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_get_or_create_symbol_state", _fake_get_or_create_symbol_state)
+    monkeypatch.setattr(service, "_set_symbol_sync_running", _fake_set_running)
+    monkeypatch.setattr(service, "_get_symbol_bounds", _fake_get_bounds)
+    monkeypatch.setattr(service, "_run_sync_chunk_with_retry", _fake_run_chunk)
+    monkeypatch.setattr(service, "_mark_symbol_sync_completed", _fake_mark_completed)
+
+    await service._sync_symbol(
+        SymbolSyncMeta(symbol="AAA", listing_date=date(2020, 1, 1)),
+        force_refresh=True,
+    )
+
+    assert chunk_starts
+    assert chunk_starts[0] == date(2020, 1, 1)
 
 
 @pytest.mark.asyncio

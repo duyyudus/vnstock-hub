@@ -36,6 +36,7 @@ export const AdminPage: React.FC = () => {
     const [syncIndexSymbol, setSyncIndexSymbol] = useState('');
     const [syncCollectionScope, setSyncCollectionScope] = useState<SyncCollectionScope>('manual');
     const [forceRestart, setForceRestart] = useState(false);
+    const [syncForceRefresh, setSyncForceRefresh] = useState(false);
 
     const [indexOptions, setIndexOptions] = useState<IndexInfo[]>([]);
     const [auditSymbols, setAuditSymbols] = useState('');
@@ -223,6 +224,7 @@ export const AdminPage: React.FC = () => {
                 forceRestart,
                 symbols.length > 0 ? symbols : undefined,
                 syncCollectionScope === 'manual' ? syncIndexSymbol || undefined : undefined,
+                syncForceRefresh,
             ),
             setSyncRunning,
             undefined,
@@ -593,6 +595,8 @@ export const AdminPage: React.FC = () => {
                         onSyncSymbolsChange={(value) => setSyncSymbols(value)}
                         forceRestart={forceRestart}
                         onForceRestartChange={(checked) => setForceRestart(checked)}
+                        syncForceRefresh={syncForceRefresh}
+                        onSyncForceRefreshChange={(checked) => setSyncForceRefresh(checked)}
                         onRunSync={handleRunSync}
                         syncActive={syncActive}
                         auditIndexSymbol={auditIndexSymbol}

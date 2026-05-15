@@ -145,6 +145,7 @@ class HistorySyncService:
         force_restart: bool = False,
         symbols: Optional[List[str]] = None,
         index_symbol: Optional[str] = None,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         """Start unified history sync as background task."""
         symbols_filter = await self._resolve_symbols_filter(
@@ -168,7 +169,9 @@ class HistorySyncService:
                 except asyncio.CancelledError:
                     pass
 
-            self._sync_task = asyncio.create_task(self._run_sync(symbols_filter))
+            self._sync_task = asyncio.create_task(
+                self._run_sync(symbols_filter, force_refresh=force_refresh)
+            )
 
         return {
             "started": True,
@@ -767,7 +770,7 @@ class HistorySyncService:
             self._repair_worker_tasks.difference_update(workers)
             self._repair_cancel_requested = False
 
-    async def _run_sync(self, symbols: Optional[List[str]]) -> None:
+    async def _run_sync(self, symbols: Optional[List[str]], force_refresh: bool = False) -> None:
         """Background unified sync execution."""
         symbols_meta = await self._build_symbol_universe(symbols)
         total = len(symbols_meta)
@@ -820,7 +823,10 @@ class HistorySyncService:
                             current_symbol=meta.symbol,
                         )
                     async with self._operation_worker_semaphore:
-                        await self._sync_symbol(meta)
+                        if force_refresh:
+                            await self._sync_symbol(meta, force_refresh=True)
+                        else:
+                            await self._sync_symbol(meta)
                 except asyncio.CancelledError:
                     was_cancelled = True
                     raise
@@ -873,7 +879,7 @@ class HistorySyncService:
         except Exception as e:
             sync_status.complete_history_sync(success=False, error=str(e)[:500])
 
-    async def _sync_symbol(self, meta: SymbolSyncMeta) -> None:
+    async def _sync_symbol(self, meta: SymbolSyncMeta, force_refresh: bool = False) -> None:
         started = time.monotonic()
         chunk_count = 0
         retry_count = 0
@@ -899,7 +905,7 @@ class HistorySyncService:
         _, latest_local = await self._get_symbol_bounds(meta.symbol)
 
         cursor = symbol_start_date
-        if latest_local is not None:
+        if latest_local is not None and not force_refresh:
             overlap_days = max(0, self.SYNC_OVERLAP_DAYS - 1)
             overlap_start = latest_local - timedelta(days=overlap_days)
             cursor = max(symbol_start_date, overlap_start)

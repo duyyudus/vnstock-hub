@@ -227,11 +227,13 @@ class VnstockService:
         force_restart: bool = False,
         symbols: List[str] | None = None,
         index_symbol: str | None = None,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         return await self.history_sync.run_sync(
             force_restart=force_restart,
             symbols=symbols,
             index_symbol=index_symbol,
+            force_refresh=force_refresh,
         )
 
     async def cancel_history_sync(self) -> Dict[str, Any]:

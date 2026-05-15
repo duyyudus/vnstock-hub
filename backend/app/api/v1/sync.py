@@ -67,6 +67,7 @@ class HistorySyncRunRequest(BaseModel):
     force_restart: bool = False
     symbols: Optional[List[str]] = None
     index_symbol: Optional[str] = None
+    force_refresh: bool = False
 
 
 class FinanceSyncRunRequest(BaseModel):
@@ -322,6 +323,7 @@ async def run_history_sync(
             force_restart=payload.force_restart,
             symbols=payload.symbols,
             index_symbol=payload.index_symbol,
+            force_refresh=payload.force_refresh,
         )
     except ValueError as e:
         raise HTTPException(

@@ -21,6 +21,8 @@ interface HistorySyncTabProps {
     onSyncSymbolsChange: (value: string) => void;
     forceRestart: boolean;
     onForceRestartChange: (checked: boolean) => void;
+    syncForceRefresh: boolean;
+    onSyncForceRefreshChange: (checked: boolean) => void;
     onRunSync: () => void | Promise<void>;
     syncActive: boolean;
     auditIndexSymbol: string;
@@ -77,6 +79,8 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
     onSyncSymbolsChange,
     forceRestart,
     onForceRestartChange,
+    syncForceRefresh,
+    onSyncForceRefreshChange,
     onRunSync,
     syncActive,
     auditIndexSymbol,
@@ -214,6 +218,20 @@ export const HistorySyncTab: React.FC<HistorySyncTabProps> = ({
                                 onChange={(event) => onForceRestartChange(event.target.checked)}
                             />
                             <span className="label-text">Force restart if already running</span>
+                        </label>
+                        <label className="label cursor-pointer items-start justify-start gap-3">
+                            <input
+                                type="checkbox"
+                                className="checkbox mt-1"
+                                checked={syncForceRefresh}
+                                onChange={(event) => onSyncForceRefreshChange(event.target.checked)}
+                            />
+                            <span className="label-text">
+                                <span className="block">Refresh all history data</span>
+                                <span className="block text-xs text-base-content/70">
+                                    Re-fetch full history and overwrite matching existing rows.
+                                </span>
+                            </span>
                         </label>
                         <button
                             className="btn btn-primary"

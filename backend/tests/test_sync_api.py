@@ -53,7 +53,7 @@ async def test_run_history_sync_with_admin_calls_service(client):
         ) as mock_run:
             response = await client.post(
                 "/api/v1/sync/history/run",
-                json={"force_restart": False, "index_symbol": "VN30"},
+                json={"force_restart": False, "index_symbol": "VN30", "force_refresh": True},
             )
     finally:
         app.dependency_overrides.pop(get_current_admin_user, None)
@@ -65,6 +65,7 @@ async def test_run_history_sync_with_admin_calls_service(client):
     mock_run.assert_awaited_once()
     called_kwargs = mock_run.await_args.kwargs
     assert called_kwargs["index_symbol"] == "VN30"
+    assert called_kwargs["force_refresh"] is True
 
 
 @pytest.mark.asyncio
