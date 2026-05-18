@@ -602,14 +602,32 @@ export const TradingTab: React.FC = () => {
             return;
         }
 
+        const existingPosition = positions.find((position) => (
+            position.account_label === accountLabel
+            && position.ticker.toUpperCase() === ticker
+        ));
+
         setAddFormLoading(true);
         try {
-            await stockApi.createTradingPosition({
-                account_label: accountLabel,
-                ticker,
-                quantity,
-                average_entry_cost: averageEntryCost,
-            });
+            if (existingPosition) {
+                const nextQuantity = existingPosition.quantity + quantity;
+                const nextAverageEntryCost = (
+                    (existingPosition.quantity * existingPosition.average_entry_cost)
+                    + (quantity * averageEntryCost)
+                ) / nextQuantity;
+
+                await stockApi.updateTradingPosition(existingPosition.id, {
+                    quantity: nextQuantity,
+                    average_entry_cost: nextAverageEntryCost,
+                });
+            } else {
+                await stockApi.createTradingPosition({
+                    account_label: accountLabel,
+                    ticker,
+                    quantity,
+                    average_entry_cost: averageEntryCost,
+                });
+            }
             await fetchPositions();
             resetAddForm();
         } catch (err) {
@@ -663,6 +681,33 @@ export const TradingTab: React.FC = () => {
             setEditFormError(getErrorMessage(err));
         } finally {
             setEditFormLoading(false);
+        }
+    };
+
+    const handleEditKeyDown = (
+        event: React.KeyboardEvent<HTMLInputElement>,
+        position: TradingPosition,
+    ) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void handleEditSubmit(position);
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            resetEditForm();
+        }
+    };
+
+    const handleAddKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void handleAddSubmit();
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            resetAddForm();
         }
     };
 
@@ -859,7 +904,7 @@ export const TradingTab: React.FC = () => {
                                         <tr>
                                             <th>{renderSortHeader('Ticker', 'ticker')}</th>
                                             <th>{renderSortHeader('Quantity', 'quantity')}</th>
-                                            <th>{renderSortHeader('Entry', 'averageEntryCost')}</th>
+                                            <th>{renderSortHeader('Avg Entry Price', 'averageEntryCost')}</th>
                                             <th>{renderSortHeader('Current', 'currentPrice')}</th>
                                             <th>{renderSortHeader('24h Change %', 'priceChange24h')}</th>
                                             <th>{renderSortHeader('Market Value', 'marketValue')}</th>
@@ -868,6 +913,65 @@ export const TradingTab: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        <tr>
+                                            <td>
+                                                <input
+                                                    type="text"
+                                                    className="input input-bordered input-xs w-24"
+                                                    placeholder="Ticker"
+                                                    value={addFormState.ticker}
+                                                    onChange={handleAddInputChange('ticker')}
+                                                    onKeyDown={handleAddKeyDown}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    className="input input-bordered input-xs w-24"
+                                                    placeholder="Qty"
+                                                    value={addFormState.quantity}
+                                                    onChange={handleAddInputChange('quantity')}
+                                                    onKeyDown={handleAddKeyDown}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    min="0.01"
+                                                    step="0.01"
+                                                    className="input input-bordered input-xs w-28"
+                                                    placeholder="Entry"
+                                                    value={addFormState.averageEntryCost}
+                                                    onChange={handleAddInputChange('averageEntryCost')}
+                                                    onKeyDown={handleAddKeyDown}
+                                                />
+                                            </td>
+                                            <td>
+                                                --
+                                            </td>
+                                            <td>
+                                                --
+                                            </td>
+                                            <td className="text-base-content/50">--</td>
+                                            <td className="text-base-content/50">--</td>
+                                            <td>
+                                                <div className="flex flex-col gap-2">
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-xs btn-primary"
+                                                        onClick={() => handleAddSubmit()}
+                                                        disabled={addFormLoading}
+                                                    >
+                                                        {addFormLoading ? 'Adding...' : 'Add'}
+                                                    </button>
+                                                    {addFormError ? (
+                                                        <span className="text-xs text-error">{addFormError}</span>
+                                                    ) : null}
+                                                </div>
+                                            </td>
+                                        </tr>
                                         {sortedFilteredPositions.map((position) => {
                                             const isEditing = editingId === position.id;
                                             const display = isEditing ? editFormState : null;
@@ -918,6 +1022,7 @@ export const TradingTab: React.FC = () => {
                                                                 className="input input-bordered input-xs w-24"
                                                                 value={editFormState.ticker}
                                                                 onChange={handleEditInputChange('ticker')}
+                                                                onKeyDown={(event) => handleEditKeyDown(event, position)}
                                                             />
                                                         ) : fullNameWithExchange ? (
                                                             <div className="tooltip tooltip-right" data-tip={fullNameWithExchange}>
@@ -936,6 +1041,7 @@ export const TradingTab: React.FC = () => {
                                                                 className="input input-bordered input-xs w-24"
                                                                 value={editFormState.quantity}
                                                                 onChange={handleEditInputChange('quantity')}
+                                                                onKeyDown={(event) => handleEditKeyDown(event, position)}
                                                             />
                                                         ) : (
                                                             formatNumber(position.quantity, { maximumFractionDigits: 2 })
@@ -950,6 +1056,7 @@ export const TradingTab: React.FC = () => {
                                                                 className="input input-bordered input-xs w-28"
                                                                 value={editFormState.averageEntryCost}
                                                                 onChange={handleEditInputChange('averageEntryCost')}
+                                                                onKeyDown={(event) => handleEditKeyDown(event, position)}
                                                             />
                                                         ) : (
                                                             formatNumber(position.average_entry_cost, { maximumFractionDigits: 2 })
@@ -1020,63 +1127,6 @@ export const TradingTab: React.FC = () => {
                                             );
                                         })}
                                     </tbody>
-                                    <tfoot>
-                                        <tr>
-                                            <td>
-                                                <input
-                                                    type="text"
-                                                    className="input input-bordered input-xs w-24"
-                                                    placeholder="Ticker"
-                                                    value={addFormState.ticker}
-                                                    onChange={handleAddInputChange('ticker')}
-                                                />
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    step="1"
-                                                    className="input input-bordered input-xs w-24"
-                                                    placeholder="Qty"
-                                                    value={addFormState.quantity}
-                                                    onChange={handleAddInputChange('quantity')}
-                                                />
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    className="input input-bordered input-xs w-28"
-                                                    placeholder="Entry"
-                                                    value={addFormState.averageEntryCost}
-                                                    onChange={handleAddInputChange('averageEntryCost')}
-                                                />
-                                            </td>
-                                            <td>
-                                                --
-                                            </td>
-                                            <td>
-                                                --
-                                            </td>
-                                            <td className="text-base-content/50">--</td>
-                                            <td>
-                                                <div className="flex flex-col gap-2">
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-xs btn-primary"
-                                                        onClick={() => handleAddSubmit()}
-                                                        disabled={addFormLoading}
-                                                    >
-                                                        {addFormLoading ? 'Adding...' : 'Add'}
-                                                    </button>
-                                                    {addFormError ? (
-                                                        <span className="text-xs text-error">{addFormError}</span>
-                                                    ) : null}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </tfoot>
                                 </table>
                             </div>
                         </div>

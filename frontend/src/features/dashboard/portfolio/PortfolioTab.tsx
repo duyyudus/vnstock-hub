@@ -619,14 +619,45 @@ export const PortfolioTab: React.FC = () => {
             setAddFormError('Average cost must be greater than zero when provided.');
             return;
         }
+
+        const existingPosition = positions.find((position) => position.ticker.toUpperCase() === ticker);
+        if (existingPosition) {
+            if (averageCost === null) {
+                setAddFormError('Average cost is required when adding to an existing position.');
+                return;
+            }
+        }
+
         setAddFormLoading(true);
         try {
-            await stockApi.createPortfolioPosition({
-                ticker,
-                quantity,
-                average_cost: averageCost,
-                purchase_date: purchaseDate || null,
-            });
+            if (existingPosition) {
+                const enteredAverageCost = averageCost;
+                if (enteredAverageCost === null) {
+                    setAddFormError('Average cost is required when adding to an existing position.');
+                    return;
+                }
+
+                const nextQuantity = existingPosition.quantity + quantity;
+                const existingAverageCost = typeof existingPosition.average_cost === 'number'
+                    && Number.isFinite(existingPosition.average_cost)
+                    && existingPosition.average_cost > 0
+                    ? existingPosition.average_cost
+                    : enteredAverageCost;
+                const nextAverageCost = ((existingPosition.quantity * existingAverageCost) + (quantity * enteredAverageCost)) / nextQuantity;
+
+                await stockApi.updatePortfolioPosition(existingPosition.id, {
+                    quantity: nextQuantity,
+                    average_cost: nextAverageCost,
+                    purchase_date: existingPosition.purchase_date || purchaseDate || null,
+                });
+            } else {
+                await stockApi.createPortfolioPosition({
+                    ticker,
+                    quantity,
+                    average_cost: averageCost,
+                    purchase_date: purchaseDate || null,
+                });
+            }
             await fetchPositions();
             resetAddForm();
         } catch (err) {
@@ -943,7 +974,7 @@ export const PortfolioTab: React.FC = () => {
                                     <tr>
                                         <th>{renderSortHeader('Ticker', 'ticker')}</th>
                                         <th>{renderSortHeader('Quantity', 'quantity')}</th>
-                                        <th>{renderSortHeader('Avg Cost', 'averageCost')}</th>
+                                        <th>{renderSortHeader('Avg Entry Price', 'averageCost')}</th>
                                         <th>{renderSortHeader('Current Price', 'currentPrice')}</th>
                                         <th>{renderSortHeader('24h Change %', 'priceChange24h')}</th>
                                         <th>{renderSortHeader('Market Value', 'marketValue')}</th>
@@ -952,6 +983,61 @@ export const PortfolioTab: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    <tr>
+                                        <td>
+                                            <input
+                                                type="text"
+                                                className="input input-bordered input-xs w-24"
+                                                placeholder="Ticker"
+                                                value={addFormState.ticker}
+                                                onChange={handleAddInputChange('ticker')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                className="input input-bordered input-xs w-24"
+                                                placeholder="Qty"
+                                                value={addFormState.quantity}
+                                                onChange={handleAddInputChange('quantity')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="0.01"
+                                                step="0.01"
+                                                className="input input-bordered input-xs w-28"
+                                                placeholder="Avg"
+                                                value={addFormState.averageCost}
+                                                onChange={handleAddInputChange('averageCost')}
+                                                onKeyDown={handleAddKeyDown}
+                                            />
+                                        </td>
+                                        <td>--</td>
+                                        <td>--</td>
+                                        <td className="text-base-content/50">--</td>
+                                        <td className="text-base-content/50">--</td>
+                                        <td>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-xs btn-primary"
+                                                    onClick={() => handleAddSubmit()}
+                                                    disabled={addFormLoading}
+                                                >
+                                                    {addFormLoading ? 'Adding...' : 'Add'}
+                                                </button>
+                                                {addFormError && (
+                                                    <span className="text-xs text-error">{addFormError}</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
                                     {filteredPositions.map((position) => {
                                         const isEditing = editingId === position.id;
                                         const parsedQuantity = Number(editFormState.quantity);
@@ -1108,62 +1194,6 @@ export const PortfolioTab: React.FC = () => {
                                         );
                                     })}
                                 </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td>
-                                            <input
-                                                type="text"
-                                                className="input input-bordered input-xs w-24"
-                                                placeholder="Ticker"
-                                                value={addFormState.ticker}
-                                                onChange={handleAddInputChange('ticker')}
-                                                onKeyDown={handleAddKeyDown}
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                step="1"
-                                                className="input input-bordered input-xs w-24"
-                                                placeholder="Qty"
-                                                value={addFormState.quantity}
-                                                onChange={handleAddInputChange('quantity')}
-                                                onKeyDown={handleAddKeyDown}
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                min="0.01"
-                                                step="0.01"
-                                                className="input input-bordered input-xs w-28"
-                                                placeholder="Avg"
-                                                value={addFormState.averageCost}
-                                                onChange={handleAddInputChange('averageCost')}
-                                                onKeyDown={handleAddKeyDown}
-                                            />
-                                        </td>
-                                        <td>--</td>
-                                        <td>--</td>
-                                        <td className="text-base-content/50">--</td>
-                                        <td>
-                                            <div className="flex flex-col gap-2">
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-xs btn-primary"
-                                                    onClick={() => handleAddSubmit()}
-                                                    disabled={addFormLoading}
-                                                >
-                                                    {addFormLoading ? 'Adding...' : 'Add'}
-                                                </button>
-                                                {addFormError && (
-                                                    <span className="text-xs text-error">{addFormError}</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tfoot>
                             </table>
                         </div>
                     </div>
