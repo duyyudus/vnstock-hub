@@ -74,7 +74,11 @@ export const Overview: React.FC<OverviewProps> = ({
 
     return (
         <div className="space-y-3">
-            <PriceChangeTradedValueScatter stocks={stocks} />
+            <PriceChangeTradedValueScatter
+                stocks={stocks}
+                portfolioHoldings={portfolioHoldings}
+                openTradingPositions={openTradingPositions}
+            />
             <StocksTable
                 stocks={stocks}
                 industrySections={industrySections}

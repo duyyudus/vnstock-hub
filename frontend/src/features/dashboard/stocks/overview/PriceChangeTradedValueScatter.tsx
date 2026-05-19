@@ -11,9 +11,12 @@ import {
     ZAxis,
 } from 'recharts';
 import type { Stock } from '../../../../api/stockApi';
+import type { PortfolioHoldingSummary, TradingPositionSummary } from './StocksTable';
 
 interface PriceChangeTradedValueScatterProps {
     stocks: Stock[];
+    portfolioHoldings?: Record<string, PortfolioHoldingSummary>;
+    openTradingPositions?: Record<string, TradingPositionSummary>;
 }
 
 interface ScatterPoint {
@@ -27,6 +30,10 @@ interface ScatterPoint {
     color: string;
     fillOpacity: number;
     strokeOpacity: number;
+    holding?: PortfolioHoldingSummary;
+    tradingPosition?: TradingPositionSummary;
+    tradingValue?: number;
+    tradingPnl?: number;
 }
 
 interface TooltipPayloadEntry {
@@ -78,6 +85,36 @@ const formatSignedBilVnd = (value: number | null): string => {
         maximumFractionDigits: 2,
     }).format(Math.abs(value));
     return `${value >= 0 ? '+' : '-'}${formatted} Bil VND`;
+};
+
+const formatHoldingPercent = (value: number): string => {
+    return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(value);
+};
+
+const formatHoldingValue = (value: number): string => {
+    return new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 2,
+    }).format(value);
+};
+
+const formatSignedValue = (value: number): string => {
+    const formatted = new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 2,
+    }).format(Math.abs(value));
+    const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+    return `${prefix}${formatted}`;
+};
+
+const formatSignedPercent = (value: number): string => {
+    const formatted = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Math.abs(value));
+    const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
+    return `${prefix}${formatted}%`;
 };
 
 const getForeignNet = (stock: Stock): number | null => {
@@ -196,11 +233,57 @@ const buildValueTicks = (domain: [number, number], targetTickCount = 7): number[
     return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
+const getPortfolioTooltipLines = (point: ScatterPoint): string[] => {
+    const lines: string[] = [];
+    const holding = point.holding;
+    const tradingPosition = point.tradingPosition;
+    const hasHolding = Boolean(
+        holding
+        && Number.isFinite(holding.marketValue)
+        && Number.isFinite(holding.allocationPercent)
+    );
+    const hasHoldingPnl = Boolean(
+        holding
+        && Number.isFinite(holding.pnl)
+    );
+    const holdingPnlPercent = holding?.costBasis != null && holding.costBasis > 0 && holding.pnl != null
+        ? (holding.pnl / holding.costBasis) * 100
+        : null;
+    const hasTradingValue = Number.isFinite(point.tradingValue);
+    const hasTradingPnl = Number.isFinite(point.tradingPnl);
+    const tradingPnlPercent = tradingPosition?.costBasis != null && tradingPosition.costBasis > 0 && point.tradingPnl != null
+        ? (point.tradingPnl / tradingPosition.costBasis) * 100
+        : null;
+
+    if (hasHolding && holding) {
+        lines.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
+        lines.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+    }
+    if (hasHoldingPnl && holding && holding.pnl != null) {
+        const holdingPnlLabel = holdingPnlPercent != null
+            ? `${formatSignedValue(holding.pnl)} (${formatSignedPercent(holdingPnlPercent)})`
+            : formatSignedValue(holding.pnl);
+        lines.push(`Holding P&L: ${holdingPnlLabel}`);
+    }
+    if (hasTradingValue && point.tradingValue != null) {
+        lines.push(`Trading value: ${formatHoldingValue(point.tradingValue)}`);
+    }
+    if (hasTradingPnl && point.tradingPnl != null) {
+        const tradingPnlLabel = tradingPnlPercent != null
+            ? `${formatSignedValue(point.tradingPnl)} (${formatSignedPercent(tradingPnlPercent)})`
+            : formatSignedValue(point.tradingPnl);
+        lines.push(`Trading P&L: ${tradingPnlLabel}`);
+    }
+
+    return lines;
+};
+
 const ScatterTooltip: React.FC<ScatterTooltipProps> = ({ active, payload }) => {
     const point = payload?.[0]?.payload;
     if (!active || !point) {
         return null;
     }
+    const portfolioLines = getPortfolioTooltipLines(point);
 
     return (
         <div className="rounded-lg border border-base-300 bg-base-100 p-3 shadow-lg">
@@ -220,6 +303,15 @@ const ScatterTooltip: React.FC<ScatterTooltipProps> = ({ active, payload }) => {
             <p className="mt-1 text-xs" style={{ color: point.color }}>
                 Foreign net: <span className="font-medium">{formatSignedBilVnd(point.foreignNet)}</span>
             </p>
+            {portfolioLines.length > 0 ? (
+                <div className="mt-2 border-t border-base-300 pt-2">
+                    {portfolioLines.map((line) => (
+                        <p key={line} className="mt-1 text-xs">
+                            {line}
+                        </p>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 };
@@ -261,7 +353,11 @@ const BubblePoint = (props: ScatterShapeProps) => {
 
 const formatCount = (value: number): string => new Intl.NumberFormat('en-US').format(value);
 
-export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatterProps> = ({ stocks }) => {
+export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatterProps> = ({
+    stocks,
+    portfolioHoldings = {},
+    openTradingPositions = {},
+}) => {
     const [activePoint, setActivePoint] = useState<ScatterPoint | null>(null);
 
     const chartData = useMemo<ScatterPoint[]>(() => {
@@ -287,10 +383,17 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                     : MIN_BUBBLE_MARKET_CAP;
                 const foreignNet = getForeignNet(stock);
                 const fillOpacity = getFlowOpacity(foreignNet, foreignFlowScale);
+                const normalizedTicker = stock.ticker.toUpperCase();
+                const holding = portfolioHoldings[normalizedTicker];
+                const tradingPosition = openTradingPositions[normalizedTicker];
+                const tradingValue = tradingPosition ? stock.price * tradingPosition.quantity : undefined;
+                const tradingPnl = tradingPosition?.costBasis != null && tradingValue != null
+                    ? tradingValue - tradingPosition.costBasis
+                    : undefined;
 
                 return {
-                    ticker: stock.ticker.toUpperCase(),
-                    name: stock.company_name || stock.ticker.toUpperCase(),
+                    ticker: normalizedTicker,
+                    name: stock.company_name || normalizedTicker,
                     x: change,
                     y: tradedValue,
                     z: safeMarketCap,
@@ -299,11 +402,15 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                     color: getFlowColor(foreignNet),
                     fillOpacity,
                     strokeOpacity: Math.min(fillOpacity + 0.12, 1),
+                    holding,
+                    tradingPosition,
+                    tradingValue,
+                    tradingPnl,
                 };
             })
             .filter((entry): entry is ScatterPoint => entry !== null)
             .sort((a, b) => b.marketCap - a.marketCap);
-    }, [stocks]);
+    }, [openTradingPositions, portfolioHoldings, stocks]);
 
     const xDomain = useMemo(() => getPercentDomain(chartData), [chartData]);
     const yDomain = useMemo(() => getValueDomain(chartData), [chartData]);
