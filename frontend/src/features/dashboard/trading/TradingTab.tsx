@@ -23,7 +23,8 @@ type SortKey =
     | 'currentPrice'
     | 'priceChange24h'
     | 'marketValue'
-    | 'pnl';
+    | 'pnl'
+    | 'pnlPercent';
 type SortDirection = 'asc' | 'desc';
 
 interface StockAllocationItem {
@@ -338,6 +339,12 @@ export const TradingTab: React.FC = () => {
                     return marketValue;
                 case 'pnl':
                     return pnl;
+                case 'pnlPercent': {
+                    const costBasis = position.quantity * position.average_entry_cost;
+                    return pnl !== null && costBasis > 0
+                        ? (pnl / costBasis) * 100
+                        : null;
+                }
                 default:
                     return null;
             }
@@ -909,6 +916,7 @@ export const TradingTab: React.FC = () => {
                                             <th>{renderSortHeader('24h Change %', 'priceChange24h')}</th>
                                             <th>{renderSortHeader('Market Value', 'marketValue')}</th>
                                             <th>{renderSortHeader('P&L', 'pnl')}</th>
+                                            <th>{renderSortHeader('P&L %', 'pnlPercent')}</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -954,6 +962,7 @@ export const TradingTab: React.FC = () => {
                                             <td>
                                                 --
                                             </td>
+                                            <td className="text-base-content/50">--</td>
                                             <td className="text-base-content/50">--</td>
                                             <td className="text-base-content/50">--</td>
                                             <td>
@@ -1070,14 +1079,10 @@ export const TradingTab: React.FC = () => {
                                                     </td>
                                                     <td>{marketValue !== null ? formatNumber(marketValue, { maximumFractionDigits: 2 }) : '--'}</td>
                                                     <td className={pnlClassName}>
-                                                        {pnl !== null ? (
-                                                            <div className="flex flex-col">
-                                                                <span>{formatSignedNumber(pnl, { maximumFractionDigits: 2 })}</span>
-                                                                {pnlPercent !== null ? (
-                                                                    <span className="text-xs">{formatPercent(pnlPercent)}</span>
-                                                                ) : null}
-                                                            </div>
-                                                        ) : '--'}
+                                                        {pnl !== null ? formatSignedNumber(pnl, { maximumFractionDigits: 2 }) : '--'}
+                                                    </td>
+                                                    <td className={pnlClassName}>
+                                                        {pnlPercent !== null ? formatPercent(pnlPercent) : '--'}
                                                     </td>
                                                     <td>
                                                         {isEditing ? (
