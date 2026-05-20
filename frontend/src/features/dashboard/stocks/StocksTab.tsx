@@ -333,13 +333,28 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
         }
 
         let isMounted = true;
-        stockApi.getTradingPositions()
-            .then((response) => {
+
+        const fetchOpenTradingPositions = async () => {
+            try {
+                const response = await stockApi.getTradingPositions();
                 if (!isMounted) return;
                 const uniqueTickers = Array.from(
                     new Set(response.positions.map((position) => position.ticker.toUpperCase()))
                 );
                 setTradingPositionTickers(uniqueTickers);
+
+                if (uniqueTickers.length === 0) {
+                    setOpenTradingPositions({});
+                    return;
+                }
+
+                const quotesResponse = await stockApi.getStockQuotes(uniqueTickers);
+                if (!isMounted) return;
+                const quotesByTicker = quotesResponse.stocks.reduce<Record<string, Stock>>((accumulator, stock) => {
+                    accumulator[stock.ticker.toUpperCase()] = stock;
+                    return accumulator;
+                }, {});
+
                 const aggregatedPositions = response.positions.reduce<Record<string, TradingPositionSummary>>((accumulator, position) => {
                     const ticker = position.ticker.toUpperCase();
                     const quantity = Number(position.quantity);
@@ -360,16 +375,42 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                     accumulator[ticker] = {
                         quantity: (existing?.quantity ?? 0) + quantity,
                         costBasis: nextCostBasis,
+                        allocationPercent: null,
                     };
                     return accumulator;
                 }, {});
-                setOpenTradingPositions(aggregatedPositions);
-            })
-            .catch(() => {
+
+                const tradingValues = Object.entries(aggregatedPositions).reduce<Record<string, number>>((accumulator, [ticker, summary]) => {
+                    const price = quotesByTicker[ticker]?.price;
+                    const tradingValue = typeof price === 'number' && Number.isFinite(price)
+                        ? price * summary.quantity
+                        : null;
+                    if (tradingValue != null && Number.isFinite(tradingValue) && tradingValue > 0) {
+                        accumulator[ticker] = tradingValue;
+                    }
+                    return accumulator;
+                }, {});
+                const totalTradingValue = Object.values(tradingValues).reduce((sum, value) => sum + value, 0);
+                const nextOpenTradingPositions = Object.entries(aggregatedPositions).reduce<Record<string, TradingPositionSummary>>((accumulator, [ticker, summary]) => {
+                    const tradingValue = tradingValues[ticker];
+                    accumulator[ticker] = {
+                        ...summary,
+                        allocationPercent: totalTradingValue > 0 && tradingValue != null
+                            ? (tradingValue / totalTradingValue) * 100
+                            : null,
+                    };
+                    return accumulator;
+                }, {});
+
+                setOpenTradingPositions(nextOpenTradingPositions);
+            } catch {
                 if (!isMounted) return;
                 setTradingPositionTickers([]);
                 setOpenTradingPositions({});
-            });
+            }
+        };
+
+        fetchOpenTradingPositions();
 
         return () => {
             isMounted = false;

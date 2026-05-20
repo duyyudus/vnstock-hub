@@ -44,6 +44,7 @@ export interface PortfolioHoldingSummary {
 export interface TradingPositionSummary {
     quantity: number;
     costBasis: number | null;
+    allocationPercent: number | null;
 }
 
 type SortKey = keyof Stock | 'foreign_net_value' | 'room_ratio';
@@ -289,6 +290,13 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(value);
     };
 
+    const formatAllocationSuffix = (allocationPercent: number | null | undefined): string => {
+        if (typeof allocationPercent !== 'number' || !Number.isFinite(allocationPercent)) {
+            return '';
+        }
+        return ` | ${formatHoldingPercent(allocationPercent)}%`;
+    };
+
     const formatRoundedHoldingValue = (value: number): string => {
         return new Intl.NumberFormat('en-US', {
             maximumFractionDigits: 0,
@@ -353,17 +361,23 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             parts.push('');
         }
         if (hasHolding && holding) {
-            parts.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
-            parts.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+            parts.push(
+                `Portfolio value: ${formatHoldingValue(holding.marketValue)}${formatAllocationSuffix(holding.allocationPercent)}`
+            );
+        }
+        if (hasTradingValue && tradingValue != null) {
+            parts.push(
+                `Trading value: ${formatHoldingValue(tradingValue)}${formatAllocationSuffix(tradingPosition?.allocationPercent)}`
+            );
+        }
+        if (hasHolding && holding && hasTradingValue && tradingValue != null) {
+            parts.push(`Total value: ${formatHoldingValue(holding.marketValue + tradingValue)}`);
         }
         if (hasHoldingPnl && holding && holding.pnl != null) {
             const holdingPnlLabel = holdingPnlPercent != null
                 ? `${formatSignedValue(holding.pnl)} (${formatSignedPercent(holdingPnlPercent)})`
                 : formatSignedValue(holding.pnl);
-            parts.push(`Holding P&L: ${holdingPnlLabel}`);
-        }
-        if (hasTradingValue && tradingValue != null) {
-            parts.push(`Trading value: ${formatHoldingValue(tradingValue)}`);
+            parts.push(`Portfolio P&L: ${holdingPnlLabel}`);
         }
         if (hasTradingPnl && tradingPnl != null) {
             const tradingPnlLabel = tradingPnlPercent != null

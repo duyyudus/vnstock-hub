@@ -100,6 +100,13 @@ const formatHoldingValue = (value: number): string => {
     }).format(value);
 };
 
+const formatAllocationSuffix = (allocationPercent: number | null | undefined): string => {
+    if (typeof allocationPercent !== 'number' || !Number.isFinite(allocationPercent)) {
+        return '';
+    }
+    return ` | ${formatHoldingPercent(allocationPercent)}%`;
+};
+
 const formatSignedValue = (value: number): string => {
     const formatted = new Intl.NumberFormat('en-US', {
         maximumFractionDigits: 2,
@@ -256,17 +263,23 @@ const getPortfolioTooltipLines = (point: ScatterPoint): string[] => {
         : null;
 
     if (hasHolding && holding) {
-        lines.push(`Holding: ${formatHoldingPercent(holding.allocationPercent)}%`);
-        lines.push(`Value: ${formatHoldingValue(holding.marketValue)}`);
+        lines.push(
+            `Portfolio value: ${formatHoldingValue(holding.marketValue)}${formatAllocationSuffix(holding.allocationPercent)}`
+        );
+    }
+    if (hasTradingValue && point.tradingValue != null) {
+        lines.push(
+            `Trading value: ${formatHoldingValue(point.tradingValue)}${formatAllocationSuffix(tradingPosition?.allocationPercent)}`
+        );
+    }
+    if (hasHolding && holding && hasTradingValue && point.tradingValue != null) {
+        lines.push(`Total value: ${formatHoldingValue(holding.marketValue + point.tradingValue)}`);
     }
     if (hasHoldingPnl && holding && holding.pnl != null) {
         const holdingPnlLabel = holdingPnlPercent != null
             ? `${formatSignedValue(holding.pnl)} (${formatSignedPercent(holdingPnlPercent)})`
             : formatSignedValue(holding.pnl);
-        lines.push(`Holding P&L: ${holdingPnlLabel}`);
-    }
-    if (hasTradingValue && point.tradingValue != null) {
-        lines.push(`Trading value: ${formatHoldingValue(point.tradingValue)}`);
+        lines.push(`Portfolio P&L: ${holdingPnlLabel}`);
     }
     if (hasTradingPnl && point.tradingPnl != null) {
         const tradingPnlLabel = tradingPnlPercent != null
