@@ -35,6 +35,8 @@ class StockInfo:
     price_change_1y: float | None = None  # Percentage
     price_change_2y: float | None = None  # Percentage
     price_change_3y: float | None = None  # Percentage
+    recent_trend_3d: str | None = None  # up | down | sideways
+    recent_trend_3d_return: float | None = None  # Percentage
     atl_price: float | None = None  # VND
     atl_date: str | None = None
     atl_diff_pct: float | None = None  # Percentage

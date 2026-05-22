@@ -58,6 +58,8 @@ async def test_get_stocks_by_index(client):
             ath_price=52000.0,
             ath_date="2026-03-01",
             ath_diff_pct=-3.85,
+            recent_trend_3d="up",
+            recent_trend_3d_return=3.0,
         ),
         StockInfo(
             ticker="VCB",
@@ -95,6 +97,8 @@ async def test_get_stocks_by_index(client):
     assert data["stocks"][0]["ath_price"] == 52000.0
     assert data["stocks"][0]["ath_date"] == "2026-03-01"
     assert data["stocks"][0]["ath_diff_pct"] == -3.85
+    assert data["stocks"][0]["recent_trend_3d"] == "up"
+    assert data["stocks"][0]["recent_trend_3d_return"] == 3.0
     assert data["stocks"][1]["foreign_buy_value"] is None
     assert data["stocks"][1]["foreign_sell_value"] is None
     assert data["stocks"][1]["current_room"] is None

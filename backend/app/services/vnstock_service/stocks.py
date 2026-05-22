@@ -335,7 +335,8 @@ class StocksService:
 
         # Apply current cache to the response immediately
         stocks = await self._metadata.apply_cache_to_stocks(stocks)
-        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        stocks = await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        return await self._history.enrich_with_recent_trends(stocks)
 
     async def get_industry_list(self) -> List[Dict[str, str]]:
         """
@@ -502,7 +503,8 @@ class StocksService:
 
         # Apply current cache to the response immediately
         stocks = await self._metadata.apply_cache_to_stocks(stocks)
-        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        stocks = await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        return await self._history.enrich_with_recent_trends(stocks)
 
     async def get_symbol_stocks(
         self,
@@ -527,7 +529,8 @@ class StocksService:
 
         # Apply current cache to the response immediately
         stocks = await self._metadata.apply_cache_to_stocks(stocks)
-        return await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        stocks = await self._history.enrich_with_price_extremes(stocks, range_start, range_end)
+        return await self._history.enrich_with_recent_trends(stocks)
 
     def _fetch_industries_sync(self) -> pd.DataFrame:
         """Fetch industries synchronously."""

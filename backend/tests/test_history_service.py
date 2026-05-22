@@ -1994,6 +1994,89 @@ async def test_enrich_with_price_extremes_returns_nulls_when_no_history_in_range
     assert result[0].ath_diff_pct is None
 
 
+@pytest.mark.asyncio
+async def test_enrich_with_recent_trends_uses_latest_four_closes(db_session):
+    service = HistoryService()
+    db_session.add_all([
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 17),
+            open=20.0,
+            high=20.5,
+            low=19.8,
+            close=19.9,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 18),
+            open=20.0,
+            high=20.5,
+            low=19.8,
+            close=20.0,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 19),
+            open=20.3,
+            high=20.8,
+            low=20.0,
+            close=20.2,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 20),
+            open=20.5,
+            high=20.9,
+            low=20.1,
+            close=20.4,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="TCB",
+            date=date(2026, 3, 21),
+            open=20.6,
+            high=20.9,
+            low=20.2,
+            close=20.6,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="VCB",
+            date=date(2026, 3, 20),
+            open=30.0,
+            high=30.5,
+            low=29.8,
+            close=30.0,
+            volume=1_000_000,
+        ),
+        StockDailyHistory(
+            symbol="VCB",
+            date=date(2026, 3, 21),
+            open=30.0,
+            high=30.5,
+            low=29.8,
+            close=30.1,
+            volume=1_000_000,
+        ),
+    ])
+    await db_session.commit()
+
+    stocks = [
+        StockInfo(ticker="TCB", price=21_000.0, market_cap=100_000.0, company_name="Techcombank"),
+        StockInfo(ticker="VCB", price=30_100.0, market_cap=200_000.0, company_name="Vietcombank"),
+    ]
+
+    result = await service.enrich_with_recent_trends(stocks)
+
+    assert result[0].recent_trend_3d == "up"
+    assert result[0].recent_trend_3d_return == 5.0
+    assert result[1].recent_trend_3d is None
+    assert result[1].recent_trend_3d_return is None
+
+
 def test_upsert_stock_price_history_updates_conflicts_in_postgres(monkeypatch):
     database_url = settings.database_url
     if not database_url:

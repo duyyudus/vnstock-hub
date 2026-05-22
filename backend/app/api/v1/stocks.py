@@ -32,6 +32,8 @@ class StockResponse(BaseModel):
     price_change_1y: Optional[float] = None  # Percentage
     price_change_2y: Optional[float] = None  # Percentage
     price_change_3y: Optional[float] = None  # Percentage
+    recent_trend_3d: Optional[str] = None  # up | down | sideways
+    recent_trend_3d_return: Optional[float] = None  # Percentage
     atl_price: Optional[float] = None  # VND
     atl_date: Optional[str] = None
     atl_diff_pct: Optional[float] = None  # Percentage
@@ -305,6 +307,8 @@ def serialize_stock_response(stock) -> StockResponse:
         price_change_1y=stock.price_change_1y,
         price_change_2y=stock.price_change_2y,
         price_change_3y=stock.price_change_3y,
+        recent_trend_3d=stock.recent_trend_3d,
+        recent_trend_3d_return=stock.recent_trend_3d_return,
         atl_price=stock.atl_price,
         atl_date=stock.atl_date,
         atl_diff_pct=stock.atl_diff_pct,

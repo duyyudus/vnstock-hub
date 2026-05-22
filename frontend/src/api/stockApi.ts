@@ -329,6 +329,8 @@ export interface Stock {
     price_change_1y: number | null;
     price_change_2y?: number | null;
     price_change_3y?: number | null;
+    recent_trend_3d?: 'up' | 'down' | 'sideways' | null;
+    recent_trend_3d_return?: number | null;
     atl_price?: number | null;
     atl_date?: string | null;
     atl_diff_pct?: number | null;

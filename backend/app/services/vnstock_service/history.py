@@ -1235,6 +1235,75 @@ class HistoryService:
 
         return stocks
 
+    @staticmethod
+    def _classify_recent_trend(return_percent: float | None) -> str | None:
+        if return_percent is None:
+            return None
+        if return_percent > 1:
+            return "up"
+        if return_percent < -1:
+            return "down"
+        return "sideways"
+
+    async def enrich_with_recent_trends(self, stocks: List[StockInfo]) -> List[StockInfo]:
+        if not stocks:
+            return stocks
+
+        symbols = list(dict.fromkeys(stock.ticker[:3].upper() for stock in stocks if stock.ticker))
+        if not symbols:
+            return stocks
+
+        row_number = func.row_number().over(
+            partition_by=StockDailyHistory.symbol,
+            order_by=StockDailyHistory.date.desc(),
+        ).label("row_number")
+        latest_rows = (
+            select(
+                StockDailyHistory.symbol.label("symbol"),
+                StockDailyHistory.date.label("date"),
+                StockDailyHistory.close.label("close"),
+                row_number,
+            )
+            .where(StockDailyHistory.symbol.in_(symbols))
+            .subquery()
+        )
+
+        async with async_session() as session:
+            stmt = (
+                select(latest_rows.c.symbol, latest_rows.c.date, latest_rows.c.close)
+                .where(latest_rows.c.row_number <= 4)
+                .order_by(latest_rows.c.symbol.asc(), latest_rows.c.date.asc())
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+        closes_by_symbol: Dict[str, List[float]] = {}
+        for symbol, _record_date, close in rows:
+            if close is None or close <= 0:
+                continue
+            closes_by_symbol.setdefault(symbol, []).append(float(close))
+
+        for stock in stocks:
+            stock.recent_trend_3d = None
+            stock.recent_trend_3d_return = None
+
+            symbol = stock.ticker[:3].upper()
+            closes = closes_by_symbol.get(symbol, [])
+            current_price = stock.price / 1000 if stock.price is not None else None
+            if len(closes) < 4 or current_price is None or current_price <= 0:
+                continue
+            base = closes[-4]
+            if base <= 0:
+                continue
+            return_percent = round(((current_price / base) - 1) * 100, 2)
+            direction = self._classify_recent_trend(return_percent)
+            if direction is None:
+                continue
+            stock.recent_trend_3d = direction
+            stock.recent_trend_3d_return = return_percent
+
+        return stocks
+
     def _fetch_volume_history_sync(self, symbol: str, days: int) -> Dict[str, Any]:
         """Fetch volume history synchronously."""
         symbol_clean = symbol[:3].upper()

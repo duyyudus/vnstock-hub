@@ -34,6 +34,7 @@ interface ScatterPoint {
     tradingPosition?: TradingPositionSummary;
     tradingValue?: number;
     tradingPnl?: number;
+    recentTrend?: RecentTrend | null;
 }
 
 interface TooltipPayloadEntry {
@@ -52,6 +53,13 @@ interface ScatterShapeProps {
     payload?: ScatterPoint;
 }
 
+type RecentTrendDirection = 'up' | 'down' | 'sideways';
+
+interface RecentTrend {
+    direction: RecentTrendDirection;
+    returnPercent: number;
+}
+
 const POSITIVE_FLOW_COLOR = '#16a34a';
 const NEGATIVE_FLOW_COLOR = '#ef4444';
 const NEUTRAL_FLOW_COLOR = '#94a3b8';
@@ -62,10 +70,27 @@ const MAX_FLOW_OPACITY = 0.95;
 const MAJOR_PRICE_CHANGE_POINTS = [-7, -5, -3, -1, 1, 3, 5, 7];
 const PRICE_CHANGE_AXIS_TICKS = [-7, -5, -3, -1, 0, 1, 3, 5, 7];
 const LOW_VALUE_REFERENCE_TICKS = [20, 50, 100, 200, 300, 400, 500];
+const TREND_UP_COLOR = '#16a34a';
+const TREND_DOWN_COLOR = '#dc2626';
+const TREND_RING_GAP = 3;
+const TREND_RING_STROKE_WIDTH = 1.25;
 
 const formatPercent = (value: number): string => {
     const prefix = value > 0 ? '+' : '';
     return `${prefix}${value.toFixed(2)}%`;
+};
+
+const formatTrendLabel = (trend: RecentTrend | null | undefined): string => {
+    if (!trend) {
+        return 'N/A';
+    }
+
+    const label = trend.direction === 'up'
+        ? 'Up'
+        : trend.direction === 'down'
+            ? 'Down'
+            : 'Sideways';
+    return `${label} (${formatPercent(trend.returnPercent)})`;
 };
 
 const formatBilVnd = (value: number): string => {
@@ -160,6 +185,19 @@ const getFlowOpacity = (foreignNet: number | null, referenceValue: number): numb
 
     const normalized = Math.min(Math.abs(foreignNet) / referenceValue, 1);
     return MIN_FLOW_OPACITY + ((MAX_FLOW_OPACITY - MIN_FLOW_OPACITY) * normalized);
+};
+
+const getRecentTrend = (stock: Stock): RecentTrend | null => {
+    const direction = stock.recent_trend_3d;
+    const returnPercent = stock.recent_trend_3d_return;
+    if (
+        (direction !== 'up' && direction !== 'down' && direction !== 'sideways')
+        || typeof returnPercent !== 'number'
+        || !Number.isFinite(returnPercent)
+    ) {
+        return null;
+    }
+    return { direction, returnPercent };
 };
 
 const getPercentDomain = (points: ScatterPoint[]): [number, number] => {
@@ -316,6 +354,9 @@ const ScatterTooltip: React.FC<ScatterTooltipProps> = ({ active, payload }) => {
             <p className="mt-1 text-xs" style={{ color: point.color }}>
                 Foreign net: <span className="font-medium">{formatSignedBilVnd(point.foreignNet)}</span>
             </p>
+            <p className="mt-1 text-xs">
+                3-day trend: <span className="font-medium">{formatTrendLabel(point.recentTrend)}</span>
+            </p>
             {portfolioLines.length > 0 ? (
                 <div className="mt-2 border-t border-base-300 pt-2">
                     {portfolioLines.map((line) => (
@@ -337,6 +378,8 @@ const BubblePoint = (props: ScatterShapeProps) => {
 
     const radius = Math.max(5, Math.sqrt(Math.max(size ?? 90, 1) / Math.PI));
     const labelX = cx + radius + 5;
+    const shouldShowTrendRing = payload.recentTrend?.direction === 'up' || payload.recentTrend?.direction === 'down';
+    const trendRingColor = payload.recentTrend?.direction === 'up' ? TREND_UP_COLOR : TREND_DOWN_COLOR;
 
     return (
         <g>
@@ -349,6 +392,18 @@ const BubblePoint = (props: ScatterShapeProps) => {
                 stroke={payload.color}
                 strokeOpacity={payload.strokeOpacity}
             />
+            {shouldShowTrendRing ? (
+                <circle
+                    cx={cx}
+                    cy={cy}
+                    r={radius + TREND_RING_GAP}
+                    fill="none"
+                    stroke={trendRingColor}
+                    strokeOpacity={0.95}
+                    strokeWidth={TREND_RING_STROKE_WIDTH}
+                    pointerEvents="none"
+                />
+            ) : null}
             <text
                 x={labelX}
                 y={cy}
@@ -419,6 +474,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                     tradingPosition,
                     tradingValue,
                     tradingPnl,
+                    recentTrend: getRecentTrend(stock),
                 };
             })
             .filter((entry): entry is ScatterPoint => entry !== null)
@@ -497,6 +553,14 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                     <span className="flex items-center gap-1">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: NEUTRAL_FLOW_COLOR }}></span>
                         Neutral / N/A
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <span className="h-3 w-3 rounded-full border" style={{ borderColor: TREND_UP_COLOR }}></span>
+                        3-day up ring
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <span className="h-3 w-3 rounded-full border" style={{ borderColor: TREND_DOWN_COLOR }}></span>
+                        3-day down ring
                     </span>
                 </div>
             </div>
