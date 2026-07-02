@@ -12,21 +12,21 @@ Maintenance guidance:
 ## Snapshot Metadata
 - Snapshot date: `2026-02-14`
 - Code snapshot (HEAD short SHA): `c75e1db`
-- Backend dependency intent: `vnstock>=3.4.2` in `backend/pyproject.toml:27`
-- Locked version observed: `vnstock-3.4.2` in `backend/uv.lock`
+- Backend dependency intent: public `vnstock` and `vnstock_data` imports are permanent aliases to vendored packages under `backend/app/lib`.
+- Locked upstream dependency: none.
 
 ## Current Dependency Context
 - Backend wraps `vnstock` in `backend/app/services/vnstock_service`.
+- `app.lib.vnstock_runtime` maps `vnstock` to `app.lib.vnstock_alt` and `vnstock_data` to `app.lib.vnstock_data_alt`.
 - Most stock/index/company/finance calls use `source='VCI'`.
-- Fund calls use `Fund()` from Fmarket path (still part of `vnstock` dependency surface).
+- Fund calls use `Fund()` from the vendored Fmarket path.
 - Backend normalizes many payloads (flatten columns, alias mapping, NaN cleanup), so replacement providers must satisfy backend-consumed fields.
 
 ## Usage Inventory (Class/Method Matrix)
 
 | # | Method | Backend service usage (example call site) |
 |---|---|---|
-| 1 | `vnstock.change_api_key(api_key)` | `backend/app/services/vnstock_service/__init__.py:33` |
-| 2 | `Listing(source='VCI').all_indices()` | `backend/app/services/vnstock_service/indices.py:141` |
+| 1 | `Listing(source='VCI').all_indices()` | `backend/app/services/vnstock_service/indices.py:141` |
 | 3 | `Listing(source='VCI').industries_icb()` | `backend/app/services/vnstock_service/stocks.py:100` |
 | 4 | `Listing(source='VCI').symbols_by_industries()` | `backend/app/services/vnstock_service/stocks.py:136` |
 | 5 | `Listing(source='VCI').symbols_by_group(group_code)` | `backend/app/services/vnstock_service/stocks.py:185` |
@@ -48,23 +48,6 @@ Maintenance guidance:
 | 21 | `Fund().details.asset_holding(symbol)` | `backend/app/services/vnstock_service/funds.py:648` |
 
 ## Detailed Method Contracts
-
-### 1. `vnstock.change_api_key(api_key)`
-- Method signature (as used): `vnstock.change_api_key(settings.vnstock_api_key)`
-- Backend usage: optional one-time API key setup in service bootstrap.
-- Call sites:
-  - `backend/app/services/vnstock_service/__init__.py:33`
-- Return/DataFrame contract:
-  - Required: boolean success (`True`/`False`).
-  - Optional/fallback: none.
-- Backend normalization:
-  - No transformation; result only affects logging flow.
-- Minimal example:
-```python
-import vnstock
-ok = vnstock.change_api_key("your_api_key")
-```
-- Compact example output: `True`
 
 ### 2. `Listing(source='VCI').all_indices()`
 - Method signature (as used): `Listing(source='VCI').all_indices()`

@@ -11,18 +11,7 @@ class EventsReference(BaseDomain):
 	def market(b,start=_A,end=_A,event_type=_A):
 		"\n        Retrieve special stock market events (holidays, system incidents, ...)\n        \n        Uses a static internal database from the vnstock library.\n        \n        Args:\n            start (str, optional): Start date (YYYY-MM-DD). Defaults to all events.\n            end (str, optional): End date (YYYY-MM-DD). Defaults to all events.\n            event_type (str, optional): Event type ('Holiday', 'Suspension', 'Compensation').\n            \n        Returns:\n            pd.DataFrame: List of market events.\n        ";P='events.market';G=event_type;F=start;D='MARKET_EVENTS';C='date';B={}
 		try:from app.lib._vnstock_shared.core.utils import market_events as Q;B=getattr(Q,D,{})
-		except ImportError:
-			try:import importlib;E=importlib.import_module('vnstock.core.utils.market_events');B=getattr(E,D,{})
-			except ImportError:
-				try:E=importlib.import_module('vnstock.core.utils.market-events');B=getattr(E,D,{})
-				except ImportError:
-					import sys;import os
-					try:
-						import app.lib.vnstock_alt as R;S=os.path.join(os.path.dirname(R.__file__),'core','utils')
-						for T in['market_events.py','market-events.py']:
-							H=os.path.join(S,T)
-							if os.path.exists(H):import importlib.util;I=importlib.util.spec_from_file_location('market_events_ext',H);J=importlib.util.module_from_spec(I);I.loader.exec_module(J);B=getattr(J,D,{});break
-					except Exception as U:from app.lib._vnstock_shared.core.utils.logger import get_logger as V;W=V(__name__);W.warning(f"Failed to load market events: {str(U)}. Please ensure you have vnstock v3.4.3+ installed.");pass
+		except ImportError as U:from app.lib._vnstock_shared.core.utils.logger import get_logger as V;W=V(__name__);W.warning(f"Failed to load vendored market events: {str(U)}.");pass
 		if not B:return pd.DataFrame()
 		K=[]
 		for(X,Y)in B.items():L={C:X};L.update(Y);K.append(L)

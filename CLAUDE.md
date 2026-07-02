@@ -299,9 +299,6 @@ Required variables (defaults and full list in `backend/app/core/config.py`; see 
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
 API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-VNSTOCK_API_KEY=your_vnstock_api_key_here  # For vnstock data source access
-USE_VNSTOCK_ALT=false                       # Use vendored alternative vnstock implementation
-USE_VNSTOCK_DATA_ALT=false                  # Use vendored alternative data provider
 SETTINGS_YAML_PATH=./backend/settings.yaml
 
 # Authentication

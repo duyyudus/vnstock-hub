@@ -4,8 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Dict, Any
 
-from app.core.config import settings
-from app.lib.vnstock_runtime import install_vnstock_aliases, runtime_vnstock_targets, using_vnstock_alt
+from app.lib.vnstock_runtime import install_vnstock_aliases
 
 install_vnstock_aliases()
 
@@ -31,25 +30,6 @@ class VnstockService:
     VALID_GROUPS = VALID_GROUPS
 
     def __init__(self) -> None:
-        # Initialize vnstock API key if provided
-        if settings.vnstock_api_key:
-            if using_vnstock_alt():
-                targets = runtime_vnstock_targets()
-                logger.info(
-                    "USE_VNSTOCK_ALT is enabled; ignoring vnstock_api_key because %s has no auth/api-key flow",
-                    targets["vnstock"],
-                )
-            else:
-                try:
-                    import vnstock
-
-                    change_api_key = getattr(vnstock, "change_api_key", None)
-                    if callable(change_api_key):
-                        change_api_key(settings.vnstock_api_key)
-                        logger.info("vnstock API key configured")
-                except Exception as e:
-                    logger.error(f"Error configuring vnstock API key: {e}")
-
         self.history = HistoryService()
         self.finance = FinanceService()
         self.company = CompanyService()

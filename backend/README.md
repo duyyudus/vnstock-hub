@@ -67,7 +67,6 @@ Common settings in `backend/.env`:
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
 API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-VNSTOCK_API_KEY=
 
 JWT_SECRET_KEY=change-me
 JWT_ALGORITHM=HS256

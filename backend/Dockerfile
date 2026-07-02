@@ -3,9 +3,6 @@ FROM python:3.12-slim AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-ARG VNSTOCK_API_KEY=""
-ENV VNSTOCK_API_KEY=${VNSTOCK_API_KEY}
-
 WORKDIR /app
 
 RUN pip install --no-cache-dir uv
@@ -15,7 +12,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 RUN uv sync --frozen --no-dev
-# RUN chmod +x ./install_vnstock_cli && bash ./install_vnstock_cli
 
 
 FROM python:3.12-slim AS runtime

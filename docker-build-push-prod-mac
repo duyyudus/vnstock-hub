@@ -73,7 +73,6 @@ echo "Using registry ${REGISTRY_REF}, build number: ${BUILD_NUMBER}, target plat
 
 docker buildx build \
   --platform "${TARGET_PLATFORM}" \
-  --build-arg VNSTOCK_API_KEY="${VNSTOCK_API_KEY:-}" \
   --build-arg BUILD_NUMBER="${BUILD_NUMBER}" \
   --tag "${BACKEND_LATEST_IMAGE}" \
   --tag "${BACKEND_BUILD_IMAGE}" \

@@ -14,26 +14,22 @@ upstream `vnstock` and `vnstock_data` packages used by the backend.
     and compatibility shims used by both vendored packages
 - `vnstock_runtime.py`
   - Runtime aliasing helper that lets the backend keep importing `vnstock`
-    and `vnstock_data` while switching implementations via environment flags
+    and `vnstock_data` while always resolving them to vendored packages
 
 ## Design goals
 
 - Preserve the retained upstream public API shape for backend compatibility
 - Remove auth, API-key, and user-tier mechanics from the vendored packages
 - Keep implementation self-contained inside `app.lib`
-- Allow runtime switching between upstream and vendored implementations
+- Keep legacy public import names without depending on upstream packages
 
-## Runtime flags
+## Runtime aliases
 
-These are configured in backend settings and exposed in `.env.example`:
+The aliasing logic in `vnstock_runtime.py` always maps public imports to the
+vendored packages:
 
-- `USE_VNSTOCK_ALT`
-  - When true, public `vnstock` imports resolve to `app.lib.vnstock_alt`
-- `USE_VNSTOCK_DATA_ALT`
-  - When true, public `vnstock_data` imports resolve to
-    `app.lib.vnstock_data_alt`
-
-The aliasing logic is implemented in `vnstock_runtime.py`.
+- `vnstock` resolves to `app.lib.vnstock_alt`
+- `vnstock_data` resolves to `app.lib.vnstock_data_alt`
 
 ## Intentional differences from upstream
 
@@ -47,15 +43,11 @@ The aliasing logic is implemented in `vnstock_runtime.py`.
 The main compatibility coverage lives in `backend/tests/`:
 
 - `test_alt_package_compat.py`
-  - import smoke, self-containment, signature parity, root-surface checks
-- `test_alt_package_differential_live.py`
-  - live upstream-vs-alt comparisons for backend-used `vnstock` paths
-- `test_vnstock_service_shadow_live.py`
-  - backend service-level live comparisons
+  - import smoke, self-containment, retained public method contracts
 - `test_alt_package_extended_live.py`
-  - broader live coverage for retained public surfaces
+  - opt-in alt-only live coverage for retained public surfaces
 - `test_vnstock_runtime.py`
-  - runtime alias switching behavior
+  - permanent public alias behavior
 
 ## Before changing these packages
 

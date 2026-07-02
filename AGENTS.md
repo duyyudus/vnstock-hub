@@ -96,11 +96,9 @@ npm run lint
 npm run build
 ```
 
-- Live/networked vnstock comparison suites are opt-in, not default validation.
-  Run them only when the task touches the vendored/runtime vnstock surface or
-  specifically needs live-source verification.
-  - `RUN_VNSTOCK_LIVE_DIFF=1 uv run pytest tests/test_alt_package_differential_live.py`
-  - `RUN_VNSTOCK_SERVICE_SHADOW=1 uv run pytest tests/test_vnstock_service_shadow_live.py`
+- Live/networked vendored vnstock smoke suites are opt-in, not default
+  validation. Run them only when the task touches the vendored/runtime vnstock
+  surface or specifically needs live-source verification.
   - `RUN_VNSTOCK_EXTENDED_LIVE_DIFF=1 uv run pytest tests/test_alt_package_extended_live.py`
 
 ## Configuration Notes

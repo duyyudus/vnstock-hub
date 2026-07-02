@@ -70,14 +70,11 @@ The backend still imports public names like `vnstock` in service code.
 
 `app.lib.vnstock_runtime` maps those public names at startup:
 
-- `USE_VNSTOCK_ALT=true`
-  - `vnstock` resolves to `app.lib.vnstock_alt`
-- `USE_VNSTOCK_DATA_ALT=true`
-  - `vnstock_data` resolves to `app.lib.vnstock_data_alt`
+- `vnstock` resolves to `app.lib.vnstock_alt`
+- `vnstock_data` resolves to `app.lib.vnstock_data_alt`
 
 This aliasing exists for backend integration convenience only. The vendored
-packages should remain internally self-contained even if the aliasing is
-disabled.
+packages should remain internally self-contained.
 
 ## Shared-layer rules
 
@@ -144,32 +141,29 @@ Before merging a vendored back-port, verify:
 - no internal imports from `vnstock`, `vnstock_data`, or `vnai`
 - no auth/API-key logic leaked back into the retained surface
 - no charting or notebook side effects were reintroduced accidentally
-- signatures still match upstream where intended
+- retained public method contracts still match backend expectations
 - output schemas match expected backend contracts
-- live differential tests are updated for the new or changed methods
+- optional live tests are updated for the new or changed methods
 
 ## Test strategy
 
-The strongest validation is differential testing against upstream.
+The strongest validation is focused contract testing against the vendored
+packages plus opt-in live smoke checks for retained public-data surfaces.
 
 ### Core tests
 
 - `tests/test_alt_package_compat.py`
   - import smoke
   - self-containment
-  - signature parity
+  - retained public method contracts
   - explicit vendored behavior checks
 - `tests/test_vnstock_runtime.py`
-  - runtime aliasing behavior
+  - permanent public aliasing behavior
 
-### Live comparison tests
+### Live tests
 
-- `tests/test_alt_package_differential_live.py`
-  - backend-used live upstream-vs-alt comparisons
-- `tests/test_vnstock_service_shadow_live.py`
-  - service-layer comparisons using real backend code paths
 - `tests/test_alt_package_extended_live.py`
-  - broader retained-surface live coverage
+  - broader retained-surface live coverage against vendored packages
 
 ### Useful commands
 
@@ -177,8 +171,6 @@ From `backend/`:
 
 ```bash
 uv run pytest tests/test_vnstock_runtime.py tests/test_alt_package_compat.py
-RUN_VNSTOCK_LIVE_DIFF=1 uv run pytest tests/test_alt_package_differential_live.py
-RUN_VNSTOCK_SERVICE_SHADOW=1 uv run pytest tests/test_vnstock_service_shadow_live.py
 RUN_VNSTOCK_EXTENDED_LIVE_DIFF=1 uv run pytest tests/test_alt_package_extended_live.py
 ```
 

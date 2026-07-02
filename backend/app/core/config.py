@@ -23,10 +23,7 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = '["http://localhost:5173","http://localhost:3000"]'
     
-    # vnstock API
-    vnstock_api_key: str | None = None
-    use_vnstock_alt: bool = False
-    use_vnstock_data_alt: bool = False
+    # Sync behavior
     sync_target_rpm: int = 150
     sync_max_workers: int = 6
     sync_chunk_days: int = 365

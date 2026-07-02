@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import sys
-import types
 import ast
 from enum import Enum
 from pathlib import Path
@@ -22,24 +20,6 @@ def _set_mplconfig(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _import(module_name: str):
     return importlib.import_module(module_name)
-
-
-def _prepare_upstream_vnstock_data_import(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    for name in list(sys.modules):
-        if name == "vnstock_data" or name.startswith("vnstock_data."):
-            sys.modules.pop(name, None)
-
-    fake_home = tmp_path / "fake-home"
-    (fake_home / ".vnstock").mkdir(parents=True, exist_ok=True)
-    (fake_home / ".vnstock" / "user.json").write_text('{"user": true}')
-    monkeypatch.setenv("HOME", str(fake_home))
-
-    stub = types.ModuleType("vnii")
-    stub.lc_init = lambda *args, **kwargs: None
-    monkeypatch.setitem(sys.modules, "vnii", stub)
 
 
 def test_vnstock_alt_root_exports_smoke() -> None:
@@ -152,7 +132,7 @@ def test_colab_helpers_are_reduced_to_local_path_shims() -> None:
 
 def test_alt_packages_are_self_contained() -> None:
     offenders: list[str] = []
-    blocked_roots = {"vnstock", "vnstock_data", "vnai"}
+    blocked_roots = {"vnstock", "vnstock_data", "vnai", "vnii"}
 
     for package in ["vnstock_alt", "vnstock_data_alt"]:
         for path in (ALT_ROOT / package).rglob("*.py"):
@@ -167,41 +147,23 @@ def test_alt_packages_are_self_contained() -> None:
                     module_name = node.module.split(".", 1)[0]
                     if module_name in blocked_roots:
                         offenders.append(f"{path}:{node.lineno} from {node.module} import ...")
+                elif isinstance(node, ast.Call):
+                    func = node.func
+                    is_dynamic_import = (
+                        isinstance(func, ast.Name)
+                        and func.id == "__import__"
+                    ) or (
+                        isinstance(func, ast.Attribute)
+                        and func.attr == "import_module"
+                    )
+                    if is_dynamic_import and node.args and isinstance(node.args[0], ast.Constant):
+                        imported_name = node.args[0].value
+                        if isinstance(imported_name, str):
+                            module_name = imported_name.split(".", 1)[0]
+                            if module_name in blocked_roots:
+                                offenders.append(f"{path}:{node.lineno} dynamic import {imported_name}")
 
     assert offenders == []
-
-
-@pytest.mark.parametrize(
-    ("left_expr", "right_expr"),
-    [
-        ("app.lib.vnstock_alt.Vnstock.__new__", "vnstock.Vnstock.__new__"),
-        ("app.lib.vnstock_alt.Listing.__init__", "vnstock.Listing.__init__"),
-        ("app.lib.vnstock_alt.Listing.all_symbols", "vnstock.Listing.all_symbols"),
-        ("app.lib.vnstock_alt.Listing.symbols_by_group", "vnstock.Listing.symbols_by_group"),
-        ("app.lib.vnstock_alt.Trading.price_board", "vnstock.Trading.price_board"),
-        ("app.lib.vnstock_alt.Company.overview", "vnstock.Company.overview"),
-        ("app.lib.vnstock_alt.Finance.income_statement", "vnstock.Finance.income_statement"),
-        ("app.lib.vnstock_data_alt.Listing.__init__", "vnstock_data.Listing.__init__"),
-        ("app.lib.vnstock_data_alt.Listing.all_indices", "vnstock_data.Listing.all_indices"),
-        ("app.lib.vnstock_data_alt.Listing.indices_by_group", "vnstock_data.Listing.indices_by_group"),
-        ("app.lib.vnstock_data_alt.Quote.history", "vnstock_data.Quote.history"),
-        ("app.lib.vnstock_data_alt.show_api", "vnstock_data.show_api"),
-        ("app.lib.vnstock_data_alt.show_doc", "vnstock_data.show_doc"),
-    ],
-)
-def test_selected_signatures_match_upstream(
-    left_expr: str,
-    right_expr: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
-    namespace: dict[str, object] = {}
-    exec(
-        f"import app.lib.vnstock_alt, app.lib.vnstock_data_alt, vnstock, vnstock_data\nleft = {left_expr}\nright = {right_expr}",
-        namespace,
-    )
-    assert inspect.signature(namespace["left"]) == inspect.signature(namespace["right"])
 
 
 VNSTOCK_ROOT_METHODS = {
@@ -314,17 +276,12 @@ def _public_methods(cls: type) -> list[str]:
 
 
 @pytest.mark.parametrize("class_name,expected_methods", VNSTOCK_ROOT_METHODS.items())
-def test_vnstock_alt_root_public_methods_match_upstream(
+def test_vnstock_alt_root_public_methods_match_expected_contract(
     class_name: str,
     expected_methods: list[str],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
-    upstream = _import("vnstock")
     alt = _import("app.lib.vnstock_alt")
 
-    assert _public_methods(getattr(upstream, class_name)) == expected_methods
     alt_methods = _public_methods(getattr(alt, class_name))
     if class_name == "Company":
         assert set(expected_methods) <= set(alt_methods)
@@ -334,17 +291,12 @@ def test_vnstock_alt_root_public_methods_match_upstream(
 
 
 @pytest.mark.parametrize("class_name,expected_methods", VNSTOCK_DATA_ROOT_METHODS.items())
-def test_vnstock_data_alt_root_public_methods_match_upstream(
+def test_vnstock_data_alt_root_public_methods_match_expected_contract(
     class_name: str,
     expected_methods: list[str],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
-    upstream = _import("vnstock_data")
     alt = _import("app.lib.vnstock_data_alt")
 
-    assert _public_methods(getattr(upstream, class_name)) == expected_methods
     alt_methods = _public_methods(getattr(alt, class_name))
     if class_name == "Company":
         assert set(expected_methods) <= set(alt_methods)
@@ -353,46 +305,13 @@ def test_vnstock_data_alt_root_public_methods_match_upstream(
         assert alt_methods == expected_methods
 
 
-def test_vnstock_data_alt_index_group_enum_matches_upstream(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
-    upstream = _import("vnstock_data")
+def test_vnstock_data_alt_index_group_enum_matches_expected_contract() -> None:
     alt = _import("app.lib.vnstock_data_alt")
 
-    upstream_enum = getattr(upstream, "IndexGroup")
     alt_enum = getattr(alt, "IndexGroup")
 
-    assert issubclass(upstream_enum, Enum)
     assert issubclass(alt_enum, Enum)
-    assert [item.value for item in alt_enum] == [item.value for item in upstream_enum]
-
-
-@pytest.mark.parametrize(
-    ("left_expr", "right_expr"),
-    [
-        ("app.lib.vnstock_data_alt.Reference.__init__", "vnstock_data.Reference.__init__"),
-        ("app.lib.vnstock_data_alt.Market.__init__", "vnstock_data.Market.__init__"),
-        ("app.lib.vnstock_data_alt.Insights.__init__", "vnstock_data.Insights.__init__"),
-        ("app.lib.vnstock_data_alt.Fundamental.__init__", "vnstock_data.Fundamental.__init__"),
-        ("app.lib.vnstock_data_alt.Macro.__init__", "vnstock_data.Macro.__init__"),
-        ("app.lib.vnstock_data_alt.Analytics.__init__", "vnstock_data.Analytics.__init__"),
-    ],
-)
-def test_vnstock_data_alt_ui_entrypoint_signatures_match_upstream(
-    left_expr: str,
-    right_expr: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    _prepare_upstream_vnstock_data_import(monkeypatch, tmp_path)
-    namespace: dict[str, object] = {}
-    exec(
-        f"import app.lib.vnstock_data_alt, vnstock_data\nleft = {left_expr}\nright = {right_expr}",
-        namespace,
-    )
-    assert inspect.signature(namespace["left"]) == inspect.signature(namespace["right"])
+    assert [item.value for item in alt_enum] == ["HOSE", "SECTOR", "INVESTMENT", "VNX"]
 
 
 def test_vnstock_data_ui_helpers_smoke(capsys: pytest.CaptureFixture[str]) -> None:

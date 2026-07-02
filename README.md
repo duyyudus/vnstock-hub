@@ -127,7 +127,6 @@ API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 SETTINGS_YAML_PATH=./settings.yaml
 NEWS_SOURCES_YAML_PATH=./news_sources.yaml
-VNSTOCK_API_KEY=
 JWT_SECRET_KEY=change-me
 LLM_PROVIDERS=[]
 LLM_REQUEST_TIMEOUT_SECONDS=30
