@@ -278,8 +278,8 @@ export const Dashboard: React.FC = () => {
         <div className="min-h-screen bg-base-300">
             {/* Header */}
             <header className="navbar bg-base-100 shadow-lg px-4 md:px-6">
-                <div className="dashboard-adaptive-shell mx-auto flex items-center">
-                    <div className="flex-1">
+                <div className="dashboard-adaptive-shell mx-auto flex min-w-0 items-center">
+                    <div className="min-w-0 flex-1">
                         <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                             🚀 VNStock Hub
                         </h1>
@@ -310,11 +310,11 @@ export const Dashboard: React.FC = () => {
             </header>
 
             {/* Main content with sidebar centered */}
-            <div className="dashboard-adaptive-shell mx-auto p-6">
+            <div className="dashboard-adaptive-shell mx-auto min-w-0 p-6">
                 {/* Index Banners Row */}
                 <IndexBanners />
 
-                <div className="flex items-start justify-center gap-6">
+                <div className="flex w-full min-w-0 items-start justify-center gap-6">
                     {/* Left sidebar - Tab navigation */}
                     <aside className="shrink-0">
                         <TabNavigation
@@ -325,7 +325,7 @@ export const Dashboard: React.FC = () => {
                     </aside>
 
                     {/* Right content area */}
-                    <main className="bg-base-100 rounded-xl p-6 shadow-lg">
+                    <main className="min-w-0 flex-1 overflow-x-clip rounded-xl bg-base-100 p-6 shadow-lg">
                         {renderContent()}
                     </main>
                 </div>

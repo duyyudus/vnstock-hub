@@ -21,12 +21,12 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
     onTabChange,
 }) => {
     return (
-        <nav className="flex flex-col gap-2 p-4 min-w-[200px] bg-base-200 rounded-xl">
+        <nav className="flex flex-col gap-2 min-w-[152px] bg-base-200 rounded-xl p-2.5">
             <ul className="menu menu-vertical gap-1">
                 {tabs.map((tab) => (
                     <li key={tab.id}>
                         <button
-                            className={`btn btn-ghost justify-start gap-4 ${activeTab === tab.id
+                            className={`btn btn-ghost justify-start gap-2.5 px-3 ${activeTab === tab.id
                                 ? 'btn-active bg-primary text-white'
                                 : 'hover:bg-base-300'
                                 }`}

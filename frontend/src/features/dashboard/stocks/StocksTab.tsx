@@ -927,7 +927,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     }
 
     return (
-        <div className="space-y-6 p-4">
+        <div className="min-w-0 space-y-6 p-4">
             {/* Header Section */}
             <div className="flex flex-col gap-4">
                 {/* Row 1: Title */}
@@ -1132,8 +1132,8 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                     <button className="btn btn-sm btn-ghost" onClick={() => window.location.reload()}>Retry</button>
                 </div>
             ) : (
-                <div className="card bg-base-100 shadow-md border border-base-300">
-                    <div className="card-body p-4">
+                <div className="card min-w-0 max-w-full overflow-hidden bg-base-100 shadow-md border border-base-300">
+                    <div className="card-body min-w-0 max-w-full overflow-hidden p-4">
                         {viewMode === 'growth' ? (
                             <StocksGrowthChart
                                 stocks={filteredStocks}

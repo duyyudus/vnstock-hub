@@ -7,17 +7,31 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
+html,
 body {
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
+  margin: 0;
+  background: oklch(var(--b3));
+}
+
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  background: oklch(var(--b3));
 }
 
 .dashboard-adaptive-shell {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .dashboard-adaptive-table-wrap {
-  width: max-content;
-  min-width: 100%;
-  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
 }
