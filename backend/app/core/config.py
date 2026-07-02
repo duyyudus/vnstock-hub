@@ -40,7 +40,6 @@ class Settings(BaseSettings):
 
     # Non-environmental config (YAML)
     settings_yaml_path: str = str(Path(__file__).resolve().parents[2] / "settings.yaml")
-    news_sources_yaml_path: str = str(Path(__file__).resolve().parents[2] / "news_sources.yaml")
 
     # Auth/JWT
     jwt_secret_key: str = "change-me"
@@ -49,16 +48,6 @@ class Settings(BaseSettings):
 
     # Sync admin allowlist (JSON array of lowercased emails)
     sync_admin_emails: str = "[]"
-
-    # News ingestion
-    news_ingestion_enabled: bool = True
-    news_poll_interval_seconds: float = 120.0
-    news_default_poll_interval_minutes: int = 30
-    news_ingestion_batch_size: int = 5
-    news_search_provider: str = ""
-    news_search_api_key: str | None = None
-    news_search_base_url: str = "https://api.search.brave.com/res/v1/web/search"
-    news_search_timeout_seconds: int = 15
 
     # Build number (set via BUILD_NUMBER env var in CI/Docker; falls back to git hash)
     build_number: str | None = None
@@ -144,6 +133,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=os.getenv("APP_ENV_FILE", ".env"),
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
 
