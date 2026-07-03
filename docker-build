@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_LOCAL_ENV=".env.local"
+DEFAULT_PROD_ENV=".env.prod"
+DEFAULT_PLATFORM="linux/amd64"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./docker-build local [--env FILE] [--pull] [--preview]
+  ./docker-build prod [--env FILE] [--platform PLATFORM] [--tag TAG] [--preview]
+  ./docker-build help
+
+Scenarios:
+  local   Build backend/frontend images in local Docker against your external Postgres.
+  prod    Build backend/frontend images for a target platform and push them to a registry.
+
+Examples:
+  cp .env.local.example .env.local
+  ./docker-build local --env .env.local
+  ./docker-build local --env .env.local --preview
+
+  cp .env.prod.example .env.prod
+  ./docker-build prod --env .env.prod --platform linux/amd64 --tag 123
+  ./docker-build prod --env .env.prod --platform linux/amd64 --tag 123 --preview
+EOF
+}
+
+fail() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+require_file() {
+  local file="$1"
+  [[ -f "${file}" ]] || fail "env file not found: ${file}"
+}
+
+load_env_file() {
+  local file="$1"
+  local line key value
+  require_file "${file}"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+    [[ "${line}" == *"="* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ "${value}" =~ ^[\"\'] && ! "${value}" =~ [\"\'][[:space:]]*$ ]]; then
+      fail "${file} has a multi-line or unclosed quoted value for ${key}; keep JSON env values on one line"
+    fi
+    export "${key}=${value}"
+  done < "${file}"
+}
+
+build_number() {
+  git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || echo "unknown"
+}
+
+compose() {
+  local env_file="$1"
+  shift
+  docker compose --env-file "${env_file}" "$@"
+}
+
+derive_image_defaults() {
+  if [[ -n "${REGISTRY_REF:-}" ]]; then
+    BACKEND_IMAGE="${BACKEND_IMAGE:-${REGISTRY_REF}/vnstock-hub-backend}"
+    FRONTEND_IMAGE="${FRONTEND_IMAGE:-${REGISTRY_REF}/vnstock-hub-frontend}"
+  else
+    BACKEND_IMAGE="${BACKEND_IMAGE:-vnstock-hub/vnstock-hub-backend}"
+    FRONTEND_IMAGE="${FRONTEND_IMAGE:-vnstock-hub/vnstock-hub-frontend}"
+  fi
+  IMAGE_TAG="${IMAGE_TAG:-latest}"
+  export BACKEND_IMAGE FRONTEND_IMAGE IMAGE_TAG
+}
+
+require_registry_qualified() {
+  local ref="$1" name="$2" first="${1%%/*}"
+  [[ "${ref}" == */* && "${first}" == *[.:]* ]] || \
+    fail "${name} '${ref}' has no registry host — push would default to Docker Hub. Set REGISTRY_REF or a fully-qualified image."
+}
+
+cmd_local() {
+  ENV_FILE="${DEFAULT_LOCAL_ENV}"
+  local compose_args=(build)
+  local preview=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env)
+        [[ $# -ge 2 ]] || fail "--env requires a file path"
+        ENV_FILE="$2"
+        shift 2
+        ;;
+      --env=*)
+        ENV_FILE="${1#*=}"
+        shift
+        ;;
+      --preview)
+        preview=true
+        shift
+        ;;
+      --pull)
+        compose_args+=(--pull)
+        shift
+        ;;
+      *)
+        fail "unknown local option: $1"
+        ;;
+    esac
+  done
+
+  load_env_file "${ENV_FILE}"
+  BUILD_NUMBER="${BUILD_NUMBER:-$(build_number)}"
+  derive_image_defaults
+  export BUILD_NUMBER
+
+  if [[ "${preview}" == true ]]; then
+    echo "Previewing local stack with ${ENV_FILE}"
+    echo "Build number: ${BUILD_NUMBER}"
+    compose "${ENV_FILE}" config
+    return
+  fi
+
+  echo "Building local images with ${ENV_FILE}"
+  echo "Build number: ${BUILD_NUMBER}"
+  compose "${ENV_FILE}" "${compose_args[@]}"
+}
+
+cmd_prod() {
+  ENV_FILE="${DEFAULT_PROD_ENV}"
+  local platform="${TARGET_PLATFORM:-${DEFAULT_PLATFORM}}"
+  local tag=""
+  local preview=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env)
+        [[ $# -ge 2 ]] || fail "--env requires a file path"
+        ENV_FILE="$2"
+        shift 2
+        ;;
+      --env=*)
+        ENV_FILE="${1#*=}"
+        shift
+        ;;
+      --preview)
+        preview=true
+        shift
+        ;;
+      --platform)
+        [[ $# -ge 2 ]] || fail "--platform requires a value"
+        platform="$2"
+        shift 2
+        ;;
+      --platform=*)
+        platform="${1#*=}"
+        shift
+        ;;
+      --tag)
+        [[ $# -ge 2 ]] || fail "--tag requires a value"
+        tag="$2"
+        shift 2
+        ;;
+      --tag=*)
+        tag="${1#*=}"
+        shift
+        ;;
+      *)
+        fail "unknown prod option: $1"
+        ;;
+    esac
+  done
+
+  load_env_file "${ENV_FILE}"
+  BUILD_NUMBER="${BUILD_NUMBER:-$(build_number)}"
+  tag="${tag:-${BUILD_NUMBER}}"
+  IMAGE_TAG="${tag}"
+
+  if [[ -z "${REGISTRY_REF:-}" && ( -z "${BACKEND_IMAGE:-}" || -z "${FRONTEND_IMAGE:-}" ) ]]; then
+    fail "set REGISTRY_REF (recommended) or explicit BACKEND_IMAGE and FRONTEND_IMAGE in ${ENV_FILE}"
+  fi
+  [[ -n "${VITE_API_BASE_URL:-}" ]] || \
+    fail "set VITE_API_BASE_URL in ${ENV_FILE} (it is baked into the frontend bundle at build time)"
+
+  derive_image_defaults
+  export BUILD_NUMBER IMAGE_TAG
+
+  command -v docker >/dev/null 2>&1 || fail "docker is required"
+  docker buildx version >/dev/null 2>&1 || fail "docker buildx is required for cross-platform pushes"
+  require_registry_qualified "${BACKEND_IMAGE}" BACKEND_IMAGE
+  require_registry_qualified "${FRONTEND_IMAGE}" FRONTEND_IMAGE
+
+  echo "Building and pushing images from ${ENV_FILE}"
+  echo "Platform: ${platform}"
+  echo "Build number: ${BUILD_NUMBER}"
+  echo "Backend image: ${BACKEND_IMAGE}:${tag}, ${BACKEND_IMAGE}:latest"
+  echo "Frontend image: ${FRONTEND_IMAGE}:${tag}, ${FRONTEND_IMAGE}:latest"
+
+  if [[ "${preview}" == true ]]; then
+    cat <<EOF
+docker buildx build \\
+  --platform "${platform}" \\
+  --build-arg BUILD_NUMBER="${BUILD_NUMBER}" \\
+  --tag "${BACKEND_IMAGE}:${tag}" \\
+  --tag "${BACKEND_IMAGE}:latest" \\
+  --push \\
+  "${ROOT_DIR}/backend"
+
+docker buildx build \\
+  --platform "${platform}" \\
+  --build-arg VITE_API_BASE_URL="${VITE_API_BASE_URL}" \\
+  --build-arg VITE_APP_BUILD="${BUILD_NUMBER}" \\
+  --tag "${FRONTEND_IMAGE}:${tag}" \\
+  --tag "${FRONTEND_IMAGE}:latest" \\
+  --push \\
+  "${ROOT_DIR}/frontend"
+EOF
+    return
+  fi
+
+  docker buildx build \
+    --platform "${platform}" \
+    --build-arg BUILD_NUMBER="${BUILD_NUMBER}" \
+    --tag "${BACKEND_IMAGE}:${tag}" \
+    --tag "${BACKEND_IMAGE}:latest" \
+    --push \
+    "${ROOT_DIR}/backend"
+
+  docker buildx build \
+    --platform "${platform}" \
+    --build-arg VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
+    --build-arg VITE_APP_BUILD="${BUILD_NUMBER}" \
+    --tag "${FRONTEND_IMAGE}:${tag}" \
+    --tag "${FRONTEND_IMAGE}:latest" \
+    --push \
+    "${ROOT_DIR}/frontend"
+}
+
+main() {
+  cd "${ROOT_DIR}"
+  local command="${1:-help}"
+  [[ $# -eq 0 ]] || shift
+
+  case "${command}" in
+    local)
+      cmd_local "$@"
+      ;;
+    prod)
+      cmd_prod "$@"
+      ;;
+    help|--help|-h)
+      usage
+      ;;
+    *)
+      usage
+      fail "unknown command: ${command}"
+      ;;
+  esac
+}
+
+main "$@"

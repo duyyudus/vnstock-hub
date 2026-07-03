@@ -1,14 +1,67 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from typing import Any, List
 import json
 from pathlib import Path
 from pydantic import BaseModel, Field
+import yaml
 
 
 class LLMTaskProviderSelection(BaseModel):
     provider: str = Field(..., min_length=1)
     model: str | None = None
+
+
+def _settings_yaml_path() -> Path:
+    configured_path = os.getenv("SETTINGS_YAML_PATH")
+    if configured_path:
+        return Path(configured_path)
+    return Path(__file__).resolve().parents[2] / "settings.yaml"
+
+
+def _load_settings_yaml_defaults() -> dict[str, Any]:
+    path = _settings_yaml_path()
+    if not path.exists():
+        return {}
+
+    with path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"settings.yaml at {path} must be a YAML mapping")
+
+    defaults: dict[str, Any] = {"settings_yaml_path": str(path)}
+    app_config = data.get("app") or {}
+    sync_config = data.get("sync") or {}
+    llm_config = data.get("llm") or {}
+    auth_config = data.get("auth") or {}
+
+    if isinstance(app_config, dict):
+        if "api_v1_prefix" in app_config:
+            defaults["api_v1_prefix"] = app_config["api_v1_prefix"]
+
+    if isinstance(sync_config, dict):
+        for key in (
+            "target_rpm",
+            "max_workers",
+            "chunk_days",
+            "rate_limit_fixed_wait_seconds",
+            "rate_limit_max_wait_seconds",
+        ):
+            if key in sync_config:
+                defaults[f"sync_{key}"] = sync_config[key]
+    if isinstance(llm_config, dict):
+        if "task_config" in llm_config:
+            defaults["llm_task_config"] = json.dumps(llm_config["task_config"])
+        if "request_timeout_seconds" in llm_config:
+            defaults["llm_request_timeout_seconds"] = llm_config["request_timeout_seconds"]
+
+    if isinstance(auth_config, dict):
+        if "algorithm" in auth_config:
+            defaults["jwt_algorithm"] = auth_config["algorithm"]
+        if "access_token_expire_minutes" in auth_config:
+            defaults["access_token_expire_minutes"] = auth_config["access_token_expire_minutes"]
+
+    return defaults
 
 
 class Settings(BaseSettings):
@@ -36,7 +89,7 @@ class Settings(BaseSettings):
     llm_request_timeout_seconds: int = 30
 
     # Non-environmental config (YAML)
-    settings_yaml_path: str = str(Path(__file__).resolve().parents[2] / "settings.yaml")
+    settings_yaml_path: str = str(_settings_yaml_path())
 
     # Auth/JWT
     jwt_secret_key: str = "change-me"
@@ -132,6 +185,23 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            _load_settings_yaml_defaults,
+            file_secret_settings,
+        )
 
 
 settings = Settings()

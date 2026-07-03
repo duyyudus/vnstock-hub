@@ -1,3 +1,29 @@
+app:
+  api_v1_prefix: /api/v1
+
+auth:
+  algorithm: HS256
+  access_token_expire_minutes: 60
+
+sync:
+  target_rpm: 150
+  max_workers: 10
+  chunk_days: 1825
+  rate_limit_fixed_wait_seconds: 30
+  rate_limit_max_wait_seconds: 1200
+
+llm:
+  request_timeout_seconds: 30
+  task_config:
+    default:
+      - provider: openrouter
+    position_image_extraction:
+      - provider: openrouter
+        model: google/gemini-3.1-flash-lite-preview
+    position_table_extraction:
+      - provider: openrouter
+        model: google/gemini-3.1-flash-lite-preview
+
 brokers:
   - id: vpbanks
     name: VPBank Securities

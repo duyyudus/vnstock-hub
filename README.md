@@ -119,31 +119,93 @@ Or from repository root:
 
 ## Environment Configuration
 
-### Backend (`backend/.env`)
+Backend and frontend can still be run directly with their app-local `.env`
+files during development. Docker builds and deployments use root scenario env
+files instead:
+
+- `.env.local` for local Docker runs.
+- `.env.prod` for registry builds and deployment hosts.
+
+`.env.local` and `.env.prod` should be kept local because they can contain API
+keys and deployment-specific values. Start them from the committed templates:
+
+```bash
+cp .env.local.example .env.local
+cp .env.prod.example .env.prod
+```
+
+Postgres is not part of the Docker stack. Set `DATABASE_URL` in the selected
+root env file to an already-running database. The Docker compose file maps
+`host.docker.internal` for the backend container so local runs can point back to
+a host database on macOS, Linux, or WSL2.
+
+Root Docker env files should stay small. Backend behavior defaults such as API
+prefix, sync tuning, auth token lifetime, and LLM task routing live in
+`backend/settings.yaml`. Deployment policy like CORS origins and sync admin
+allowlists stays in env. Env vars still override YAML when you intentionally
+need a deployment-specific value.
+
+Common backend env values:
 
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
-API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-SETTINGS_YAML_PATH=./settings.yaml
-NEWS_SOURCES_YAML_PATH=./news_sources.yaml
+SYNC_ADMIN_EMAILS=["admin@example.com"]
 JWT_SECRET_KEY=change-me
 LLM_PROVIDERS=[]
-LLM_REQUEST_TIMEOUT_SECONDS=30
-SYNC_ADMIN_EMAILS=["admin@example.com"]
-NEWS_INGESTION_ENABLED=true
-NEWS_POLL_INTERVAL_SECONDS=120
-NEWS_DEFAULT_POLL_INTERVAL_MINUTES=30
-NEWS_INGESTION_BATCH_SIZE=5
 ```
 
-`LLM_PROVIDERS` is shared by portfolio import and the news semantic/summarization flows. `NEWS_SOURCES_YAML_PATH` points to the seeded public news source pack loaded by the backend worker.
+`LLM_PROVIDERS` is kept in env because it can contain provider API keys. Keep
+JSON env values on one line; Docker Compose does not parse multi-line JSON
+values consistently in `.env` files.
 
-### Frontend (`frontend/.env`)
+Common frontend build value:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
 ```
+
+## Docker Build And Deploy
+
+The Docker workflow uses one compose file and one script:
+
+```bash
+./docker-build help
+```
+
+Build backend and frontend images locally against your existing Postgres:
+
+```bash
+cp .env.local.example .env.local
+# Edit .env.local if your existing Postgres is not reachable at the default URL.
+./docker-build local --env .env.local
+```
+
+Preview the local compose configuration without building images:
+
+```bash
+./docker-build local --env .env.local --preview
+docker compose --env-file .env.local config
+```
+
+Build and push images to a registry, targeting linux/amd64 from Linux/WSL2 x86
+or macOS arm64:
+
+```bash
+cp .env.prod.example .env.prod
+# Edit .env.prod and set REGISTRY_REF, image names, API URL, and DATABASE_URL.
+./docker-build prod --env .env.prod --platform linux/amd64 --tag "$(git rev-list --count HEAD)"
+```
+
+Preview the production build/push commands without building or pushing:
+
+```bash
+./docker-build prod --env .env.prod --platform linux/amd64 --tag "$(git rev-list --count HEAD)" --preview
+```
+
+The prod command publishes both the requested tag and `latest` for backend and
+frontend images. Registry addresses are configured through `.env.prod`; no
+machine-specific LAN IP is hard-coded in the repo.
 
 ## Testing
 

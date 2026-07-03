@@ -61,36 +61,34 @@ Note: app startup also runs `Base.metadata.create_all()` for dev convenience, bu
 
 ### Environment variables
 
-Common settings in `backend/.env`:
+Common secrets and deployment wiring in `backend/.env`:
 
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/vnstock_hub
-API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-
-JWT_SECRET_KEY=change-me
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-
-SYNC_TARGET_RPM=150
-SYNC_MAX_WORKERS=6
-SYNC_CHUNK_DAYS=1095
-SYNC_RATE_LIMIT_FIXED_WAIT_SECONDS=30
-SYNC_RATE_LIMIT_MAX_WAIT_SECONDS=1200
 SYNC_ADMIN_EMAILS=["admin@example.com"]
-
+JWT_SECRET_KEY=change-me
 LLM_PROVIDERS='[]'
-LLM_TASK_CONFIG='{}'
-LLM_REQUEST_TIMEOUT_SECONDS=30
 ```
 
-`LLM_PROVIDERS` is the shared provider catalog. `LLM_TASK_CONFIG` optionally maps task names such as `position_image_extraction` and `position_table_extraction` to ordered provider/model fallback chains. If a task is missing, the backend uses `default`; if `default` is also missing, it falls back to the legacy `LLM_PROVIDERS` list order.
+Non-secret backend defaults live in `backend/settings.yaml`, including API
+prefix, sync tuning, auth token lifetime, and LLM task routing. Deployment
+policy like CORS origins and sync admin allowlists stays in env. Env vars still
+override YAML when needed.
+
+`LLM_PROVIDERS` is the shared provider catalog and stays in env because provider entries can contain API keys. `llm.task_config` in `settings.yaml` optionally maps task names such as `position_image_extraction` and `position_table_extraction` to ordered provider/model fallback chains. If a task is missing, the backend uses `default`; if `default` is also missing, it falls back to the legacy `LLM_PROVIDERS` list order.
 
 ### `settings.yaml`
 
-Broker import presets are loaded from `backend/settings.yaml`:
+Backend defaults and broker import presets are loaded from `backend/settings.yaml`:
 
 ```yaml
+app:
+  api_v1_prefix: /api/v1
+sync:
+  target_rpm: 150
+  max_workers: 10
+  chunk_days: 1825
 brokers:
   - id: vpbanks
     name: VPBank Securities
