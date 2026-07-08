@@ -10,17 +10,22 @@ DEFAULT_PLATFORM="linux/amd64"
 usage() {
   cat <<'EOF'
 Usage:
-  ./docker-build local [--env FILE] [--pull] [--preview]
+  ./docker-build local [--env FILE] [--pull] [--no-up] [--preview]
   ./docker-build prod [--env FILE] [--platform PLATFORM] [--tag TAG] [--preview]
   ./docker-build help
 
 Scenarios:
-  local   Build backend/frontend images in local Docker against your external Postgres.
+  local   Build backend/frontend images in local Docker against your external Postgres,
+          then start the stack with 'docker compose up -d'.
   prod    Build backend/frontend images for a target platform and push them to a registry.
+
+Options:
+  --no-up  (local) Only build the images; do not start the stack.
 
 Examples:
   cp .env.local.example .env.local
   ./docker-build local --env .env.local
+  ./docker-build local --env .env.local --no-up
   ./docker-build local --env .env.local --preview
 
   cp .env.prod.example .env.prod
@@ -91,6 +96,7 @@ cmd_local() {
   ENV_FILE="${DEFAULT_LOCAL_ENV}"
   local compose_args=(build)
   local preview=false
+  local up=true
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -105,6 +111,10 @@ cmd_local() {
         ;;
       --preview)
         preview=true
+        shift
+        ;;
+      --no-up)
+        up=false
         shift
         ;;
       --pull)
@@ -132,6 +142,11 @@ cmd_local() {
   echo "Building local images with ${ENV_FILE}"
   echo "Build number: ${BUILD_NUMBER}"
   compose "${ENV_FILE}" "${compose_args[@]}"
+
+  if [[ "${up}" == true ]]; then
+    echo "Starting local stack with ${ENV_FILE}"
+    compose "${ENV_FILE}" up -d
+  fi
 }
 
 cmd_prod() {

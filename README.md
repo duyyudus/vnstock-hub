@@ -173,12 +173,19 @@ The Docker workflow uses one compose file and one script:
 ./docker-build help
 ```
 
-Build backend and frontend images locally against your existing Postgres:
+Build backend and frontend images locally against your existing Postgres, then
+start the stack (`docker compose up -d` runs automatically after the build):
 
 ```bash
 cp .env.local.example .env.local
 # Edit .env.local if your existing Postgres is not reachable at the default URL.
 ./docker-build local --env .env.local
+```
+
+Build the images only, without starting the stack:
+
+```bash
+./docker-build local --env .env.local --no-up
 ```
 
 Preview the local compose configuration without building images:
