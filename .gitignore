@@ -212,3 +212,4 @@ prompt.md
 .DS_Store
 prod-docker-compose.yml
 .codex
+.claude/launch.json
