@@ -3,7 +3,7 @@ app:
 
 auth:
   algorithm: HS256
-  access_token_expire_minutes: 60
+  access_token_expire_minutes: 8760
 
 sync:
   target_rpm: 150
