@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type PositionsFilter = 'all' | 'portfolio' | 'trading';
+export type PositionsFilter = 'none' | 'all' | 'portfolio' | 'trading';
 
 interface PositionsSelectorProps {
     selectedFilter: PositionsFilter;
@@ -26,7 +26,10 @@ export const PositionsSelector: React.FC<PositionsSelectorProps> = ({
             onChange={handleChange}
             aria-label="Filter stocks by saved positions"
         >
-            <option value="all">-- Positions --</option>
+            <option value="none">-- Positions --</option>
+            <option value="all" disabled={!hasPortfolioPositions && !hasTradingPositions}>
+                All
+            </option>
             <option value="portfolio" disabled={!hasPortfolioPositions}>
                 Portfolio
             </option>

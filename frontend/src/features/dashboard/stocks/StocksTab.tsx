@@ -95,7 +95,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     // --- Selection State ---
     const [selectedIndex, setSelectedIndex] = useState<IndexConfig | null>(() => getStoredSelectedIndex(indices));
     const [selectedIndustryName, setSelectedIndustryName] = useState<string | null>(null);
-    const [selectedPositionsFilter, setSelectedPositionsFilter] = useState<PositionsFilter>('all');
+    const [selectedPositionsFilter, setSelectedPositionsFilter] = useState<PositionsFilter>('none');
     const [selectedBookmarkGroupId, setSelectedBookmarkGroupId] = useState<number | null>(null);
     const [bookmarkRefreshKey, setBookmarkRefreshKey] = useState(0);
 
@@ -129,13 +129,19 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
 
     const hasPortfolioPositions = portfolioPositionTickers.length > 0;
     const hasTradingPositions = tradingPositionTickers.length > 0;
-    const isIndexContextActive = selectedPositionsFilter === 'all' && !selectedIndustryName && !selectedBookmarkGroupId;
+    const allPositionTickers = useMemo(
+        () => Array.from(new Set([...portfolioPositionTickers, ...tradingPositionTickers])),
+        [portfolioPositionTickers, tradingPositionTickers]
+    );
+    const isIndexContextActive = selectedPositionsFilter === 'none' && !selectedIndustryName && !selectedBookmarkGroupId;
     const shouldShowDateRangeControls = viewMode !== 'comparison' && viewMode !== 'index_contribution';
-    const selectedPositionsLabel = selectedPositionsFilter === 'portfolio'
-        ? 'Portfolio Positions'
-        : selectedPositionsFilter === 'trading'
-            ? 'Trading Positions'
-            : null;
+    const selectedPositionsLabel = selectedPositionsFilter === 'all'
+        ? 'All Positions'
+        : selectedPositionsFilter === 'portfolio'
+            ? 'Portfolio Positions'
+            : selectedPositionsFilter === 'trading'
+                ? 'Trading Positions'
+                : null;
     const activeDateRangePresetLabel = useMemo(() => {
         const anchorDate = parseIsoDate(dateRange.endDate);
         if (!anchorDate) {
@@ -424,12 +430,16 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     }, [bookmarkGroups, selectedBookmarkGroupId]);
 
     useEffect(() => {
+        if (selectedPositionsFilter === 'all' && !hasPortfolioPositions && !hasTradingPositions) {
+            setSelectedPositionsFilter('none');
+            return;
+        }
         if (selectedPositionsFilter === 'portfolio' && !hasPortfolioPositions) {
-            setSelectedPositionsFilter('all');
+            setSelectedPositionsFilter('none');
             return;
         }
         if (selectedPositionsFilter === 'trading' && !hasTradingPositions) {
-            setSelectedPositionsFilter('all');
+            setSelectedPositionsFilter('none');
         }
     }, [hasPortfolioPositions, hasTradingPositions, selectedPositionsFilter]);
 
@@ -460,7 +470,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
         [indexUniverseStocks, industries]
     );
     const industriesForSelector = useMemo(() => {
-        if (selectedPositionsFilter !== 'all' || selectedBookmarkGroupId || !selectedIndex) {
+        if (selectedPositionsFilter !== 'none' || selectedBookmarkGroupId || !selectedIndex) {
             return industries;
         }
         return selectorIndustries;
@@ -480,7 +490,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     }, [indexUniverseStocks]);
     const showSelectedIndexForeignNetSum = Boolean(
         selectedIndex
-        && selectedPositionsFilter === 'all'
+        && selectedPositionsFilter === 'none'
         && !selectedBookmarkGroupId
         && indexUniverseIndexId === selectedIndex.id
     );
@@ -489,7 +499,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
         if (
             !selectedIndustryName ||
             !selectedIndex ||
-            selectedPositionsFilter !== 'all' ||
+            selectedPositionsFilter !== 'none' ||
             selectedBookmarkGroupId ||
             loading ||
             indexUniverseIndexId !== selectedIndex.id
@@ -508,10 +518,12 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                 setLoading(true);
                 setError(null);
 
-                if (selectedPositionsFilter !== 'all') {
+                if (selectedPositionsFilter !== 'none') {
                     const tickers = selectedPositionsFilter === 'portfolio'
                         ? portfolioPositionTickers
-                        : tradingPositionTickers;
+                        : selectedPositionsFilter === 'trading'
+                            ? tradingPositionTickers
+                            : allPositionTickers;
                     if (tickers.length === 0) {
                         setStocks([]);
                         setIndexUniverseStocks([]);
@@ -610,6 +622,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
         fetchData();
     }, [
         bookmarkRefreshKey,
+        allPositionTickers,
         appliedDateRange.endDate,
         appliedDateRange.startDate,
         portfolioPositionTickers,
