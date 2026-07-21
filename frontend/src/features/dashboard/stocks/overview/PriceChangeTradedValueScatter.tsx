@@ -25,6 +25,7 @@ interface PriceChangeTradedValueScatterProps {
 interface ScatterPoint {
     ticker: string;
     name: string;
+    price: number;
     x: number;
     y: number;
     z: number;
@@ -101,6 +102,13 @@ const PAN_STEP_RATIO = 0.2;
 const formatPercent = (value: number): string => {
     const prefix = value > 0 ? '+' : '';
     return `${prefix}${value.toFixed(2)}%`;
+};
+
+const formatPrice = (value: number): string => {
+    if (!Number.isFinite(value)) {
+        return 'N/A';
+    }
+    return new Intl.NumberFormat('en-US').format(value);
 };
 
 const formatTrendLabel = (trend: RecentTrend | null | undefined): string => {
@@ -446,6 +454,9 @@ const ScatterTooltip: React.FC<ScatterTooltipProps> = ({ active, payload }) => {
                 Daily change: <span className="font-medium">{formatPercent(point.x)}</span>
             </p>
             <p className="mt-1 text-xs">
+                Market price: <span className="font-medium">{formatPrice(point.price)}{Number.isFinite(point.price) ? ' VND' : ''}</span>
+            </p>
+            <p className="mt-1 text-xs">
                 Traded value: <span className="font-medium">{formatBilVnd(point.y)} Bil VND</span>
             </p>
             <p className="mt-1 text-xs">
@@ -567,6 +578,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
                 return {
                     ticker: normalizedTicker,
                     name: stock.company_name || normalizedTicker,
+                    price: Number(stock.price),
                     x: change,
                     y: tradedValue,
                     z: safeMarketCap,
