@@ -414,7 +414,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                         <Tooltip
                             content={<GrowthTooltip />}
                             isAnimationActive={false}
-                            allowEscapeViewBox={{ x: true, y: true }}
+                            allowEscapeViewBox={{ x: false, y: true }}
                             offset={16}
                             wrapperStyle={{ zIndex: 20, pointerEvents: 'auto' }}
                         />
