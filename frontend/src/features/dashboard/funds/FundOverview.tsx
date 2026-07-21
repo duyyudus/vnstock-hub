@@ -19,7 +19,7 @@ const formatDate = (value: string | null) => {
 };
 
 const FundRow: React.FC<{ stock: FundOverviewStock }> = ({ stock }) => {
-    const topFunds = stock.funds.slice(0, 3);
+    const topFunds = stock.funds.slice(0, 8);
 
     return (
         <tr>
@@ -94,7 +94,7 @@ const SectorRows: React.FC<{
 
 const FundOverviewTable: React.FC<{ data: FundOverviewResponse }> = ({ data }) => {
     return (
-        <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100 shadow-md">
+        <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-base-300 bg-base-100 shadow-md">
             <table className="table table-sm">
                 <thead>
                     <tr>
@@ -117,7 +117,7 @@ const FundOverviewTable: React.FC<{ data: FundOverviewResponse }> = ({ data }) =
 
 export const FundOverview: React.FC<FundOverviewProps> = ({ data, loading = false, error = null }) => {
     return (
-        <div className="mx-auto w-full max-w-7xl space-y-4">
+        <div className="w-full space-y-4">
             <div className="flex items-center justify-between border-b border-base-300 pb-2">
                 <h2 className="text-xl font-bold">Overview</h2>
             </div>
