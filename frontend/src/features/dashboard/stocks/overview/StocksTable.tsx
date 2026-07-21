@@ -66,6 +66,74 @@ interface ExportNotice {
     message: string;
 }
 
+type FilterField =
+    | 'market_cap'
+    | 'pe_ratio'
+    | 'accumulated_value'
+    | 'room_ratio'
+    | 'price_change_24h'
+    | 'price_change_1w'
+    | 'price_change_1m'
+    | 'price_change_6m'
+    | 'atl_diff_pct'
+    | 'ath_diff_pct';
+
+type FilterOperator = 'above' | 'below';
+
+interface AppliedFilterRule {
+    operator: FilterOperator;
+    threshold: number;
+}
+
+interface DraftFilterRule {
+    operator: FilterOperator;
+    threshold: string;
+}
+
+type AppliedFilterRules = Partial<Record<FilterField, AppliedFilterRule>>;
+type DraftFilterRules = Record<FilterField, DraftFilterRule>;
+
+interface FilterDefinition {
+    field: FilterField;
+    label: string;
+    unit?: string;
+    example: string;
+}
+
+const FILTER_DEFINITIONS: FilterDefinition[] = [
+    { field: 'market_cap', label: 'Market cap', unit: 'B VND', example: 'e.g. 10000' },
+    { field: 'pe_ratio', label: 'P/E', example: 'e.g. 15' },
+    { field: 'accumulated_value', label: 'Volume', unit: 'B VND', example: 'e.g. 100' },
+    { field: 'room_ratio', label: 'Room', unit: '%', example: 'e.g. 20' },
+    { field: 'price_change_24h', label: '24h change', unit: '%', example: 'e.g. -2' },
+    { field: 'price_change_1w', label: '1W change', unit: '%', example: 'e.g. 5' },
+    { field: 'price_change_1m', label: '1M change', unit: '%', example: 'e.g. 10' },
+    { field: 'price_change_6m', label: '6M change', unit: '%', example: 'e.g. 20' },
+    { field: 'atl_diff_pct', label: 'ATL distance', unit: '%', example: 'e.g. 50' },
+    { field: 'ath_diff_pct', label: 'ATH distance', unit: '%', example: 'e.g. -50' },
+];
+
+const getDefaultFilterOperator = (field: FilterField): FilterOperator => {
+    return field === 'atl_diff_pct' || field === 'ath_diff_pct' ? 'below' : 'above';
+};
+
+const createEmptyDraftFilterRules = (): DraftFilterRules => Object.fromEntries(
+    FILTER_DEFINITIONS.map(({ field }) => [field, {
+        operator: getDefaultFilterOperator(field),
+        threshold: '',
+    }])
+) as DraftFilterRules;
+
+const createDraftFilterRules = (appliedRules: AppliedFilterRules): DraftFilterRules => Object.fromEntries(
+    FILTER_DEFINITIONS.map(({ field }) => {
+        const rule = appliedRules[field];
+        return [field, {
+            operator: rule?.operator ?? getDefaultFilterOperator(field),
+            threshold: rule ? String(rule.threshold) : '',
+        }];
+    })
+) as DraftFilterRules;
+
 export interface StockIndustrySection {
     industry: string;
     totalMarketCap: number;
@@ -95,6 +163,34 @@ const getRemainingRoomRatioValue = (
         return null;
     }
     return currentRoom / totalRoom;
+};
+
+const getStockFilterValue = (stock: Stock, field: FilterField): number | null => {
+    if (field === 'room_ratio') {
+        const ratio = getRemainingRoomRatioValue(stock.current_room, stock.total_room);
+        return ratio == null ? null : ratio * 100;
+    }
+
+    const value = stock[field as keyof Stock];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
+
+const stockMatchesFilterRules = (stock: Stock, rules: AppliedFilterRules): boolean => {
+    return FILTER_DEFINITIONS.every(({ field }) => {
+        const rule = rules[field];
+        if (!rule) {
+            return true;
+        }
+
+        const value = getStockFilterValue(stock, field);
+        if (value == null) {
+            return false;
+        }
+
+        return rule.operator === 'above'
+            ? value >= rule.threshold
+            : value <= rule.threshold;
+    });
 };
 
 const getStockSortValue = (stock: Stock, key: SortKey) => {
@@ -175,6 +271,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     });
     const [isCompanyCollapsed, setIsCompanyCollapsed] = useState(true);
     const [groupByIndustry, setGroupByIndustry] = useState(false);
+    const filterDialogRef = useRef<HTMLDialogElement>(null);
+    const [appliedFilterRules, setAppliedFilterRules] = useState<AppliedFilterRules>({});
+    const [draftFilterRules, setDraftFilterRules] = useState<DraftFilterRules>(createEmptyDraftFilterRules);
     const user = useAuthUser();
     const isLoggedIn = Boolean(user);
     const dialogRef = useRef<HTMLDialogElement>(null);
@@ -754,16 +853,69 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         setSortConfig({ key, direction });
     };
 
+    const openFilterDialog = () => {
+        setDraftFilterRules(createDraftFilterRules(appliedFilterRules));
+        filterDialogRef.current?.showModal();
+    };
+
+    const closeFilterDialog = () => {
+        setDraftFilterRules(createDraftFilterRules(appliedFilterRules));
+        filterDialogRef.current?.close();
+    };
+
+    const updateDraftFilterRule = (
+        field: FilterField,
+        update: Partial<DraftFilterRule>,
+    ) => {
+        setDraftFilterRules((current) => ({
+            ...current,
+            [field]: {
+                ...current[field],
+                ...update,
+            },
+        }));
+    };
+
+    const applyFilterRules = (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const nextRules: AppliedFilterRules = {};
+
+        FILTER_DEFINITIONS.forEach(({ field }) => {
+            const draftRule = draftFilterRules[field];
+            if (draftRule.threshold === '') {
+                return;
+            }
+            const threshold = Number(draftRule.threshold);
+            if (Number.isFinite(threshold)) {
+                nextRules[field] = {
+                    operator: draftRule.operator,
+                    threshold,
+                };
+            }
+        });
+
+        setAppliedFilterRules(nextRules);
+        filterDialogRef.current?.close();
+    };
+
+    const activeFilterCount = Object.keys(appliedFilterRules).length;
+
     const sortedStocks = useMemo(() => {
-        return [...stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig));
-    }, [stocks, sortConfig]);
+        return stocks
+            .filter((stock) => stockMatchesFilterRules(stock, appliedFilterRules))
+            .sort((a, b) => compareStocksForSort(a, b, sortConfig));
+    }, [appliedFilterRules, stocks, sortConfig]);
 
     const sortedIndustrySections = useMemo<StockIndustrySection[]>(() => {
-        return industrySections.map((section) => ({
-            ...section,
-            stocks: [...section.stocks].sort((a, b) => compareStocksForSort(a, b, sortConfig)),
-        }));
-    }, [industrySections, sortConfig]);
+        return industrySections
+            .map((section) => ({
+                ...section,
+                stocks: section.stocks
+                    .filter((stock) => stockMatchesFilterRules(stock, appliedFilterRules))
+                    .sort((a, b) => compareStocksForSort(a, b, sortConfig)),
+            }))
+            .filter((section) => section.stocks.length > 0);
+    }, [appliedFilterRules, industrySections, sortConfig]);
 
     const renderSortIcon = (key: SortKey) => {
         if (sortConfig.key !== key) {
@@ -1233,33 +1385,141 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         <span className="text-base-content/70"> B VND</span>
                     </div>
                 ) : null}
-                <label className="inline-flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm font-medium">
-                    <span>Group by industry</span>
-                    <input
-                        type="checkbox"
-                        className="toggle toggle-sm"
-                        checked={groupByIndustry}
-                        onChange={(event) => setGroupByIndustry(event.target.checked)}
-                        aria-label="Group stocks by industry"
-                    />
-                </label>
-            </div>
-            {groupByIndustry && sortedIndustrySections.length > 0 ? (
-                <div className="space-y-4">
-                    {sortedIndustrySections.map((section) => (
-                        <section key={section.industry} className="space-y-2">
-                            <div className="px-1">
-                                <h3 className="text-sm font-semibold uppercase tracking-wide text-base-content/80">
-                                    {section.industry}
-                                </h3>
-                            </div>
-                            {renderTable(section.stocks)}
-                        </section>
-                    ))}
+                <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm font-medium">
+                        <span>Group by industry</span>
+                        <input
+                            type="checkbox"
+                            className="toggle toggle-sm"
+                            checked={groupByIndustry}
+                            onChange={(event) => setGroupByIndustry(event.target.checked)}
+                            aria-label="Group stocks by industry"
+                        />
+                    </label>
+                    <button
+                        type="button"
+                        className={`btn btn-sm ${activeFilterCount > 0 ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={openFilterDialog}
+                        aria-label={activeFilterCount > 0
+                            ? `Edit stock filters, ${activeFilterCount} active`
+                            : 'Filter stocks'}
+                    >
+                        Filter
+                        {activeFilterCount > 0 ? (
+                            <span className="badge badge-sm badge-neutral">{activeFilterCount}</span>
+                        ) : null}
+                    </button>
                 </div>
+            </div>
+            {groupByIndustry && industrySections.length > 0 ? (
+                sortedIndustrySections.length > 0 ? (
+                    <div className="space-y-4">
+                        {sortedIndustrySections.map((section) => (
+                            <section key={section.industry} className="space-y-2">
+                                <div className="px-1">
+                                    <h3 className="text-sm font-semibold uppercase tracking-wide text-base-content/80">
+                                        {section.industry}
+                                    </h3>
+                                </div>
+                                {renderTable(section.stocks)}
+                            </section>
+                        ))}
+                    </div>
+                ) : renderTable([])
             ) : (
                 renderTable(sortedStocks)
             )}
+
+            <dialog
+                ref={filterDialogRef}
+                className="modal"
+                onCancel={(event) => {
+                    event.preventDefault();
+                    closeFilterDialog();
+                }}
+            >
+                <div className="modal-box max-w-2xl">
+                    <h3 className="text-lg font-bold">Filter stocks</h3>
+                    <p className="mt-1 text-sm text-base-content/70">
+                        Stocks must match every configured rule. Leave a threshold blank to ignore that field.
+                    </p>
+
+                    <form onSubmit={applyFilterRules}>
+                        <div className="mt-5 overflow-x-auto">
+                            <table className="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Field</th>
+                                        <th>Condition</th>
+                                        <th>Threshold</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {FILTER_DEFINITIONS.map(({ field, label, unit, example }) => {
+                                        const rule = draftFilterRules[field];
+                                        return (
+                                            <tr key={field}>
+                                                <td className="font-medium">
+                                                    {label}
+                                                    {unit ? <span className="ml-1 text-xs font-normal text-base-content/60">({unit})</span> : null}
+                                                </td>
+                                                <td>
+                                                    <select
+                                                        className="select select-bordered select-sm w-full min-w-28"
+                                                        value={rule.operator}
+                                                        onChange={(event) => updateDraftFilterRule(field, {
+                                                            operator: event.target.value as FilterOperator,
+                                                        })}
+                                                        aria-label={`${label} comparison`}
+                                                    >
+                                                        <option value="above">Above (≥)</option>
+                                                        <option value="below">Below (≤)</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <input
+                                                        type="number"
+                                                        inputMode="decimal"
+                                                        step="any"
+                                                        className="input input-bordered input-sm w-full min-w-32 placeholder:italic"
+                                                        value={rule.threshold}
+                                                        onChange={(event) => updateDraftFilterRule(field, {
+                                                            threshold: event.target.value,
+                                                        })}
+                                                        placeholder={example}
+                                                        aria-label={`${label} threshold${unit ? ` in ${unit}` : ''}`}
+                                                    />
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="modal-action justify-between">
+                            <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={() => setDraftFilterRules(createEmptyDraftFilterRules())}
+                            >
+                                Clear all
+                            </button>
+                            <div className="flex gap-2">
+                                <button type="button" className="btn btn-ghost" onClick={closeFilterDialog}>
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary">
+                                    Apply
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <form method="dialog" className="modal-backdrop">
+                    <button type="button" onClick={closeFilterDialog}>close</button>
+                </form>
+            </dialog>
 
             {tickerTooltip && typeof document !== 'undefined'
                 ? createPortal(
