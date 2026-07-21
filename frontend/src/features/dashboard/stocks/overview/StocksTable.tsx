@@ -79,6 +79,14 @@ interface TickerTooltipState {
     placeLeft: boolean;
 }
 
+interface RoomTooltipState {
+    ticker: string;
+    text: string;
+    x: number;
+    y: number;
+    placeAbove: boolean;
+}
+
 const getRemainingRoomRatioValue = (
     currentRoom: number | null | undefined,
     totalRoom: number | null | undefined
@@ -180,6 +188,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const [exportingContextMenu, setExportingContextMenu] = useState(false);
     const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
     const [tickerTooltip, setTickerTooltip] = useState<TickerTooltipState | null>(null);
+    const [roomTooltip, setRoomTooltip] = useState<RoomTooltipState | null>(null);
     const groupTickerMap = useMemo(() => {
         const map = new Map<number, Set<string>>();
         bookmarkGroups.forEach((group) => {
@@ -219,20 +228,23 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     }, [exportNotice]);
 
     useEffect(() => {
-        if (!tickerTooltip) {
+        if (!tickerTooltip && !roomTooltip) {
             return;
         }
 
-        const clearTooltip = () => setTickerTooltip(null);
+        const clearTooltips = () => {
+            setTickerTooltip(null);
+            setRoomTooltip(null);
+        };
 
-        window.addEventListener('scroll', clearTooltip, true);
-        window.addEventListener('resize', clearTooltip);
+        window.addEventListener('scroll', clearTooltips, true);
+        window.addEventListener('resize', clearTooltips);
 
         return () => {
-            window.removeEventListener('scroll', clearTooltip, true);
-            window.removeEventListener('resize', clearTooltip);
+            window.removeEventListener('scroll', clearTooltips, true);
+            window.removeEventListener('resize', clearTooltips);
         };
-    }, [tickerTooltip]);
+    }, [roomTooltip, tickerTooltip]);
 
     // Formatters
     const formatPrice = (price: number): string => {
@@ -792,6 +804,30 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         });
     };
 
+    const showRoomTooltip = (
+        target: HTMLSpanElement,
+        ticker: string,
+        text: string,
+    ) => {
+        const rect = target.getBoundingClientRect();
+        const viewportPadding = 16;
+        const verticalGap = 8;
+        const estimatedTooltipWidth = Math.min(336, window.innerWidth - viewportPadding * 2);
+        const estimatedTooltipHeight = 112;
+        const centeredLeft = rect.left + rect.width / 2 - estimatedTooltipWidth / 2;
+        const maxLeft = window.innerWidth - viewportPadding - estimatedTooltipWidth;
+        const x = Math.min(Math.max(viewportPadding, centeredLeft), maxLeft);
+        const placeAbove = rect.top - verticalGap - estimatedTooltipHeight >= viewportPadding;
+
+        setRoomTooltip({
+            ticker,
+            text,
+            x,
+            y: placeAbove ? rect.top - verticalGap : rect.bottom + verticalGap,
+            placeAbove,
+        });
+    };
+
     const totalColumns = isLoggedIn ? 17 : 16;
     const showForeignNetSummary = foreignNetSummaryValue !== undefined;
     const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
@@ -1099,12 +1135,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                             </td>
                             <td className="text-right font-mono whitespace-nowrap text-base-content">
                                 {hasRoomData ? (
-                                    <div
-                                        className="tooltip z-30 [&:before]:z-30 [&:before]:max-w-none [&:before]:whitespace-pre [&:after]:z-30"
-                                        data-tip={roomTooltipText}
+                                    <span
+                                        className="inline-block cursor-help focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                        tabIndex={0}
+                                        onMouseEnter={(event) => showRoomTooltip(event.currentTarget, stock.ticker, roomTooltipText)}
+                                        onMouseLeave={() => setRoomTooltip(null)}
+                                        onFocus={(event) => showRoomTooltip(event.currentTarget, stock.ticker, roomTooltipText)}
+                                        onBlur={() => setRoomTooltip(null)}
+                                        aria-describedby={roomTooltip?.ticker === stock.ticker ? 'room-tooltip' : undefined}
                                     >
-                                        <span className="cursor-help">{roomRatioText}</span>
-                                    </div>
+                                        {roomRatioText}
+                                    </span>
                                 ) : (
                                     roomRatioText
                                 )}
@@ -1231,6 +1272,24 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         }}
                     >
                         {tickerTooltip.text}
+                    </div>,
+                    document.body,
+                )
+                : null}
+
+            {roomTooltip && typeof document !== 'undefined'
+                ? createPortal(
+                    <div
+                        id="room-tooltip"
+                        role="tooltip"
+                        className="pointer-events-none fixed z-[120] w-max max-w-[calc(100vw-2rem)] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left font-mono text-sm leading-relaxed text-base-content shadow-xl"
+                        style={{
+                            left: roomTooltip.x,
+                            top: roomTooltip.y,
+                            transform: roomTooltip.placeAbove ? 'translateY(-100%)' : undefined,
+                        }}
+                    >
+                        {roomTooltip.text}
                     </div>,
                     document.body,
                 )
