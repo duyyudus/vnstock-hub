@@ -153,6 +153,14 @@ export const FundsTab: React.FC = () => {
         });
     }, [performanceData, startYear]);
 
+    const fundTypesBySymbol = useMemo(() => {
+        return funds.reduce<Record<string, string | undefined>>((lookup, fund) => {
+            lookup[fund.symbol] = fund.fund_type;
+            lookup[fund.symbol.toUpperCase()] = fund.fund_type;
+            return lookup;
+        }, {});
+    }, [funds]);
+
     const selectedBenchmarkData = useMemo(() => {
         return performanceData?.benchmarks?.[benchmark] || null;
     }, [performanceData, benchmark]);
@@ -516,6 +524,7 @@ export const FundsTab: React.FC = () => {
                                             funds={performanceFunds}
                                             benchmark={selectedBenchmarkData}
                                             startYear={startYear}
+                                            fundTypesBySymbol={fundTypesBySymbol}
                                             onFundSelect={handleFundSelectFromGrowthChart}
                                         />
                                     )}

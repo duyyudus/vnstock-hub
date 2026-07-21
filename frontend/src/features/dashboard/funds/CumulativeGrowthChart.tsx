@@ -6,8 +6,11 @@ interface CumulativeGrowthChartProps {
     funds: FundPerformanceMetrics[];
     benchmark: FundPerformanceMetrics | null;
     startYear: number;
+    fundTypesBySymbol: Record<string, string | undefined>;
     onFundSelect?: (symbol: string) => void;
 }
+
+type FundTypeFilter = 'ALL' | 'STOCK' | 'BOND' | 'BALANCED';
 
 interface GrowthChartRecord extends Record<string, number | string> {
     date: string;
@@ -58,6 +61,31 @@ const TOP_COLORS = [
 
 const GRAY_COLOR = '#6b7280';
 const BENCHMARK_COLOR = '#fbbf24';
+
+const FUND_TYPE_FILTERS: Array<{ value: FundTypeFilter; label: string }> = [
+    { value: 'ALL', label: 'All Funds' },
+    { value: 'STOCK', label: 'Stock Funds' },
+    { value: 'BOND', label: 'Bond Funds' },
+    { value: 'BALANCED', label: 'Balanced Funds' },
+];
+
+const normalizeFundType = (fundType?: string): Exclude<FundTypeFilter, 'ALL'> | null => {
+    const normalized = fundType?.trim().toLocaleLowerCase('vi');
+
+    switch (normalized) {
+        case 'stock':
+        case 'quỹ cổ phiếu':
+            return 'STOCK';
+        case 'bond':
+        case 'quỹ trái phiếu':
+            return 'BOND';
+        case 'balanced':
+        case 'quỹ cân bằng':
+            return 'BALANCED';
+        default:
+            return null;
+    }
+};
 
 const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -199,14 +227,28 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
     funds,
     benchmark,
     startYear,
+    fundTypesBySymbol,
     onFundSelect,
 }) => {
     const chartContainerRef = useRef<HTMLDivElement | null>(null);
     const [pinnedDate, setPinnedDate] = useState<string | null>(null);
+    const [fundTypeFilter, setFundTypeFilter] = useState<FundTypeFilter>('ALL');
+
+    const filteredFunds = useMemo(() => {
+        if (fundTypeFilter === 'ALL') {
+            return funds;
+        }
+
+        return funds.filter((fund) => {
+            const fundType = fundTypesBySymbol[fund.symbol]
+                ?? fundTypesBySymbol[fund.symbol.toUpperCase()];
+            return normalizeFundType(fundType) === fundTypeFilter;
+        });
+    }, [fundTypeFilter, fundTypesBySymbol, funds]);
 
     // Process data for chart - merge all NAV histories by date
     const chartData = useMemo(() => {
-        if (!funds.length) return [];
+        if (!filteredFunds.length) return [];
 
         // Calculate start date based on startYear (Jan 1st)
         const startStr = `${startYear}-01-01`;
@@ -215,7 +257,7 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
         const dateMap = new Map<string, GrowthChartRecord>();
 
         // Add fund data
-        funds.forEach((fund) => {
+        filteredFunds.forEach((fund) => {
             // Filter and sort history for the period
             const history = [...fund.nav_history]
                 .filter(p => p.date >= startStr)
@@ -257,17 +299,17 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
         return Array.from(dateMap.values()).sort((a, b) =>
             String(a.date).localeCompare(String(b.date))
         );
-    }, [funds, benchmark, startYear]);
+    }, [filteredFunds, benchmark, startYear]);
 
     // Rank funds by each fund's own latest available value in the selected range
     const sortedFunds = useMemo(() => {
         const startStr = `${startYear}-01-01`;
-        return [...funds].sort((a, b) => {
+        return [...filteredFunds].sort((a, b) => {
             const aVal = getLatestGrowthValue(a, startStr) ?? 0;
             const bVal = getLatestGrowthValue(b, startStr) ?? 0;
             return bVal - aVal;
         });
-    }, [funds, startYear]);
+    }, [filteredFunds, startYear]);
 
     const buildTooltipPayload = (record: GrowthChartRecord): GrowthTooltipEntry[] => {
         const nextPayload: GrowthTooltipEntry[] = [];
@@ -366,34 +408,54 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
         setPinnedDate(String(state.activeLabel ?? record.date));
     };
 
-    if (chartData.length === 0) {
-        return (
-            <div className="flex items-center justify-center h-full text-base-content/50">
-                No data available for the selected timeframe
-            </div>
-        );
-    }
-
     return (
         <div className="w-full h-full flex flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div className="flex flex-wrap gap-2" aria-label="Filter funds by type">
+                    {FUND_TYPE_FILTERS.map((filter) => (
+                        <button
+                            key={filter.value}
+                            type="button"
+                            className={`btn btn-xs text-xs ${fundTypeFilter === filter.value ? 'btn-primary' : 'btn-ghost'}`}
+                            aria-pressed={fundTypeFilter === filter.value}
+                            onClick={() => {
+                                setFundTypeFilter(filter.value);
+                                setPinnedDate(null);
+                            }}
+                        >
+                            {filter.label}
+                        </button>
+                    ))}
+                </div>
+                <span className="text-xs text-base-content/50">
+                    {filteredFunds.length} {filteredFunds.length === 1 ? 'fund' : 'funds'}
+                </span>
+            </div>
+
             <div ref={chartContainerRef} className="flex-1 min-h-0 relative">
-                {pinnedTooltip ? (
-                    <div className="absolute right-4 top-4 z-30">
-                        <GrowthTooltipCard
-                            label={pinnedTooltip.label}
-                            payload={pinnedTooltip.payload}
-                            onClose={() => setPinnedDate(null)}
-                            scrollable={true}
-                            onFundSelect={onFundSelect}
-                        />
+                {chartData.length === 0 ? (
+                    <div className="flex items-center justify-center h-[680px] text-base-content/50">
+                        No data available for the selected fund type and timeframe
                     </div>
-                ) : null}
-                <ResponsiveContainer width="100%" height={680} debounce={50}>
-                    <LineChart
-                        data={chartData}
-                        margin={{ top: 10, right: 30, left: 10, bottom: 30 }}
-                        onClick={handleChartClick}
-                    >
+                ) : (
+                    <>
+                        {pinnedTooltip ? (
+                            <div className="absolute right-4 top-4 z-30">
+                                <GrowthTooltipCard
+                                    label={pinnedTooltip.label}
+                                    payload={pinnedTooltip.payload}
+                                    onClose={() => setPinnedDate(null)}
+                                    scrollable={true}
+                                    onFundSelect={onFundSelect}
+                                />
+                            </div>
+                        ) : null}
+                        <ResponsiveContainer width="100%" height={680} debounce={50}>
+                            <LineChart
+                                data={chartData}
+                                margin={{ top: 10, right: 30, left: 10, bottom: 30 }}
+                                onClick={handleChartClick}
+                            >
                         <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                         <XAxis
                             dataKey="date"
@@ -447,8 +509,10 @@ export const CumulativeGrowthChart: React.FC<CumulativeGrowthChartProps> = ({
                                 connectNulls={true}
                             />
                         )}
-                    </LineChart>
-                </ResponsiveContainer>
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </>
+                )}
             </div>
 
             {/* Legend for top funds */}
