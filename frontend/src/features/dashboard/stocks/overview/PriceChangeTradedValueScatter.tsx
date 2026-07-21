@@ -75,6 +75,8 @@ interface SelectionRect {
     currentY: number;
 }
 
+type ForeignFlowFilter = 'all' | 'buy' | 'sell' | 'neutral';
+
 const POSITIVE_FLOW_COLOR = '#16a34a';
 const NEGATIVE_FLOW_COLOR = '#ef4444';
 const NEUTRAL_FLOW_COLOR = '#94a3b8';
@@ -529,6 +531,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
     const [zoomDomains, setZoomDomains] = useState<ZoomDomains | null>(null);
     const [selection, setSelection] = useState<SelectionRect | null>(null);
     const [plotArea, setPlotArea] = useState<PlotArea | null>(null);
+    const [foreignFlowFilter, setForeignFlowFilter] = useState<ForeignFlowFilter>('all');
 
     const chartData = useMemo<ScatterPoint[]>(() => {
         const foreignFlowScale = getQuantile(
@@ -583,6 +586,36 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
             .sort((a, b) => b.marketCap - a.marketCap);
     }, [openTradingPositions, portfolioHoldings, stocks]);
 
+    const foreignFlowCounts = useMemo(() => {
+        return chartData.reduce(
+            (counts, point) => {
+                if (point.foreignNet !== null && point.foreignNet > 0) {
+                    counts.buy += 1;
+                } else if (point.foreignNet !== null && point.foreignNet < 0) {
+                    counts.sell += 1;
+                } else {
+                    counts.neutral += 1;
+                }
+                return counts;
+            },
+            { buy: 0, sell: 0, neutral: 0 },
+        );
+    }, [chartData]);
+    const displayedChartData = useMemo(() => {
+        if (foreignFlowFilter === 'all') {
+            return chartData;
+        }
+        return chartData.filter((point) => {
+            if (foreignFlowFilter === 'buy') {
+                return point.foreignNet !== null && point.foreignNet > 0;
+            }
+            if (foreignFlowFilter === 'sell') {
+                return point.foreignNet !== null && point.foreignNet < 0;
+            }
+            return point.foreignNet === null || point.foreignNet === 0;
+        });
+    }, [chartData, foreignFlowFilter]);
+
     const xDomain = useMemo(() => getPercentDomain(chartData), [chartData]);
     const yDomain = useMemo(() => getValueDomain(chartData), [chartData]);
     const effectiveXDomain = zoomDomains?.x ?? xDomain;
@@ -598,7 +631,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
         return [Math.min(...values), Math.max(...values)];
     }, [chartData]);
     const priceChangeStats = useMemo(() => {
-        return chartData.reduce(
+        return displayedChartData.reduce(
             (accumulator, point) => {
                 if (point.x < -1) {
                     accumulator.down += 1;
@@ -611,7 +644,12 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
             },
             { down: 0, flat: 0, up: 0 },
         );
-    }, [chartData]);
+    }, [displayedChartData]);
+
+    const toggleForeignFlowFilter = useCallback((filter: Exclude<ForeignFlowFilter, 'all'>) => {
+        setForeignFlowFilter((current) => current === filter ? 'all' : filter);
+        setActivePoint(null);
+    }, []);
 
     const handlePlotAreaChange = useCallback((nextPlotArea: PlotArea | null) => {
         setPlotArea((previous) => {
@@ -831,18 +869,42 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
 
     const legend = (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-base-content/70">
-            <span className="flex items-center gap-1">
+            <button
+                type="button"
+                className={`flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+                    foreignFlowFilter === 'buy' ? 'bg-base-200 font-semibold text-base-content' : ''
+                }`}
+                onClick={() => toggleForeignFlowFilter('buy')}
+                aria-pressed={foreignFlowFilter === 'buy'}
+                title="Show only foreign net buy stocks"
+            >
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: POSITIVE_FLOW_COLOR }}></span>
-                Foreign net buy
-            </span>
-            <span className="flex items-center gap-1">
+                Foreign net buy ({formatCount(foreignFlowCounts.buy)})
+            </button>
+            <button
+                type="button"
+                className={`flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+                    foreignFlowFilter === 'sell' ? 'bg-base-200 font-semibold text-base-content' : ''
+                }`}
+                onClick={() => toggleForeignFlowFilter('sell')}
+                aria-pressed={foreignFlowFilter === 'sell'}
+                title="Show only foreign net sell stocks"
+            >
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: NEGATIVE_FLOW_COLOR }}></span>
-                Foreign net sell
-            </span>
-            <span className="flex items-center gap-1">
+                Foreign net sell ({formatCount(foreignFlowCounts.sell)})
+            </button>
+            <button
+                type="button"
+                className={`flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+                    foreignFlowFilter === 'neutral' ? 'bg-base-200 font-semibold text-base-content' : ''
+                }`}
+                onClick={() => toggleForeignFlowFilter('neutral')}
+                aria-pressed={foreignFlowFilter === 'neutral'}
+                title="Show only neutral or unavailable foreign flow stocks"
+            >
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: NEUTRAL_FLOW_COLOR }}></span>
-                Neutral / N/A
-            </span>
+                Neutral / N/A ({formatCount(foreignFlowCounts.neutral)})
+            </button>
             <span className="flex items-center gap-1">
                 <span className="h-3 w-3 rounded-full border" style={{ borderColor: TREND_UP_COLOR }}></span>
                 3-day up ring
@@ -925,7 +987,7 @@ export const PriceChangeTradedValueScatter: React.FC<PriceChangeTradedValueScatt
 
                 <Scatter
                     name="Stocks"
-                    data={chartData}
+                    data={displayedChartData}
                     shape={<BubblePoint />}
                     isAnimationActive={false}
                     onMouseLeave={() => setActivePoint(null)}
