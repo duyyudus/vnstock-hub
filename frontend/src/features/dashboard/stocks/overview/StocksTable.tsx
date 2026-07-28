@@ -25,6 +25,8 @@ interface StocksTableProps {
     foreignNetSummaryValue?: number | null;
     /** Aggregate foreign holding value for the selected index universe */
     foreignTotalHoldingValue?: number | null;
+    /** Aggregate market cap for the selected index universe */
+    totalMarketCapValue?: number | null;
     /** Label for the selected index summary */
     foreignNetSummaryLabel?: string;
     /** Bookmark groups for the logged-in user */
@@ -245,7 +247,7 @@ const formatForeignNetSummaryValue = (value: number | null | undefined): string 
     return `${prefix}${formatted}`;
 };
 
-const formatForeignTotalHoldingValue = (value: number | null | undefined): string => {
+const formatUnsignedSummaryValue = (value: number | null | undefined): string => {
     if (value == null) {
         return '-';
     }
@@ -272,6 +274,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     industrySections = [],
     foreignNetSummaryValue = undefined,
     foreignTotalHoldingValue = undefined,
+    totalMarketCapValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
     portfolioHoldings = {},
@@ -979,7 +982,9 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
     const foreignNetSummaryClassName = getForeignNetSummaryClassName(foreignNetSummaryValue);
     const showForeignTotalHolding = foreignTotalHoldingValue !== undefined;
-    const foreignTotalHoldingText = formatForeignTotalHoldingValue(foreignTotalHoldingValue);
+    const foreignTotalHoldingText = formatUnsignedSummaryValue(foreignTotalHoldingValue);
+    const showTotalMarketCap = totalMarketCapValue !== undefined;
+    const totalMarketCapText = formatUnsignedSummaryValue(totalMarketCapValue);
     const renderTableHeader = () => (
         <thead className="sticky top-0 z-20 bg-base-200">
             <tr>
@@ -1388,6 +1393,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                 </span>
                                 <span className="font-semibold text-base-content">
                                     {foreignTotalHoldingText}
+                                </span>
+                                <span className="text-base-content/70"> B VND</span>
+                            </div>
+                        ) : null}
+                        {showTotalMarketCap ? (
+                            <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                                <span className="text-base-content/70">
+                                    Total market cap{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
+                                </span>
+                                <span className="font-semibold text-base-content">
+                                    {totalMarketCapText}
                                 </span>
                                 <span className="text-base-content/70"> B VND</span>
                             </div>

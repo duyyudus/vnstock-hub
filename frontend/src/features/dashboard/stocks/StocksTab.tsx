@@ -103,6 +103,22 @@ const getForeignTotalHoldingValue = (stocks: Stock[]): number | null => {
     return hasForeignRoomData ? totalValueBilVnd : null;
 };
 
+const getTotalMarketCapValue = (stocks: Stock[]): number | null => {
+    let totalMarketCapBilVnd = 0;
+    let hasMarketCapData = false;
+
+    stocks.forEach((stock) => {
+        if (!Number.isFinite(stock.market_cap) || stock.market_cap < 0) {
+            return;
+        }
+
+        totalMarketCapBilVnd += stock.market_cap;
+        hasMarketCapData = true;
+    });
+
+    return hasMarketCapData ? totalMarketCapBilVnd : null;
+};
+
 /**
  * Stocks Tab - Main container for Index/Industry stock views.
  * Manages state for selection, fetching, and view switching.
@@ -508,6 +524,10 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     }, [indexUniverseStocks]);
     const selectedIndexForeignTotalHolding = useMemo(
         () => getForeignTotalHoldingValue(indexUniverseStocks),
+        [indexUniverseStocks]
+    );
+    const selectedIndexTotalMarketCap = useMemo(
+        () => getTotalMarketCapValue(indexUniverseStocks),
         [indexUniverseStocks]
     );
     const showSelectedIndexForeignNetSum = Boolean(
@@ -1202,6 +1222,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                                 stocks={filteredStocks}
                                 foreignNetSummaryValue={showSelectedIndexForeignNetSum ? selectedIndexForeignNetSum : undefined}
                                 foreignTotalHoldingValue={showSelectedIndexForeignNetSum ? selectedIndexForeignTotalHolding : undefined}
+                                totalMarketCapValue={showSelectedIndexForeignNetSum ? selectedIndexTotalMarketCap : undefined}
                                 foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}
