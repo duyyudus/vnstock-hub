@@ -1222,6 +1222,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                                 stocks={filteredStocks}
                                 foreignNetSummaryValue={showSelectedIndexForeignNetSum ? selectedIndexForeignNetSum : undefined}
                                 foreignTotalHoldingValue={showSelectedIndexForeignNetSum ? selectedIndexForeignTotalHolding : undefined}
+                                foreignHoldingStocks={showSelectedIndexForeignNetSum ? indexUniverseStocks : undefined}
                                 totalMarketCapValue={showSelectedIndexForeignNetSum ? selectedIndexTotalMarketCap : undefined}
                                 foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
                                 bookmarkGroups={bookmarkGroups}

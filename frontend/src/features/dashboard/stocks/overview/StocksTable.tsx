@@ -15,6 +15,7 @@ import {
     runTickerExportDefinitions,
 } from '../stockExport';
 import { getForeignHolding } from '../foreignHolding';
+import { ForeignHoldingChart } from './ForeignHoldingChart';
 
 interface StocksTableProps {
     /** List of stocks to display */
@@ -25,6 +26,8 @@ interface StocksTableProps {
     foreignNetSummaryValue?: number | null;
     /** Aggregate foreign holding value for the selected index universe */
     foreignTotalHoldingValue?: number | null;
+    /** Full stock universe used to break down the aggregate foreign holding value */
+    foreignHoldingStocks?: Stock[];
     /** Aggregate market cap for the selected index universe */
     totalMarketCapValue?: number | null;
     /** Label for the selected index summary */
@@ -274,6 +277,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     industrySections = [],
     foreignNetSummaryValue = undefined,
     foreignTotalHoldingValue = undefined,
+    foreignHoldingStocks,
     totalMarketCapValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
@@ -288,6 +292,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const [isCompanyCollapsed, setIsCompanyCollapsed] = useState(true);
     const [groupByIndustry, setGroupByIndustry] = useState(false);
     const filterDialogRef = useRef<HTMLDialogElement>(null);
+    const foreignHoldingDialogRef = useRef<HTMLDialogElement>(null);
     const [appliedFilterRules, setAppliedFilterRules] = useState<AppliedFilterRules>({});
     const [draftFilterRules, setDraftFilterRules] = useState<DraftFilterRules>(createEmptyDraftFilterRules);
     const user = useAuthUser();
@@ -983,6 +988,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const foreignNetSummaryClassName = getForeignNetSummaryClassName(foreignNetSummaryValue);
     const showForeignTotalHolding = foreignTotalHoldingValue !== undefined;
     const foreignTotalHoldingText = formatUnsignedSummaryValue(foreignTotalHoldingValue);
+    const holdingChartStocks = foreignHoldingStocks ?? stocks;
     const showTotalMarketCap = totalMarketCapValue !== undefined;
     const totalMarketCapText = formatUnsignedSummaryValue(totalMarketCapValue);
     const renderTableHeader = () => (
@@ -1388,9 +1394,15 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                         </div>
                         {showForeignTotalHolding ? (
                             <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
-                                <span className="text-base-content/70">
+                                <button
+                                    type="button"
+                                    className="text-base-content/70 underline decoration-dotted underline-offset-4 transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                    onClick={() => foreignHoldingDialogRef.current?.showModal()}
+                                    aria-haspopup="dialog"
+                                    aria-label={`Show foreign holdings${foreignNetSummaryLabel ? ` for ${foreignNetSummaryLabel}` : ''}`}
+                                >
                                     Foreign total holding{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
-                                </span>
+                                </button>
                                 <span className="font-semibold text-base-content">
                                     {foreignTotalHoldingText}
                                 </span>
@@ -1454,6 +1466,42 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             ) : (
                 renderTable(sortedStocks)
             )}
+
+            <dialog
+                ref={foreignHoldingDialogRef}
+                className="modal"
+                onCancel={(event) => {
+                    event.preventDefault();
+                    foreignHoldingDialogRef.current?.close();
+                }}
+            >
+                <div className="modal-box max-w-5xl">
+                    <h3 className="text-xl font-bold">
+                        Foreign holdings{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}
+                    </h3>
+                    <p className="mt-1 text-sm text-base-content/70">
+                        Estimated value held by foreign investors for each stock, in billions of VND.
+                        The thin line inside each bar represents the remaining room percentage.
+                    </p>
+                    <div className="mt-4 max-h-[65vh] overflow-y-auto overflow-x-hidden pr-2">
+                        <ForeignHoldingChart stocks={holdingChartStocks} />
+                    </div>
+                    <div className="modal-action">
+                        <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => foreignHoldingDialogRef.current?.close()}
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+                <form method="dialog" className="modal-backdrop">
+                    <button type="button" onClick={() => foreignHoldingDialogRef.current?.close()}>
+                        close
+                    </button>
+                </form>
+            </dialog>
 
             <dialog
                 ref={filterDialogRef}
