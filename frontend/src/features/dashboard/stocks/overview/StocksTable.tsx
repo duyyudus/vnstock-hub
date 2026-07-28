@@ -14,6 +14,7 @@ import {
     type ExportDefinition,
     runTickerExportDefinitions,
 } from '../stockExport';
+import { getForeignHolding } from '../foreignHolding';
 
 interface StocksTableProps {
     /** List of stocks to display */
@@ -22,6 +23,8 @@ interface StocksTableProps {
     industrySections?: StockIndustrySection[];
     /** Aggregate foreign net value for the selected index universe */
     foreignNetSummaryValue?: number | null;
+    /** Aggregate foreign holding value for the selected index universe */
+    foreignTotalHoldingValue?: number | null;
     /** Label for the selected index summary */
     foreignNetSummaryLabel?: string;
     /** Bookmark groups for the logged-in user */
@@ -242,6 +245,15 @@ const formatForeignNetSummaryValue = (value: number | null | undefined): string 
     return `${prefix}${formatted}`;
 };
 
+const formatForeignTotalHoldingValue = (value: number | null | undefined): string => {
+    if (value == null) {
+        return '-';
+    }
+    return new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 0,
+    }).format(value);
+};
+
 const getForeignNetSummaryClassName = (value: number | null | undefined): string => {
     if (value == null) {
         return 'text-base-content/60';
@@ -259,6 +271,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     stocks,
     industrySections = [],
     foreignNetSummaryValue = undefined,
+    foreignTotalHoldingValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
     portfolioHoldings = {},
@@ -521,35 +534,16 @@ export const StocksTable: React.FC<StocksTableProps> = ({
         }).format(ratio);
     };
 
-    const getForeignHoldingInfo = (
-        currentRoom: number | null | undefined,
-        totalRoom: number | null | undefined,
-        price: number | null | undefined
-    ): { shares: number; valueBilVnd: number } | null => {
-        if (
-            currentRoom == null
-            || totalRoom == null
-            || totalRoom <= 0
-            || currentRoom > totalRoom
-            || price == null
-            || !Number.isFinite(price)
-        ) {
-            return null;
-        }
-
-        const shares = totalRoom - currentRoom;
-        return {
-            shares,
-            valueBilVnd: (shares * price) / 1e9,
-        };
-    };
-
     const formatRoomTooltip = (
         currentRoom: number | null | undefined,
         totalRoom: number | null | undefined,
         price: number | null | undefined
     ): string => {
-        const holdingInfo = getForeignHoldingInfo(currentRoom, totalRoom, price);
+        const holdingInfo = getForeignHolding({
+            current_room: currentRoom,
+            total_room: totalRoom,
+            price,
+        });
         return [
             `Current room: ${formatForeignValue(currentRoom)}`,
             `Total room: ${formatForeignValue(totalRoom)}`,
@@ -984,6 +978,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const showForeignNetSummary = foreignNetSummaryValue !== undefined;
     const foreignNetSummaryText = formatForeignNetSummaryValue(foreignNetSummaryValue);
     const foreignNetSummaryClassName = getForeignNetSummaryClassName(foreignNetSummaryValue);
+    const showForeignTotalHolding = foreignTotalHoldingValue !== undefined;
+    const foreignTotalHoldingText = formatForeignTotalHoldingValue(foreignTotalHoldingValue);
     const renderTableHeader = () => (
         <thead className="sticky top-0 z-20 bg-base-200">
             <tr>
@@ -1375,14 +1371,27 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             ) : null}
             <div className={`flex flex-wrap items-start gap-3 ${showForeignNetSummary ? 'justify-between' : 'justify-end'}`}>
                 {showForeignNetSummary ? (
-                    <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
-                        <span className="text-base-content/70">
-                            Foreign net sum{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
-                        </span>
-                        <span className={`font-semibold ${foreignNetSummaryClassName}`}>
-                            {foreignNetSummaryText}
-                        </span>
-                        <span className="text-base-content/70"> B VND</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                            <span className="text-base-content/70">
+                                Foreign net sum{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
+                            </span>
+                            <span className={`font-semibold ${foreignNetSummaryClassName}`}>
+                                {foreignNetSummaryText}
+                            </span>
+                            <span className="text-base-content/70"> B VND</span>
+                        </div>
+                        {showForeignTotalHolding ? (
+                            <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                                <span className="text-base-content/70">
+                                    Foreign total holding{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
+                                </span>
+                                <span className="font-semibold text-base-content">
+                                    {foreignTotalHoldingText}
+                                </span>
+                                <span className="text-base-content/70"> B VND</span>
+                            </div>
+                        ) : null}
                     </div>
                 ) : null}
                 <div className="flex items-center gap-2">

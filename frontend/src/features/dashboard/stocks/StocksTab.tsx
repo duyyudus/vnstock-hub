@@ -16,6 +16,7 @@ import { Overview } from './overview';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './overview';
 import type { IndexConfig } from './indexConfig';
 import { deriveIndexIndustryScope } from './indexIndustryScope';
+import { getForeignHolding } from './foreignHolding';
 import { useAuthUser } from '../../auth/useAuthUser';
 import {
     resolveCompanyExportCategory,
@@ -83,6 +84,23 @@ const getStoredSelectedIndex = (indices: IndexConfig[]) => {
     }
 
     return indices.find((idx) => idx.id === storedIndexId) || defaultIndex;
+};
+
+const getForeignTotalHoldingValue = (stocks: Stock[]): number | null => {
+    let totalValueBilVnd = 0;
+    let hasForeignRoomData = false;
+
+    stocks.forEach((stock) => {
+        const holdingInfo = getForeignHolding(stock);
+        if (!holdingInfo) {
+            return;
+        }
+
+        totalValueBilVnd += holdingInfo.valueBilVnd;
+        hasForeignRoomData = true;
+    });
+
+    return hasForeignRoomData ? totalValueBilVnd : null;
 };
 
 /**
@@ -488,6 +506,10 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
 
         return hasForeignData ? total : null;
     }, [indexUniverseStocks]);
+    const selectedIndexForeignTotalHolding = useMemo(
+        () => getForeignTotalHoldingValue(indexUniverseStocks),
+        [indexUniverseStocks]
+    );
     const showSelectedIndexForeignNetSum = Boolean(
         selectedIndex
         && selectedPositionsFilter === 'none'
@@ -1179,6 +1201,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                             <Overview
                                 stocks={filteredStocks}
                                 foreignNetSummaryValue={showSelectedIndexForeignNetSum ? selectedIndexForeignNetSum : undefined}
+                                foreignTotalHoldingValue={showSelectedIndexForeignNetSum ? selectedIndexForeignTotalHolding : undefined}
                                 foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}
