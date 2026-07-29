@@ -119,6 +119,22 @@ const getTotalMarketCapValue = (stocks: Stock[]): number | null => {
     return hasMarketCapData ? totalMarketCapBilVnd : null;
 };
 
+const getTotalVolumeValue = (stocks: Stock[]): number | null => {
+    let totalVolumeBilVnd = 0;
+    let hasVolumeData = false;
+
+    stocks.forEach((stock) => {
+        if (stock.accumulated_value == null || !Number.isFinite(stock.accumulated_value) || stock.accumulated_value < 0) {
+            return;
+        }
+
+        totalVolumeBilVnd += stock.accumulated_value;
+        hasVolumeData = true;
+    });
+
+    return hasVolumeData ? totalVolumeBilVnd : null;
+};
+
 /**
  * Stocks Tab - Main container for Index/Industry stock views.
  * Manages state for selection, fetching, and view switching.
@@ -528,6 +544,10 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
     );
     const selectedIndexTotalMarketCap = useMemo(
         () => getTotalMarketCapValue(indexUniverseStocks),
+        [indexUniverseStocks]
+    );
+    const selectedIndexTotalVolume = useMemo(
+        () => getTotalVolumeValue(indexUniverseStocks),
         [indexUniverseStocks]
     );
     const showSelectedIndexForeignNetSum = Boolean(
@@ -1224,6 +1244,7 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                                 foreignTotalHoldingValue={showSelectedIndexForeignNetSum ? selectedIndexForeignTotalHolding : undefined}
                                 foreignHoldingStocks={showSelectedIndexForeignNetSum ? indexUniverseStocks : undefined}
                                 totalMarketCapValue={showSelectedIndexForeignNetSum ? selectedIndexTotalMarketCap : undefined}
+                                totalVolumeValue={showSelectedIndexForeignNetSum ? selectedIndexTotalVolume : undefined}
                                 foreignNetSummaryLabel={showSelectedIndexForeignNetSum ? selectedIndex?.label : undefined}
                                 bookmarkGroups={bookmarkGroups}
                                 portfolioHoldings={portfolioHoldings}

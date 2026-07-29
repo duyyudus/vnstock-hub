@@ -30,6 +30,8 @@ interface StocksTableProps {
     foreignHoldingStocks?: Stock[];
     /** Aggregate market cap for the selected index universe */
     totalMarketCapValue?: number | null;
+    /** Aggregate traded value for the selected index universe */
+    totalVolumeValue?: number | null;
     /** Label for the selected index summary */
     foreignNetSummaryLabel?: string;
     /** Bookmark groups for the logged-in user */
@@ -279,6 +281,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     foreignTotalHoldingValue = undefined,
     foreignHoldingStocks,
     totalMarketCapValue = undefined,
+    totalVolumeValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
     portfolioHoldings = {},
@@ -991,6 +994,8 @@ export const StocksTable: React.FC<StocksTableProps> = ({
     const holdingChartStocks = foreignHoldingStocks ?? stocks;
     const showTotalMarketCap = totalMarketCapValue !== undefined;
     const totalMarketCapText = formatUnsignedSummaryValue(totalMarketCapValue);
+    const showTotalVolume = totalVolumeValue !== undefined;
+    const totalVolumeText = formatUnsignedSummaryValue(totalVolumeValue);
     const renderTableHeader = () => (
         <thead className="sticky top-0 z-20 bg-base-200">
             <tr>
@@ -1416,6 +1421,17 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                                 </span>
                                 <span className="font-semibold text-base-content">
                                     {totalMarketCapText}
+                                </span>
+                                <span className="text-base-content/70"> B VND</span>
+                            </div>
+                        ) : null}
+                        {showTotalVolume ? (
+                            <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                                <span className="text-base-content/70">
+                                    Total volume{foreignNetSummaryLabel ? ` (${foreignNetSummaryLabel})` : ''}:{' '}
+                                </span>
+                                <span className="font-semibold text-base-content">
+                                    {totalVolumeText}
                                 </span>
                                 <span className="text-base-content/70"> B VND</span>
                             </div>

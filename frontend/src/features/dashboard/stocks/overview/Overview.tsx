@@ -19,6 +19,8 @@ interface OverviewProps {
     foreignHoldingStocks?: Stock[];
     /** Aggregate market cap for the selected index universe */
     totalMarketCapValue?: number | null;
+    /** Aggregate traded value for the selected index universe */
+    totalVolumeValue?: number | null;
     /** Label for the selected index summary */
     foreignNetSummaryLabel?: string;
     /** Bookmark groups for the logged-in user */
@@ -73,6 +75,7 @@ export const Overview: React.FC<OverviewProps> = ({
     foreignTotalHoldingValue = undefined,
     foreignHoldingStocks,
     totalMarketCapValue = undefined,
+    totalVolumeValue = undefined,
     foreignNetSummaryLabel,
     bookmarkGroups = [],
     portfolioHoldings = {},
@@ -95,6 +98,7 @@ export const Overview: React.FC<OverviewProps> = ({
                 foreignTotalHoldingValue={foreignTotalHoldingValue}
                 foreignHoldingStocks={foreignHoldingStocks}
                 totalMarketCapValue={totalMarketCapValue}
+                totalVolumeValue={totalVolumeValue}
                 foreignNetSummaryLabel={foreignNetSummaryLabel}
                 bookmarkGroups={bookmarkGroups}
                 portfolioHoldings={portfolioHoldings}
