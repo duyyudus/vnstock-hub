@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksWeeklyPricesResponse } from '../../../api/stockApi';
-import type { DateRange } from './dateRange';
+import type { DateRange } from './utils/dateRange';
 
 interface StocksGrowthChartProps {
     stocks: Stock[];

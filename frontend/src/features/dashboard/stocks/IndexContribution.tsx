@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { IndexContributionResponse, IndexContributionRow } from '../../../api/stockApi';
-import type { IndexConfig } from './indexConfig';
+import type { IndexConfig } from './utils/indexConfig';
 
 interface IndexContributionProps {
     selectedIndex: IndexConfig | null;

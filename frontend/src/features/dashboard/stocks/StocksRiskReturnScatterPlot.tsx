@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksWeeklyPricesResponse, WeeklyPricePoint } from '../../../api/stockApi';
-import type { DateRange } from './dateRange';
+import type { DateRange } from './utils/dateRange';
 
 interface StocksRiskReturnScatterPlotProps {
     stocks: Stock[];

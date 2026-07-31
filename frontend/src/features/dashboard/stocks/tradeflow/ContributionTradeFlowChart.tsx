@@ -11,7 +11,7 @@ import {
     YAxis,
 } from 'recharts';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi';
-import type { DateRange } from '../dateRange';
+import type { DateRange } from '../utils/dateRange';
 
 type FlowType = 'foreign' | 'proprietary';
 

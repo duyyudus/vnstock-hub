@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import { stockApi } from '../../../api/stockApi';
 import type { Stock, StocksVolumeSeriesResponse, VolumeSeriesPoint } from '../../../api/stockApi';
-import type { DateRange } from './dateRange';
+import type { DateRange } from './utils/dateRange';
 
 interface StocksVolumeChartProps {
     stocks: Stock[];

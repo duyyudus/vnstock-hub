@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { stockApi } from '../../../../api/stockApi';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi';
-import type { DateRange } from '../dateRange';
+import type { DateRange } from '../utils/dateRange';
 import { AggregatedTradeFlowChart } from './AggregatedTradeFlowChart';
 import { ContributionTradeFlowChart } from './ContributionTradeFlowChart';
 import { SectorRotationHeatmap } from './SectorRotationHeatmap';

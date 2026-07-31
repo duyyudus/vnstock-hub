@@ -1,5 +1,5 @@
 import React from 'react';
-import type { IndexConfig } from './indexConfig';
+import type { IndexConfig } from './utils/indexConfig';
 
 interface IndexSelectorProps {
     /** List of available indices */

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Stock, StocksVolumeSeriesResponse } from '../../../../api/stockApi';
-import type { DateRange } from '../dateRange';
+import type { DateRange } from '../utils/dateRange';
 
 interface SectorRotationHeatmapProps {
     stocks: Stock[];

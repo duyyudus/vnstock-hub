@@ -1,4 +1,4 @@
-import type { Stock, IndustryInfo } from '../../../api/stockApi';
+import type { Stock, IndustryInfo } from '../../../../api/stockApi';
 
 interface IndustryAllocation {
     industry: string;

@@ -13,8 +13,8 @@ import {
     PRICE_HISTORY_EXPORT_DEFINITIONS,
     type ExportDefinition,
     runTickerExportDefinitions,
-} from '../stockExport';
-import { getForeignHolding } from '../foreignHolding';
+} from '../utils/stockExport';
+import { getForeignHolding } from '../utils/foreignHolding';
 import { ForeignHoldingChart } from './ForeignHoldingChart';
 
 interface StocksTableProps {

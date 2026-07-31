@@ -9,7 +9,7 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
-import type { DateRange } from '../dateRange';
+import type { DateRange } from '../utils/dateRange';
 import type { TradeFlowAggregatedPoint, TradeFlowChartColors } from './TradeFlow';
 
 interface AggregatedTradeFlowChartProps {

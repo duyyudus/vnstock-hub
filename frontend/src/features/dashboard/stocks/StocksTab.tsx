@@ -14,9 +14,9 @@ import { IndexContribution } from './IndexContribution';
 import { TradeFlow } from './tradeflow/TradeFlow';
 import { Overview } from './overview';
 import type { PortfolioHoldingSummary, TradingPositionSummary } from './overview';
-import type { IndexConfig } from './indexConfig';
-import { deriveIndexIndustryScope } from './indexIndustryScope';
-import { getForeignHolding } from './foreignHolding';
+import type { IndexConfig } from './utils/indexConfig';
+import { deriveIndexIndustryScope } from './utils/indexIndustryScope';
+import { getForeignHolding } from './utils/foreignHolding';
 import { useAuthUser } from '../../auth/useAuthUser';
 import {
     resolveCompanyExportCategory,
@@ -27,7 +27,7 @@ import {
     FINANCE_EXPORT_DEFINITIONS,
     PRICE_HISTORY_EXPORT_DEFINITIONS,
     runTickerExportDefinitions,
-} from './stockExport';
+} from './utils/stockExport';
 import {
     buildPresetDateRange,
     buildIndicesDateRangeDomain,
@@ -36,7 +36,7 @@ import {
     parseIsoDate,
     type DateRange,
     type DateRangePreset,
-} from './dateRange';
+} from './utils/dateRange';
 
 interface StocksTabProps {
     /** List of available indices */

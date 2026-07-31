@@ -5,7 +5,7 @@ import { ScreenersTab } from './screeners/ScreenersTab';
 import IndexBanners from './banner/IndexBanners';
 import { stockApi } from '../../api/stockApi';
 import type { AppInfoResponse } from '../../api/stockApi';
-import type { IndexConfig } from './stocks/indexConfig';
+import type { IndexConfig } from './stocks/utils/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
 import { ThemeSelector } from '../../components/ThemeSelector';

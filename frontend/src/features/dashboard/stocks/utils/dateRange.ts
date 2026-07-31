@@ -3,6 +3,7 @@ export interface DateRange {
     endDate: string;
 }
 
+
 export interface DateRangeDomain {
     min: Date;
     max: Date;

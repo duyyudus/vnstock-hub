@@ -4,6 +4,7 @@ interface ForeignHoldingInput {
     price: number | null | undefined;
 }
 
+
 export interface ForeignHoldingInfo {
     shares: number;
     valueBilVnd: number;

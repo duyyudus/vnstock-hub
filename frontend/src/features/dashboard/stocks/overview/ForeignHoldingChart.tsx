@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import type { Stock } from '../../../../api/stockApi';
 import type { BarShapeProps } from 'recharts';
-import { getForeignHolding } from '../foreignHolding';
+import { getForeignHolding } from '../utils/foreignHolding';
 
 interface ForeignHoldingChartProps {
     stocks: Stock[];
