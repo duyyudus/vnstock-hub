@@ -23,15 +23,15 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Run docker-build-push-prod",
+			"label": "Run docker-build prod",
 			"type": "shell",
-			"command": "./docker-build-push-prod",
+			"command": "./docker-build prod",
 			"problemMatcher": []
 		},
 		{
-			"label": "Run docker-build-push-prod-mac",
+			"label": "Run docker-build local",
 			"type": "shell",
-			"command": "./docker-build-push-prod-mac",
+			"command": "./docker-build local",
 			"problemMatcher": []
 		}
 	]
