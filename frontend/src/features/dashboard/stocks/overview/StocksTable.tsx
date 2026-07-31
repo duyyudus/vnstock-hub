@@ -1613,7 +1613,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
             {tickerTooltip && typeof document !== 'undefined'
                 ? createPortal(
                     <div
-                        className="pointer-events-none fixed z-[120] max-w-[min(24rem,calc(100vw-2rem))] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-base-content shadow-xl"
+                        className="pointer-events-none fixed z-[120] max-w-[min(24rem,calc(100vw-2rem))] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-neutral-content shadow-xl"
                         style={{
                             left: tickerTooltip.x,
                             top: tickerTooltip.y,
@@ -1631,7 +1631,7 @@ export const StocksTable: React.FC<StocksTableProps> = ({
                     <div
                         id="room-tooltip"
                         role="tooltip"
-                        className="pointer-events-none fixed z-[120] w-max max-w-[calc(100vw-2rem)] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left font-mono text-sm leading-relaxed text-base-content shadow-xl"
+                        className="pointer-events-none fixed z-[120] w-max max-w-[calc(100vw-2rem)] whitespace-pre-line rounded-box border border-base-300 bg-neutral px-3 py-2 text-left font-mono text-sm leading-relaxed text-neutral-content shadow-xl"
                         style={{
                             left: roomTooltip.x,
                             top: roomTooltip.y,

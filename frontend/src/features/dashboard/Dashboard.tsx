@@ -8,7 +8,7 @@ import type { AppInfoResponse } from '../../api/stockApi';
 import type { IndexConfig } from './stocks/indexConfig';
 import { FundsTab } from './funds/FundsTab';
 import { AuthWidget } from '../auth/AuthWidget';
-import { ThemeSelector } from './components/ThemeSelector';
+import { ThemeSelector } from '../../components/ThemeSelector';
 import { useAuthUser } from '../auth/useAuthUser';
 import { PortfolioTab } from './portfolio/PortfolioTab';
 import { TradingTab } from './trading/TradingTab';

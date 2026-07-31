@@ -414,7 +414,7 @@ export const SectorRotationHeatmap: React.FC<SectorRotationHeatmapProps> = ({
             {sectorTooltip && typeof document !== 'undefined'
                 ? createPortal(
                     <div
-                        className="pointer-events-none fixed z-[140] max-h-[min(32rem,calc(100vh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] overflow-hidden rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-xs leading-relaxed text-base-content shadow-xl"
+                        className="pointer-events-none fixed z-[140] max-h-[min(32rem,calc(100vh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] overflow-hidden rounded-box border border-base-300 bg-neutral px-3 py-2 text-left text-xs leading-relaxed text-neutral-content shadow-xl"
                         style={{
                             left: sectorTooltip.x,
                             top: sectorTooltip.y,

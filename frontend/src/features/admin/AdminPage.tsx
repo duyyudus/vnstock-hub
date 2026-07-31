@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthWidget } from '../auth/AuthWidget';
 import { useAuthUser } from '../auth/useAuthUser';
+import { ThemeSelector } from '../../components/ThemeSelector';
 import {
     type IndexInfo,
     stockApi,
@@ -478,7 +479,8 @@ export const AdminPage: React.FC = () => {
                         <div className="flex-1">
                             <a href="/" className="btn btn-ghost btn-sm">← Back to Dashboard</a>
                         </div>
-                        <div className="flex-none">
+                        <div className="flex-none flex items-center gap-2">
+                            <ThemeSelector />
                             <AuthWidget />
                         </div>
                     </div>
@@ -500,7 +502,10 @@ export const AdminPage: React.FC = () => {
                         <a href="/" className="btn btn-ghost btn-sm">← Dashboard</a>
                         <h1 className="text-xl font-bold">Control Panel</h1>
                     </div>
-                    <AuthWidget />
+                    <div className="flex items-center gap-2">
+                        <ThemeSelector />
+                        <AuthWidget />
+                    </div>
                 </div>
             </header>
 

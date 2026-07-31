@@ -1,7 +1,25 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
   <head>
-    <script>(function(){var t=localStorage.getItem('vnstock_theme');if(t)document.documentElement.setAttribute('data-theme',t);})()</script>
+    <script>
+      (function () {
+        var preference = 'dark';
+        try {
+          var storedPreference = localStorage.getItem('vnstock_theme');
+          if (storedPreference === 'dark' || storedPreference === 'light' || storedPreference === 'system') {
+            preference = storedPreference;
+          }
+        } catch (_) {
+          // Keep the dark default when storage is unavailable.
+        }
+
+        var theme = preference;
+        if (preference === 'system') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
