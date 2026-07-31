@@ -1021,6 +1021,11 @@ export const StocksTab: React.FC<StocksTabProps> = ({ indices }) => {
                             className="input input-sm input-bordered w-32 md:w-48 pl-8"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                    setSearchQuery('');
+                                }
+                            }}
                         />
                         <svg
                             className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
