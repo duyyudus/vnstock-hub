@@ -279,9 +279,10 @@ export const Dashboard: React.FC = () => {
             {/* Header */}
             <header className="navbar bg-base-100 shadow-lg px-4 md:px-6">
                 <div className="dashboard-adaptive-shell mx-auto flex min-w-0 items-center">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <img src="/logo.svg" alt="" className="h-8 w-8 shrink-0" />
                         <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                            🚀 VNStock Hub
+                            VNStock Hub
                         </h1>
                     </div>
                     <div className="flex-none flex items-center gap-2">

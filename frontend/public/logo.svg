@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VNStock Hub">
+  <defs>
+    <linearGradient id="vsh-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6D5DF6"/>
+      <stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#vsh-bg)"/>
+  <!-- Rising candlesticks -->
+  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round">
+    <line x1="16.5" y1="39" x2="16.5" y2="54"/>
+    <rect x="11.5" y="42" width="10" height="9" rx="2" stroke="none"/>
+    <line x1="32" y1="30" x2="32" y2="52"/>
+    <rect x="27" y="33" width="10" height="14" rx="2" stroke="none"/>
+    <line x1="47.5" y1="27" x2="47.5" y2="50"/>
+    <rect x="42.5" y="29" width="10" height="17" rx="2" stroke="none"/>
+  </g>
+  <!-- Five-point star (Vietnam) crowning the uptrend -->
+  <polygon points="47.50,6.00 49.67,12.01 56.06,12.22 51.02,16.14 52.79,22.28 47.50,18.70 42.21,22.28 43.98,16.14 38.94,12.22 45.33,12.01" fill="#FDE047" stroke="#FDE047" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>
